@@ -63,12 +63,18 @@ jobs:
         with:
           name: Miharikun-v${{ needs.build.outputs.version }}-win-x64
 
-      - name: Release を作る
+      # タグを push しただけなら Release を新しく作る。GitHub の画面から（タグと Release を同時に）作った場合は
+      # Release が先にあるので、zip だけを追加する。
+      - name: Release に zip を載せる
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Miharikun $GITHUB_REF_NAME" \
-            --generate-notes \
-            "Miharikun-v${{ needs.build.outputs.version }}-win-x64.zip"
+          zip="Miharikun-v${{ needs.build.outputs.version }}-win-x64.zip"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$zip" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$zip" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Miharikun $GITHUB_REF_NAME" \
+              --generate-notes
+          fi

@@ -6,6 +6,7 @@ Cursor IDE のチャットセッションを、プロジェクト単位で一覧
 - 仕様の正：`docs/miharikun-requirements.md`（要件定義・実装方針・実装フェーズ）
 - 画面配置の参考：`docs/miharikun-wire.html`（設計用ワイヤー。取得元バッジ・注記・サンプルデータは実装しない）
 - Step 0 用の検証ツール：`docs/step0-dump-hook/`（本体とは別物。ソリューションに含めない）
+- リリース手順（タグ push／GitHub 画面から／試運転）：`docs/release.md`
 
 ## 進め方
 - `docs/miharikun-requirements.md` の 15章のフェーズ順に実装する
