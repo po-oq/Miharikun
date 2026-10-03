@@ -29,6 +29,36 @@ public sealed class AppPaths(string root)
     public string MetaFile(string agentId, string sessionId) =>
         Path.Combine(MetaDir(agentId), SanitizeFileName(sessionId) + ".json");
 
+    public string ProjectsDir => Path.Combine(Root, "projects");
+
+    /// <summary>
+    /// プロジェクトごとの設定ファイル（要件 6章）：projects\{slug}-{hash8}.json。
+    /// 元はプロジェクトのフルパスを小文字・末尾区切りなしにしたもの。slug は読みやすさ用、hash8（SHA-256 の先頭 8 桁）で別のパスと区別する。
+    /// </summary>
+    public string ProjectSettingsFile(string projectPath)
+    {
+        var key = (Projects.ProjectPath.Normalize(projectPath) ?? projectPath).ToLowerInvariant();
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
+        return Path.Combine(ProjectsDir, $"{Slug(key)}-{hash}.json");
+    }
+
+    /// <summary>英数字以外の連なりを「-」にする。何も残らなければ "project"。</summary>
+    private static string Slug(string key)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in key)
+        {
+            if (c is (>= 'a' and <= 'z') or (>= '0' and <= '9'))
+                sb.Append(c);
+            else if (sb.Length > 0 && sb[^1] != '-')
+                sb.Append('-');
+        }
+        var slug = sb.ToString().Trim('-');
+        if (slug.Length > 60)
+            slug = slug[..60].Trim('-');
+        return slug.Length == 0 ? "project" : slug;
+    }
+
     public string HookErrorLog => Path.Combine(Root, "logs", "hook-error.log");
 
     private static string SanitizeFileName(string name)

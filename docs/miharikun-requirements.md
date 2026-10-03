@@ -557,9 +557,10 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 ## Phase 13〜17: ドキュメントタブ（Issue #9）
 12.7 / 6章。実装の分け方・ファイル構成は `docs/issue9-documents-plan.md`（図解 HTML と対）。全体の完了条件：1万ファイル超のフォルダでも画面が固まらずツリーが出る。除外設定の変更が即時に反映され、再起動後も残る。md のチェックボックス（未/済・入れ子・番号付き）が正しく出る。mermaid が図になる。html の相対 css・js・画像が効く。ライト/ダークの両方で確認する。
 
-## [ ] Phase 13: ドキュメント Core
+## [x] Phase 13: ドキュメント Core
 - `GitIgnoreMatcher`・`DocumentIndexer`・索引・ツリー・`DocumentFilter`・`DocumentOverview`・`ProjectSettingsStore`・`DocumentWatcher`（画面なし。テスト先行）
 - 完了条件：1万ファイルの一時フォルダのテストが数秒以内。`dotnet build --no-incremental` が警告 0
+- 状況：実装済み（`src/Miharikun.Core/Documents/`、`Settings/ProjectSettingsStore.cs`）。除外判定・走査・索引・ツリー・絞り込み・概要・設定の保存・Watcher の振り分け（`DocumentChangeClassifier`）・再走査の予約（`RescanScheduler`）まで。1万ファイル（除外対象 2,000 を含む）の計測は `MIHARIKUN_PERF=1` のときだけ動く `PerfFact`。Core は AOT 互換（`--no-incremental` で警告 0）
 
 ## [ ] Phase 14: ドキュメント md→HTML（新プロジェクト Miharikun.Docs）
 - Markdig（Docs だけが参照。Core は AOT 互換のまま）。チェックボックス・mermaid・テーマ別 CSS
