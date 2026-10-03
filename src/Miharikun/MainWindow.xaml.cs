@@ -24,6 +24,7 @@ public partial class MainWindow : FluentWindow
 
         _clock.Tick += (_, _) => _viewModel.Tick();
         _clock.Start();
+        Closing += (_, _) => _viewModel.Flush();   // 入力途中のメモを失わない
         Closed += (_, _) => _clock.Stop();
     }
 }

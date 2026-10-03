@@ -26,6 +26,9 @@ public sealed class AppPaths(string root)
 
     public string MetaDir(string agentId) => Path.Combine(Root, "meta", agentId);
 
+    public string MetaFile(string agentId, string sessionId) =>
+        Path.Combine(MetaDir(agentId), SanitizeFileName(sessionId) + ".json");
+
     public string HookErrorLog => Path.Combine(Root, "logs", "hook-error.log");
 
     private static string SanitizeFileName(string name)

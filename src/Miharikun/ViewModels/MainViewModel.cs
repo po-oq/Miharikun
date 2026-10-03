@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Miharikun.Core.Agents;
+using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
 
 namespace Miharikun.ViewModels;
@@ -11,6 +12,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly SessionMonitor _monitor;
     private readonly SynchronizationContext _ui;
+    private readonly SessionMetaService _meta;
     private readonly Func<SessionKey, IReadOnlyList<AgentEvent>> _getEvents;
     private readonly Dictionary<SessionKey, SessionCardViewModel> _byKey = [];
 
@@ -33,11 +35,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>「未コミットあり」は git 連携（Phase 7）、「メモあり」はメタ（Phase 6）で有効になる。</summary>
     public bool UncommittedFilterAvailable => false;
-    public bool MemoFilterAvailable => false;
+    public bool MemoFilterAvailable => true;
 
     public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui,
-        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents)
+        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta)
     {
+        _meta = meta;
+        _meta.Changed += OnMetaChanged;
         ProjectFolder = projectFolder;
         _monitor = monitor;
         _ui = ui;
@@ -67,7 +71,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
             else
             {
-                card = new SessionCardViewModel(snap, now);
+                card = new SessionCardViewModel(snap, now, _meta);
                 _byKey[card.Key] = card;
                 Cards.Add(card);
             }
@@ -88,7 +92,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void RefreshSelected(SessionSnapshot snap, DateTimeOffset now)
     {
         if (Detail is null || Detail.Key != snap.Summary.Key)
-            Detail = new SessionDetailViewModel(snap, now, t => Timeline.JumpTo(t.Seq, t.Kind));
+            Detail = new SessionDetailViewModel(snap, now, t => Timeline.JumpTo(t.Seq, t.Kind), _meta);
         else
             Detail.Update(snap, now);
         Timeline.SetEvents(_getEvents(snap.Summary.Key), now);
@@ -96,6 +100,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedChanged(SessionCardViewModel? value)
     {
+        Detail?.FlushMemo();   // 切り替える前に、入力途中のメモを保存する
         Timeline.Clear();
         Detail = null;
         if (value is null)
@@ -122,7 +127,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool Visible(SessionCardViewModel c)
     {
         if (RunningOnly && c.State != SessionState.Running) return false;
-        // UncommittedOnly / MemoOnly は、対応するデータ（Phase 7 / Phase 6）が入ってから判定を足す。
+        if (MemoOnly && !c.HasMemo) return false;
+        // UncommittedOnly は git 連携（Phase 7）が入ってから判定を足す。
         return SessionSearch.Matches(c.SearchText, SearchText);
     }
 
@@ -139,6 +145,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ];
     }
 
-    public void Dispose() => _monitor.Updated -= OnUpdated;
+    // タイトル・概要・メモが変わったら、カード・詳細・検索結果に反映する。
+    private void OnMetaChanged(SessionKey key)
+    {
+        if (_byKey.TryGetValue(key, out var card))
+            card.RefreshMeta();
+        if (Detail is not null && Detail.Key == key)
+            Detail.RefreshMeta();
+        CardsView.Refresh();
+    }
+
+    /// <summary>入力途中のメモを保存する（ウィンドウを閉じる前など）。</summary>
+    public void Flush() => Detail?.FlushMemo();
+
+    public void Dispose()
+    {
+        _monitor.Updated -= OnUpdated;
+        _meta.Changed -= OnMetaChanged;
+    }
 }
 public sealed record StateCount(SessionState State, string Name, int Count);

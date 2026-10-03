@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using Miharikun.Core.Agents;
+using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
 using Miharikun.Core.Storage;
 using Miharikun.ViewModels;
@@ -23,7 +24,8 @@ public partial class App : Application
         var agent = new CursorAgent();
         var store = new ProjectEventStore(agent, paths, folder, log: AppLog.Write);
         _monitor = new SessionMonitor(store, paths.EventsDir(agent.Id));
-        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents);
+        var meta = new SessionMetaService(new MetaStore(paths, agent.Id, AppLog.Write), log: AppLog.Write);
+        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta);
 
         new MainWindow(_viewModel).Show();
         _monitor.Start();

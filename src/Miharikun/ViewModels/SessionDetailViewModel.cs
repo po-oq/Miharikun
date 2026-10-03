@@ -2,6 +2,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Agents;
+using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
 
 namespace Miharikun.ViewModels;
@@ -19,7 +20,10 @@ public sealed record TurnRow(string Header, string Prompt);
 public sealed partial class SessionDetailViewModel : ObservableObject
 {
     private readonly Action<(long Seq, TimelineKind Kind)> _jump;
+    private readonly SessionMetaService _meta;
     private SessionSummary _summary;
+    private bool _memoDirty;
+    private bool _loadingMemo;
 
     public SessionKey Key => _summary.Key;
 
@@ -27,6 +31,15 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     [ObservableProperty] private string _stateText = "";
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _headerMeta = "";
+
+    // 概要・メモ（メタ）
+    [ObservableProperty] private string _summaryText = "";
+    [ObservableProperty] private string _summaryInfo = "";
+    [ObservableProperty] private bool _isEditingSummary;
+    [ObservableProperty] private string _summaryDraft = "";
+    [ObservableProperty] private string _memoText = "";
+
+    public RenameState Rename { get; }
 
     [ObservableProperty] private string _promptLine = "";
     [ObservableProperty] private string _toolLine = "";
@@ -46,10 +59,36 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     public RelayCommand JumpToolCommand { get; }
     public RelayCommand JumpResponseCommand { get; }
 
-    public SessionDetailViewModel(SessionSnapshot snapshot, DateTimeOffset now, Action<(long Seq, TimelineKind Kind)> jump)
+    public RelayCommand ImportSummaryCommand { get; }
+    public RelayCommand EditSummaryCommand { get; }
+    public RelayCommand SaveSummaryCommand { get; }
+    public RelayCommand CancelSummaryCommand { get; }
+    public RelayCommand RevertSummaryCommand { get; }
+    public RelayCommand SaveMemoCommand { get; }
+
+    public SessionDetailViewModel(SessionSnapshot snapshot, DateTimeOffset now,
+        Action<(long Seq, TimelineKind Kind)> jump, SessionMetaService meta)
     {
         _jump = jump;
+        _meta = meta;
         _summary = snapshot.Summary;
+        Rename = new RenameState(() => Title, text => _meta.Update(Key, (m, at) => m.WithManualTitle(text, at)));
+        ImportSummaryCommand = new RelayCommand(ImportSummary, () => SummaryImport.FromLastResponse(_summary) is not null);
+        EditSummaryCommand = new RelayCommand(() =>
+        {
+            SummaryDraft = _meta.Get(Key).Summary?.Text ?? "";
+            IsEditingSummary = true;
+        });
+        SaveSummaryCommand = new RelayCommand(() =>
+        {
+            IsEditingSummary = false;
+            _meta.Update(Key, (m, at) => m.EditSummary(SummaryDraft, at));
+        });
+        CancelSummaryCommand = new RelayCommand(() => IsEditingSummary = false);
+        RevertSummaryCommand = new RelayCommand(
+            () => _meta.Update(Key, (m, at) => m.RevertSummary(at)),
+            () => _meta.Get(Key).CanRevertSummary);
+        SaveMemoCommand = new RelayCommand(FlushMemo);
         JumpPromptCommand = new RelayCommand(() => Jump(SummaryJump.Prompt(_summary)), () => SummaryJump.Prompt(_summary) is not null);
         JumpToolCommand = new RelayCommand(() => Jump(SummaryJump.Tool(_summary)), () => SummaryJump.Tool(_summary) is not null);
         JumpResponseCommand = new RelayCommand(() => Jump(SummaryJump.Response(_summary)), () => SummaryJump.Response(_summary) is not null);
@@ -68,7 +107,6 @@ public sealed partial class SessionDetailViewModel : ObservableObject
 
         State = s.State;
         StateText = SessionText.StateName(s.State);
-        Title = s.AutoTitle ?? "（依頼なし）";
 
         var meta = new List<string> { ShortId(s.Key.SessionId), "開始 " + SessionText.Clock(s.StartedAt, now) };
         if (s.Branch is not null) meta.Add("ブランチ " + s.Branch);
@@ -108,10 +146,57 @@ public sealed partial class SessionDetailViewModel : ObservableObject
             $"{t.Number}. {SessionText.Clock(t.StartedAt, now)} {SessionText.TurnStatusLabel(t.Status)}",
             FirstLine(t.Prompt))).ToList();
 
+        RefreshMeta(now);
         RefreshClock(now);
         JumpPromptCommand.NotifyCanExecuteChanged();
         JumpToolCommand.NotifyCanExecuteChanged();
         JumpResponseCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>タイトル・概要・メモはメタから。メタが変わったとき（と更新時）に呼ぶ。</summary>
+    public void RefreshMeta(DateTimeOffset? now = null)
+    {
+        var meta = _meta.Get(Key);
+        Title = meta.DisplayTitle(_summary.AutoTitle) ?? "（依頼なし）";
+
+        SummaryText = meta.Summary?.Text ?? "（概要はまだありません）";
+        SummaryInfo = meta.Summary is { } e
+            ? $"{SessionText.Clock(e.ImportedAt, now ?? DateTimeOffset.Now)} " +
+              (e.SourceTurn is { } turn ? $"取り込み（ターン{turn}の返事）" : "編集")
+            : "";
+
+        // 入力途中のメモは、他の更新で上書きしない。
+        if (!_memoDirty)
+        {
+            _loadingMemo = true;
+            MemoText = meta.Memo;
+            _loadingMemo = false;
+        }
+
+        ImportSummaryCommand.NotifyCanExecuteChanged();
+        RevertSummaryCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ImportSummary()
+    {
+        if (SummaryImport.FromLastResponse(_summary) is not { } source)
+            return;
+        _meta.Update(Key, (m, at) => m.ImportSummary(source.Text, source.SourceTurn, at));
+    }
+
+    partial void OnMemoTextChanged(string value)
+    {
+        if (!_loadingMemo)
+            _memoDirty = true;
+    }
+
+    /// <summary>メモを保存する（フォーカスアウト・セッション切り替え・終了時）。変更がなければ何もしない。</summary>
+    public void FlushMemo()
+    {
+        if (!_memoDirty)
+            return;
+        _memoDirty = false;
+        _meta.Update(Key, (m, at) => m.WithMemo(MemoText, at));
     }
 
     /// <summary>実行中ツールの経過秒は時間とともに変わるので、定期的に呼ぶ。</summary>

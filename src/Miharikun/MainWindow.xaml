@@ -3,12 +3,27 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:vm="clr-namespace:Miharikun.ViewModels"
+                 xmlns:b="clr-namespace:Miharikun.Behaviors"
                  xmlns:sessions="clr-namespace:Miharikun.Core.Sessions;assembly=Miharikun.Core"
                  Title="Miharikun" Height="720" Width="1280"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <b:InverseBooleanToVisibilityConverter x:Key="InvBoolToVis" />
+
+        <!-- タイトルの鉛筆ボタン -->
+        <Style x:Key="PencilButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Appearance" Value="Transparent" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="Content" Value="✏️" />
+            <Setter Property="ToolTip" Value="名前を変える" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
         <!-- 絵文字は WPF だと単色になるので、状態は色つきの丸で示す。DataContext に State があれば使える。 -->
         <Style x:Key="StateDot" TargetType="Ellipse">
             <Setter Property="Width" Value="9" />
@@ -49,8 +64,21 @@
                         <Ellipse Style="{StaticResource StateDot}" />
                         <TextBlock Text="{Binding StateText}" FontSize="11" Margin="4,0,0,0" />
                     </StackPanel>
+                    <ui:Button DockPanel.Dock="Right" Style="{StaticResource PencilButton}"
+                               Command="{Binding Rename.BeginCommand}"
+                               Visibility="{Binding Rename.IsEditing, Converter={StaticResource InvBoolToVis}}" />
                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="8,0,0,0"
-                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               Visibility="{Binding Rename.IsEditing, Converter={StaticResource InvBoolToVis}}" />
+                    <TextBox Margin="8,0,0,0" Text="{Binding Rename.Text, UpdateSourceTrigger=PropertyChanged}"
+                             Visibility="{Binding Rename.IsEditing, Converter={StaticResource BoolToVis}}"
+                             b:TextBoxBehaviors.FocusWhenVisible="True"
+                             b:TextBoxBehaviors.LostFocusCommand="{Binding Rename.CommitCommand}">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Return" Command="{Binding Rename.CommitCommand}" />
+                            <KeyBinding Key="Escape" Command="{Binding Rename.CancelCommand}" />
+                        </TextBox.InputBindings>
+                    </TextBox>
                 </DockPanel>
                 <TextBlock Text="{Binding MetaLine}" FontSize="11" Opacity="0.7" TextWrapping="Wrap" Margin="0,3,0,0" />
                 <Border BorderThickness="3,0,0,0" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
@@ -62,6 +90,10 @@
                                    TextWrapping="Wrap" MaxHeight="36" />
                     </StackPanel>
                 </Border>
+                <TextBlock Text="{Binding SummaryLine}" Style="{StaticResource SummaryLine}"
+                           Foreground="#4FBF9A" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding MemoLine}" Style="{StaticResource SummaryLine}"
+                           Background="#4A4325" Padding="6,2" Margin="0,4,0,0" TextWrapping="Wrap" />
             </StackPanel>
         </DataTemplate>
         <Style x:Key="SectionBox" TargetType="Border">
@@ -188,7 +220,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <ui:TextBox Grid.Row="1" Margin="0,8,0,0"
+                                <ui:TextBox Grid.Row="1" Margin="0,8,0,0" AutomationProperties.AutomationId="SearchBox"
                                             PlaceholderText="🔍 プロンプト・概要・メモ・変更ファイルを検索"
                                             ClearButtonEnabled="True"
                                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
@@ -249,24 +281,51 @@
                                                         <Ellipse Style="{StaticResource StateDot}" />
                                                         <TextBlock Text="{Binding StateText}" Margin="4,0,0,0" />
                                                     </StackPanel>
+                                                    <ui:Button DockPanel.Dock="Right" Style="{StaticResource PencilButton}"
+                                                               Command="{Binding Rename.BeginCommand}"
+                                                               Visibility="{Binding Rename.IsEditing, Converter={StaticResource InvBoolToVis}}" />
                                                     <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"
-                                                               TextTrimming="CharacterEllipsis" />
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Visibility="{Binding Rename.IsEditing, Converter={StaticResource InvBoolToVis}}" />
+                                                    <TextBox FontSize="16" AutomationProperties.AutomationId="DetailRenameBox"
+                                                             Text="{Binding Rename.Text, UpdateSourceTrigger=PropertyChanged}"
+                                                             Visibility="{Binding Rename.IsEditing, Converter={StaticResource BoolToVis}}"
+                                                             b:TextBoxBehaviors.FocusWhenVisible="True"
+                                                             b:TextBoxBehaviors.LostFocusCommand="{Binding Rename.CommitCommand}">
+                                                        <TextBox.InputBindings>
+                                                            <KeyBinding Key="Return" Command="{Binding Rename.CommitCommand}" />
+                                                            <KeyBinding Key="Escape" Command="{Binding Rename.CancelCommand}" />
+                                                        </TextBox.InputBindings>
+                                                    </TextBox>
                                                 </DockPanel>
                                                 <TextBlock Text="{Binding HeaderMeta}" Style="{StaticResource Dim}" Margin="0,4,0,0"
                                                            TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
 
-                                        <!-- セッション概要（取り込み・編集は後続フェーズ） -->
+                                        <!-- セッション概要 -->
                                         <Border Style="{StaticResource SectionBox}">
                                             <StackPanel>
                                                 <TextBlock Text="セッション概要" Style="{StaticResource SectionHeading}" />
-                                                <TextBlock Text="（概要はまだありません）" Opacity="0.6" />
-                                                <WrapPanel Margin="0,8,0,0">
-                                                    <ui:Button Content="💬 最後の返事を概要に取り込む" IsEnabled="False" Margin="0,0,6,0" />
-                                                    <ui:Button Content="✏️ 編集" IsEnabled="False" Margin="0,0,6,0" />
-                                                    <ui:Button Content="↩ 1つ前に戻す" IsEnabled="False" />
-                                                </WrapPanel>
+                                                <StackPanel Visibility="{Binding IsEditingSummary, Converter={StaticResource InvBoolToVis}}">
+                                                    <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding SummaryInfo}" Style="{StaticResource Dim}" Margin="0,2,0,0" />
+                                                    <WrapPanel Margin="0,8,0,0">
+                                                        <ui:Button Content="💬 最後の返事を概要に取り込む" Command="{Binding ImportSummaryCommand}" Margin="0,0,6,4" />
+                                                        <ui:Button Content="✏️ 編集" Command="{Binding EditSummaryCommand}" Margin="0,0,6,4" />
+                                                        <ui:Button Content="↩ 1つ前に戻す" Command="{Binding RevertSummaryCommand}" Margin="0,0,0,4" />
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                                <StackPanel Visibility="{Binding IsEditingSummary, Converter={StaticResource BoolToVis}}">
+                                                    <TextBox Text="{Binding SummaryDraft, UpdateSourceTrigger=PropertyChanged}"
+                                                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" MaxHeight="220"
+                                                             VerticalScrollBarVisibility="Auto"
+                                                             b:TextBoxBehaviors.FocusWhenVisible="True" />
+                                                    <WrapPanel Margin="0,8,0,0">
+                                                        <ui:Button Content="保存" Command="{Binding SaveSummaryCommand}" Appearance="Primary" Margin="0,0,6,0" />
+                                                        <ui:Button Content="キャンセル" Command="{Binding CancelSummaryCommand}" />
+                                                    </WrapPanel>
+                                                </StackPanel>
                                             </StackPanel>
                                         </Border>
 
@@ -425,17 +484,39 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="タイムライン" Style="{StaticResource SectionHeading}" />
-                                <WrapPanel Grid.Row="1" Margin="0,0,0,6">
+
+                                <!-- メモ：入力するたびにメモリへ、フォーカスアウトでファイルへ保存 -->
+                                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                                    <TextBlock Text="メモ" Style="{StaticResource SectionHeading}" />
+                                    <ui:TextBox x:Name="MemoBox" AutomationProperties.AutomationId="MemoBox" Text="{Binding Detail.MemoText, UpdateSourceTrigger=PropertyChanged}"
+                                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" MaxHeight="160"
+                                             VerticalScrollBarVisibility="Auto"
+                                             PlaceholderText="放置した理由・続きの予定など"
+                                             b:TextBoxBehaviors.LostFocusCommand="{Binding Detail.SaveMemoCommand}">
+                                        <ui:TextBox.Style>
+                                            <Style TargetType="ui:TextBox" BasedOn="{StaticResource {x:Type ui:TextBox}}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Detail}" Value="{x:Null}">
+                                                        <Setter Property="IsEnabled" Value="False" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ui:TextBox.Style>
+                                    </ui:TextBox>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="1" Text="タイムライン" Style="{StaticResource SectionHeading}" />
+                                <WrapPanel Grid.Row="2" Margin="0,0,0,6">
                                     <CheckBox Content="入力" IsChecked="{Binding Timeline.ShowInput}" Margin="0,0,10,0" />
                                     <CheckBox Content="返事" IsChecked="{Binding Timeline.ShowResponse}" Margin="0,0,10,0" />
                                     <CheckBox Content="思考" IsChecked="{Binding Timeline.ShowThought}" Margin="0,0,10,0" />
                                     <CheckBox Content="ツール" IsChecked="{Binding Timeline.ShowTool}" Margin="0,0,10,0" />
                                     <CheckBox Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
                                 </WrapPanel>
-                                <ListBox x:Name="TimelineList" Grid.Row="2" ItemsSource="{Binding Timeline.View}"
+                                <ListBox x:Name="TimelineList" Grid.Row="3" ItemsSource="{Binding Timeline.View}"
                                          ItemTemplate="{StaticResource TimelineRow}"
                                          ItemContainerStyle="{StaticResource PlainItem}"
                                          HorizontalContentAlignment="Stretch"
