@@ -10,7 +10,7 @@ public enum TimelineKind { Input, Response, Thought, Tool, Compaction, Other }
 /// そのため Seq は開始側、EndSeq は結果側のイベント番号。
 /// </summary>
 public sealed record TimelineItem(
-    long Seq, long? EndSeq, DateTimeOffset At, TimelineKind Kind, string Text, bool IsRunning = false);
+    long Seq, long? EndSeq, DateTimeOffset At, TimelineKind Kind, string Text, bool IsRunning = false, bool HasTime = true);
 
 public static class TimelineBuilder
 {
@@ -38,15 +38,15 @@ public static class TimelineBuilder
                     break;
 
                 case AgentEventKind.PromptSubmitted:
-                    items.Add(new(e.Seq, null, e.At, TimelineKind.Input, TextOr(e.Text, "（依頼文を取得できませんでした）")));
+                    items.Add(new(e.Seq, null, e.At, TimelineKind.Input, TextOr(e.Text, "（依頼文を取得できませんでした）"), HasTime: !e.Imported));
                     break;
 
                 case AgentEventKind.AssistantMessage:
-                    items.Add(new(e.Seq, null, e.At, TimelineKind.Response, TextOr(e.Text, MissingText)));
+                    items.Add(new(e.Seq, null, e.At, TimelineKind.Response, TextOr(e.Text, MissingText), HasTime: !e.Imported));
                     break;
 
                 case AgentEventKind.AssistantThought:
-                    items.Add(new(e.Seq, null, e.At, TimelineKind.Thought, TextOr(e.Text, MissingText)));
+                    items.Add(new(e.Seq, null, e.At, TimelineKind.Thought, TextOr(e.Text, MissingText), HasTime: !e.Imported));
                     break;
 
                 case AgentEventKind.Compacted:

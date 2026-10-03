@@ -24,7 +24,8 @@ public partial class App : Application
         AppLog.Init(paths);
 
         var agent = new CursorAgent();
-        var store = new ProjectEventStore(agent, paths, folder, log: AppLog.Write);
+        var store = new ProjectEventStore(agent, paths, folder, log: AppLog.Write,
+            importer: new CursorTranscriptImporter(HookInstaller.ResolveCursorDir(), AppLog.Write));
         _monitor = new SessionMonitor(store, paths.EventsDir(agent.Id));
         var meta = new SessionMetaService(new MetaStore(paths, agent.Id, AppLog.Write), log: AppLog.Write);
         _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, new GitClient(folder));

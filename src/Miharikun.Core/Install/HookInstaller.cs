@@ -64,15 +64,22 @@ public sealed class HookInstaller
     /// </summary>
     public static HookInstaller CreateDefault(AppPaths paths, string appDirectory)
     {
-        var cursorDir = Environment.GetEnvironmentVariable(CursorDirEnvVar);
-        if (string.IsNullOrWhiteSpace(cursorDir))
-            cursorDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cursor");
+        var cursorDir = ResolveCursorDir();
 
         var bundled = Path.Combine(appDirectory, HookExeName);
         return new HookInstaller(
             Path.Combine(cursorDir, "hooks.json"),
             Path.Combine(paths.Root, "bin", HookExeName),
             File.Exists(bundled) ? bundled : null);
+    }
+
+    /// <summary>Cursor の設定フォルダ。既定は %USERPROFILE%.cursor（MIHARIKUN_CURSOR_DIR で上書き可）。</summary>
+    public static string ResolveCursorDir()
+    {
+        var cursorDir = Environment.GetEnvironmentVariable(CursorDirEnvVar);
+        return string.IsNullOrWhiteSpace(cursorDir)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cursor")
+            : cursorDir;
     }
 
     public string HooksJsonPath => _hooksJsonPath;

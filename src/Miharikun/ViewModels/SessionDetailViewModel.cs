@@ -114,7 +114,10 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         State = s.State;
         StateText = SessionText.StateName(s.State);
 
-        var meta = new List<string> { ShortId(s.Key.SessionId), "開始 " + SessionText.Clock(s.StartedAt, now) };
+        // 導入前のセッション（transcript から取り込み）は、時刻・ターン・ツール・git の情報を持たない。0 や ✓ を出さずに「—」にする。
+        var imported = s.State == SessionState.Imported;
+        var meta = new List<string> { ShortId(s.Key.SessionId) };
+        if (!imported) meta.Add("開始 " + SessionText.Clock(s.StartedAt, now));
         if (SessionText.BranchText(s) is { } branch) meta.Add("ブランチ " + branch);
         if (SessionText.ModelText(s) is { } model) meta.Add("モデル " + model);
         HeaderMeta = string.Join("・", meta);
@@ -122,7 +125,13 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         RebuildGitParts();
 
         var transcript = TranscriptSize(s.TranscriptPath);
-        Stats =
+        Stats = imported
+        ?
+        [
+            new("依頼数", $"{s.PromptCount}件"),
+            new("transcript サイズ", transcript),
+        ]
+        :
         [
             new("ターン / ツール呼び出し", $"{s.TurnCount} / {s.ToolCallCount}回"),
             new("圧縮", SessionText.CompactionText(s)),
@@ -131,8 +140,8 @@ public sealed partial class SessionDetailViewModel : ObservableObject
             new("transcript サイズ", transcript),
         ];
 
-        ChangedFilesText = s.ChangedFiles.Count == 0 ? "なし" : $"{s.ChangedFiles.Count}件";
-        TestRunsText = SessionText.TestRunsText(s);
+        ChangedFilesText = imported ? "—" : s.ChangedFiles.Count == 0 ? "なし" : $"{s.ChangedFiles.Count}件";
+        TestRunsText = imported ? "—" : SessionText.TestRunsText(s);
         TestRuns = s.TestRuns.Select(t => new TestRunRow(
             t.Command,
             t.Succeeded switch { true => "成功", false => $"失敗（exit {t.ExitCode}）", null => "成否不明" },
@@ -141,7 +150,7 @@ public sealed partial class SessionDetailViewModel : ObservableObject
             t.Succeeded == true)).ToList();
 
         Turns = s.Turns.Select(t => new TurnRow(
-            $"{t.Number}. {SessionText.Clock(t.StartedAt, now)} {SessionText.TurnStatusLabel(t.Status)}",
+            imported ? $"{t.Number}." : $"{t.Number}. {SessionText.Clock(t.StartedAt, now)} {SessionText.TurnStatusLabel(t.Status)}",
             FirstLine(t.Prompt))).ToList();
 
         RefreshMeta(now);
@@ -172,6 +181,16 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     {
         var s = _summary;
         var dirty = _uncommitted is null ? null : new HashSet<string>(_uncommitted, StringComparer.OrdinalIgnoreCase);
+
+        if (s.State == SessionState.Imported)
+        {
+            Checks =
+            [
+                new("—", "ターン終了・裏の作業・コミット済みは、導入前のセッションなので不明", "na"),
+            ];
+            ChangedFiles = [];
+            return;
+        }
 
         Checks =
         [

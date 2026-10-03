@@ -143,4 +143,17 @@ public sealed class TimelineTests
         Assert.Null(SummaryJump.Tool(empty));
         Assert.Null(SummaryJump.Response(empty));
     }
+
+    [Fact]
+    public void Imported_events_have_no_time()
+    {
+        var items = TimelineBuilder.Build(
+        [
+            new AgentEvent(Key, 1, T0, AgentEventKind.PromptSubmitted, Text: "依頼", Imported: true),
+            new AgentEvent(Key, 2, T0, AgentEventKind.AssistantMessage, Text: "返事", Imported: true),
+        ]);
+
+        Assert.All(items, i => Assert.False(i.HasTime));
+        Assert.True(Build(E("beforeSubmitPrompt", 0, "\"prompt\":\"a\""))[0].HasTime);
+    }
 }

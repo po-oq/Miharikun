@@ -147,15 +147,16 @@ public static class SessionAnalyzer
 
         var last = events[^1];
         var closed = last.Kind == AgentEventKind.SessionEnded;
+        var imported = events.All(e => e.Imported);   // transcript だけから作った過去セッション
         var startedAt = sessionStartAt ?? events[0].At;
 
-        if (turns.Count > 0 && turns[^1].Status == TurnStatus.Running && closed)
+        if (turns.Count > 0 && turns[^1].Status == TurnStatus.Running && (closed || imported))
             CloseOpenTurn(turns, TurnStatus.Unknown);
 
         return new SessionSummary(
             key,
-            closed ? SessionState.Closed : turnState,
-            turnState == SessionState.Running,
+            imported ? SessionState.Imported : closed ? SessionState.Closed : turnState,
+            !imported && turnState == SessionState.Running,
             autoTitle,
             prompts, stops,
             startedAt, last.At,

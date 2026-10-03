@@ -298,4 +298,26 @@ public sealed class SessionAnalyzerTests
     {
         Assert.Throws<ArgumentException>(() => SessionAnalyzer.Analyze(Key, []));
     }
+
+    [Fact]
+    public void Events_from_a_transcript_make_an_imported_session_that_is_not_running()
+    {
+        var at = T0;
+        AgentEvent Ev(long seq, AgentEventKind kind, string text) => new(Key, seq, at, kind, Text: text, Imported: true);
+
+        var s = SessionAnalyzer.Analyze(Key,
+        [
+            Ev(1, AgentEventKind.PromptSubmitted, "依頼"),
+            Ev(2, AgentEventKind.AssistantMessage, "返事"),
+            Ev(3, AgentEventKind.PromptSubmitted, "もう一つ"),
+        ]);
+
+        Assert.Equal(SessionState.Imported, s.State);
+        Assert.False(s.TurnInProgress);
+        Assert.Equal("依頼", s.AutoTitle);
+        Assert.Equal(2, s.PromptCount);
+        Assert.Equal(at, s.LastActivityAt);
+        Assert.DoesNotContain(s.Turns, t => t.Status == TurnStatus.Running);
+        Assert.Equal("返事", s.LastResponse!.Text);
+    }
 }

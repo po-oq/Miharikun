@@ -31,7 +31,7 @@ public sealed partial class TimelineItemViewModel : ObservableObject
     public TimelineItemViewModel(TimelineItem item, DateTimeOffset now)
     {
         Item = item;
-        TimeText = SessionText.Clock(item.At, now);
+        TimeText = item.HasTime ? SessionText.Clock(item.At, now) : "";
         (PreviewText, IsTruncated) = TextPreview.Make(item.Text);
         ToggleExpandedCommand = new RelayCommand(() => { if (IsTruncated) IsExpanded = !IsExpanded; });
     }

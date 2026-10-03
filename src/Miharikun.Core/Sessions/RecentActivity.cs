@@ -16,7 +16,7 @@ public static class RecentActivity
     public static IReadOnlyList<RecentInput> Inputs(IEnumerable<SessionSummary> sessions, int count = InputCount) =>
         sessions
             .SelectMany(s => s.Turns
-                .Where(t => !string.IsNullOrWhiteSpace(t.Prompt))
+                .Where(t => !string.IsNullOrWhiteSpace(t.Prompt) && s.State != SessionState.Imported)
                 .Select(t => new RecentInput(s.Key, t.StartedAt, t.Prompt!)))
             .OrderByDescending(i => i.At)
             .Take(count)

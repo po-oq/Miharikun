@@ -26,34 +26,83 @@ public sealed class ProjectEventStore
     private readonly AppPaths _paths;
     private readonly AnalyzerSettings _settings;
     private readonly Action<string>? _log;
+    private readonly CursorTranscriptImporter? _importer;
     private readonly Dictionary<string, FileState> _files = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>transcript から取り込んだ導入前のセッション（hook のイベントがあるものは持たない）。</summary>
+    private readonly Dictionary<string, (ImportedSession Session, SessionSummary Summary)> _imported = new(StringComparer.OrdinalIgnoreCase);
+    private bool _importScanned;
 
     public string ProjectFolder { get; }
 
-    public ProjectEventStore(IAgent agent, AppPaths paths, string projectPath, AnalyzerSettings? settings = null, Action<string>? log = null)
+    public ProjectEventStore(IAgent agent, AppPaths paths, string projectPath, AnalyzerSettings? settings = null, Action<string>? log = null,
+        CursorTranscriptImporter? importer = null)
     {
         _agent = agent;
         _paths = paths;
         ProjectFolder = projectPath;
         _settings = settings ?? new AnalyzerSettings();
         _log = log;
+        _importer = importer;
     }
 
     public IEnumerable<SessionKey> Sessions =>
-        _files.Values.Where(f => f.Matched && f.Events.Count > 0).Select(f => new SessionKey(_agent.Id, f.SessionId));
+        _files.Values.Where(f => f.Matched && f.Events.Count > 0).Select(f => new SessionKey(_agent.Id, f.SessionId))
+            .Concat(_imported.Values.Select(i => i.Session.Key));
 
-    public IReadOnlyList<AgentEvent> GetEvents(SessionKey key) => Find(key)?.Events ?? [];
+    public IReadOnlyList<AgentEvent> GetEvents(SessionKey key) =>
+        Find(key)?.Events ?? (FindImported(key) is { } imported ? imported.Session.Events : []);
 
     public SessionSummary? GetSummary(SessionKey key)
     {
         var state = Find(key);
-        if (state is null || state.Events.Count == 0)
-            return null;
-        return state.Summary ??= SessionAnalyzer.Analyze(key, state.Events, _settings);
+        if (state is not null && state.Events.Count > 0)
+            return state.Summary ??= SessionAnalyzer.Analyze(key, state.Events, _settings);
+        return FindImported(key)?.Summary;
     }
 
-    /// <summary>新しく追記された行を取り込み、内容が変わったセッションを返す。</summary>
+    /// <summary>
+    /// 新しく追記された行を取り込み、内容が変わったセッションを返す。
+    /// 導入前の過去セッション（transcript）は最初の1回だけ読み込む。あとで hook のイベントが現れたセッションは、そちらに切り替える。
+    /// </summary>
     public IReadOnlyCollection<SessionKey> Refresh()
+    {
+        var changed = new List<SessionKey>(RefreshHookEvents());
+        ImportTranscripts(changed);
+        return changed;
+    }
+
+    private void ImportTranscripts(List<SessionKey> changed)
+    {
+        if (_importer is null)
+            return;
+
+        // hook のイベントがあるセッション（別プロジェクトのものも含む）は、transcript から取り込まない。
+        foreach (var id in _imported.Keys.ToList())
+        {
+            if (_files.Values.Any(f => f.SessionId.Equals(id, StringComparison.OrdinalIgnoreCase)))
+            {
+                var key = _imported[id].Session.Key;
+                _imported.Remove(id);
+                if (!changed.Contains(key))
+                    changed.Add(key);
+            }
+        }
+
+        if (_importScanned)
+            return;
+        _importScanned = true;
+
+        foreach (var session in _importer.Scan(ProjectFolder, id => File.Exists(_paths.EventFile(_agent.Id, id))))
+        {
+            if (_files.Values.Any(f => f.SessionId == session.Key.SessionId))
+                continue;
+            var summary = SessionAnalyzer.Analyze(session.Key, session.Events, _settings);
+            _imported[session.Key.SessionId] = (session, summary);
+            changed.Add(session.Key);
+        }
+    }
+
+    private List<SessionKey> RefreshHookEvents()
     {
         var changed = new List<SessionKey>();
         var dir = _paths.EventsDir(_agent.Id);
@@ -159,6 +208,9 @@ public sealed class ProjectEventStore
 
     private bool MatchesProject(RawEventRecord raw) =>
         ProjectPath.Matches(ProjectFolder, _agent.GetWorkspaceRoots(raw));
+
+    private (ImportedSession Session, SessionSummary Summary)? FindImported(SessionKey key) =>
+        key.AgentId == _agent.Id && _imported.TryGetValue(key.SessionId, out var imported) ? imported : null;
 
     private FileState? Find(SessionKey key) =>
         key.AgentId == _agent.Id

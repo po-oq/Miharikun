@@ -309,6 +309,11 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - hook のイベントが存在する conversation_id はスキップ（重複防止）
 - 状態は Imported、時刻はファイルの更新日時、タイムラインは入力と返事のみ（時刻なし）
 - 確認できなかった場合は MVP から外す
+- **実装（Phase 9）**：Step 0 で前提を確認できたので実装した（14.1 参照）。`CursorTranscriptImporter`（Core）が transcript を共通イベントにし、`ProjectEventStore` が起動後の最初の `Refresh` で1回だけ取り込む。
+  - プロジェクトとの対応は slug（英数字以外の連なりを `-` にして、大文字小文字を無視して比較。パスのスラッシュ形式も可）。記号・日本語を含むパスの slug 規則は未確認。
+  - 取り込むのは入力（`<user_query>` の中身）と、assistant の本文だけ。ツール呼び出しは対象外。時刻はすべてファイルの更新日時なので、タイムラインでは時刻を出さない。
+  - 「最近の入力」には出さない（時刻が実際のものではないため）。「最近閉じたセッション」にも出ない（`sessionEnd` がない）。
+  - 取り込んだ後に同じ conversation_id の hook イベントが現れたら（導入後に再開したなど）、hook のイベントに切り替える。化けて記録済みの本文の補正は未実装。
 
 ## 12. 画面要件（ダッシュボードタブ）
 
@@ -372,26 +377,27 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - 例外で落ちないこと：壊れた行はスキップしてログに残す
 - イベントファイルの自動削除は MVP ではしない
 
-## 14. Step 0：実機検証（実装前に実施）
+## 14. Step 0：実機検証
 
 ダンプ用 hook（`step0-dump-hook/`）を入れて普段どおり作業し、以下を確認して本書に追記する。
+本体の hook を実際の Cursor に入れた PoC でも確認を進めており、結果は 14.1 に書く（`[x]` は確認済み、`[ ]` は未確認）。
 
-- [ ] Windows で hooks.json の command（フルパス・スペース含むパス）が実行されるか。`~/.cursor` が `%USERPROFILE%\.cursor` か
+- [x] Windows で hooks.json の command が実行されるか。`~/.cursor` が `%USERPROFILE%\.cursor` か（フルパス・`/` 区切り・スペースなしで確認。**スペースを含むパスは未確認**）
 - [ ] `sessionEnd` の発火条件（タブを閉じる／別チャットに切り替える／ウィンドウを閉じる）と reason の値
-- [ ] 閉じたチャットを履歴から再開したとき `sessionStart` が再度来るか
-- [ ] transcript のファイル名 UUID と conversation_id が一致するか、Windows での slug の付け方
-- [ ] `transcript_path` が既定で null にならないか
-- [ ] モデルが Auto のときの `model` / `model_id` の値
-- [x] Ask モードで hook が発火するか（14.1 参照）
-- [ ] 承認系 hook を exit 1 で抜けたとき：アクションが通常どおり進むか、Cursor の確認ダイアログが維持されるか、Hooks 出力チャンネルのエラー表示が許容範囲か
-- [ ] `postToolUse`（Shell）の `tool_output` に `exitCode` が入るか、`tool_use_id` が pre/post で一致するか
+- [ ] 閉じたチャットを履歴から再開したとき `sessionStart` が再度来るか（来ていない可能性が高い。**要再確認**）
+- [x] transcript のファイル名 UUID と conversation_id が一致するか、Windows での slug の付け方
+- [x] `transcript_path` が既定で null にならないか（**null になることがある**。`sessionStart` と最初の `beforeSubmitPrompt`）
+- [ ] モデルが Auto のときの `model` / `model_id` の値（**未確認**）
+- [x] Ask モードで hook が発火するか
+- [ ] 承認系 hook を exit 1 で抜けたとき：アクションが通常どおり進むか（Read / Grep / Glob は進んだ。**Shell の確認ダイアログは未確認**）、Cursor の確認ダイアログが維持されるか、Hooks 出力チャンネルのエラー表示が許容範囲か
+- [ ] `postToolUse`（Shell）の `tool_output` に `exitCode` が入るか（**未確認**）。`tool_use_id` が pre/post で一致するかは確認済み
 
 ### 14.1 実機で分かったこと（Cursor 3.23.12 / Windows、PoC 中の実測）
 
 確認項目の一部が、PoC（本体の hook を実際の Cursor に入れて動かした結果）で分かった。残りは未確認のまま。
 
 - [x] **hooks.json の command は Windows で実行される**。`C:/Users/…/Miharikun.Hook.exe --agent cursor`（`/` 区切り・スペースなし）で動作。`~/.cursor` は `%USERPROFILE%\.cursor`。スペースを含むパスは未確認。
-- [x] **transcript の UUID = conversation_id**。`%USERPROFILE%\.cursor\projects\<slug>\agent-transcripts\<uuid>\<uuid>.jsonl`（`subagents\` あり）。**slug はパスのドライブ文字を小文字にし、区切りを `-` にしたもの**（`C:\zDev\repo\Miharikun` → `c-zDev-repo-Miharikun`）。→ Phase 9 の前提は満たす。
+- [x] **transcript の UUID = conversation_id**。`%USERPROFILE%\.cursor\projects\<slug>\agent-transcripts\<uuid>\<uuid>.jsonl`（`subagents\` あり）。**slug は、パスの英数字以外の連なり（`:\` や `\`）を 1 つの `-` にしたもの**（`C:\zDev\repo\Miharikun` → `c-zDev-repo-Miharikun`）。ドライブ文字の大小は一定ではない（同じ `projects\` に `C-Users-…-Temp-…` もある）ので、比較では大文字小文字を無視する。記号・日本語を含むパスの規則は未確認。→ Phase 9 の前提は満たす。
   - 形式：1行1メッセージ `{"role":"user|assistant","message":{"content":[{"type":"text","text":…}|{"type":"tool_use",…}]}}`。user の本文は `<timestamp>…</timestamp><user_query>…</user_query>` で包まれる。**行ごとの時刻はない**（user メッセージ内の `<timestamp>` のみ）。
 - [x] **`transcript_path` は常には入らない**。`sessionStart` と最初の `beforeSubmitPrompt` では空で、ツール系・`stop` 以降で入る（`c:\Users\…\agent-transcripts\<uuid>\<uuid>.jsonl`）。
 - [x] **モデル**：Agent の `beforeSubmitPrompt` / `stop` は `model:"grok-4.7-high"`、`model_id:"grok-4.7"`、`model_params:[{id,value},…]`（context / reasoning_effort / fast）。**ツール系など多くのイベントは `model:"default"`**（`model_id` なし）→ 表示では `default` を無視する。`sessionStart` は別の値（`cursor-grok-4.6-medium`）。
@@ -450,8 +456,11 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - 状況：導入／削除・バックアップ・マージ・起動時ダイアログ・`scripts/publish.ps1` は実装し、単一ファイルの App と導入の流れは実機で確認済み。
   **未完了：Hook の NativeAOT 発行**（C++ ビルドツール＋ Windows SDK が必要。この開発環境には無く未検証）。これが通って zip が作れたら `[x]` にする。
 
-## [ ] Phase 9: 過去セッション取り込み（Step 0 の結果次第）
+## [x] Phase 9: 過去セッション取り込み（Step 0 の結果次第）
 - 11章。条件を満たさない場合はスキップして理由を本書に追記
+- 完了条件：hook を入れる前のセッションが「⚪ 閉じた（導入前）」として一覧に出て、詳細・検索・リネーム・メモが使える。hook のイベントがあるセッションは重複しない
+- 状況：実装し、実際の `.cursor` の transcript で画面確認済み（仕様と制限は 11章の「実装」）。
+  導入前のセッションの詳細は、取れない情報（ターン・ツール・継続時間・完了チェック・コミット・変更ファイル・テスト）を「—」で出し、依頼数と transcript サイズだけを見せる。
 
 ## [x] Phase 10: 最近の入力・最近閉じたセッション、タブのプレースホルダー
 - 右ペイン下部2リスト（クリックでカード選択）、ドキュメント／メモタブの「MVP 対象外」表示

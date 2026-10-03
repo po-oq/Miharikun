@@ -83,4 +83,15 @@ public sealed class RecentActivityTests
         Assert.Equal(T0.AddSeconds(20), s.LastSessionEndAt);
         Assert.Null(Session("t", Prompt("p", 1)).LastSessionEndAt);
     }
+
+    [Fact]
+    public void Inputs_skip_imported_sessions_because_they_have_no_real_time()
+    {
+        var key = new SessionKey("cursor", "imp");
+        var imported = SessionAnalyzer.Analyze(key,
+            [new AgentEvent(key, 1, T0, AgentEventKind.PromptSubmitted, Text: "古い依頼", Imported: true)]);
+        var live = Session("live", Prompt("新しい依頼", 5));
+
+        Assert.Equal(["新しい依頼"], RecentActivity.Inputs([imported, live]).Select(i => i.Text));
+    }
 }
