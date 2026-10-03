@@ -382,7 +382,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - [ ] transcript のファイル名 UUID と conversation_id が一致するか、Windows での slug の付け方
 - [ ] `transcript_path` が既定で null にならないか
 - [ ] モデルが Auto のときの `model` / `model_id` の値
-- [ ] Ask モードで hook が発火するか
+- [x] Ask モードで hook が発火するか（14.1 参照）
 - [ ] 承認系 hook を exit 1 で抜けたとき：アクションが通常どおり進むか、Cursor の確認ダイアログが維持されるか、Hooks 出力チャンネルのエラー表示が許容範囲か
 - [ ] `postToolUse`（Shell）の `tool_output` に `exitCode` が入るか、`tool_use_id` が pre/post で一致するか
 
@@ -406,8 +406,12 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
     一時ファイルは BOM なしの UTF-8 だが、Windows PowerShell 5.1 の `Get-Content` は `-Encoding` なしだと既定のコードページ（日本語環境では CP932）で読む。`pwsh`（PowerShell 7）が PATH にあればそちらが使われ、起きないはず（未確認）。
   - **対応（実装済み）**：Hook は、入力が BOM 付きで非 ASCII を含むとき（または JSON として読めないとき）、元の一時ファイル `cursor-hook-payload-*.json`（hook の実行中だけ存在）を探して正しい内容を読み直す。取り違えないよう、「受け取った文字列 = その一時ファイルを CP932 で読んだもの」と一致する候補だけを採用し、一致を確かめられないときは、イベント名・会話 ID・生成 ID が一意に合うものだけを採用する。見つからなければ従来どおり、イベント名・セッション ID などの ASCII の項目だけを救出して記録する（`_salvaged: true`、元のバイト列は `logs\bad-input\`）。
   - 回避策（コード変更なし）：PowerShell 7 を入れる、または Windows の「ベータ: ワールドワイド言語サポートで Unicode UTF-8 を使用」を有効にする。
-  - 修正前に記録されたイベント（化けた本文・本文なしのイベント）は元に戻らない。transcript（正しい日本語で保存されている）から補正する案は未実装。- [ ] `sessionEnd` の発火条件と reason ／ 履歴からの再開で `sessionStart` が再度来るか ／ Ask モード ／ Shell の `exitCode` と失敗時のイベント ／ スペースを含むパス：**未確認**
+  - 修正前に記録されたイベント（化けた本文・本文なしのイベント）は元に戻らない。transcript（正しい日本語で保存されている）から補正する案は未実装。
+- [x] **Ask モードでも hook は発火する**。`beforeSubmitPrompt` の `composer_mode` が Agent では `"agent"`、Ask では `"chat"`（`model` は `cursor-grok-4.6-medium`）。
+- [ ] **履歴から再開したときの `sessionStart`**：利用者の操作ではタイムラインに出たが、イベントファイルには再開後の 2 回目の `sessionStart` は記録されていない（1 会話につき 1 行のみ）。再開で再度は来ない可能性が高い。**要再確認**。
+- [ ] `sessionEnd` の発火条件と reason ／ Shell の `exitCode` と失敗時のイベント ／ Shell の確認ダイアログへの影響 ／ スペースを含むパス ／ モデルが Auto のときの値：**未確認**
 - 補足：全イベントの payload に `user_email` が入っている（イベントファイルにそのまま保存される）。
+
 ## 15. 実装フェーズ
 
 フェーズ完了時は見出しの `[ ]` を `[x]` に更新すること。
