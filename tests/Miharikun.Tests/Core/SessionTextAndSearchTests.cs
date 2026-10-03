@@ -28,7 +28,7 @@ public sealed class SessionTextAndSearchTests
     {
         Assert.Equal("🔵 実行中", SessionText.StateLabel(SessionState.Running));
         Assert.Equal("🟢 ボスの番", SessionText.StateLabel(SessionState.YourTurn));
-        Assert.Equal("🟡 中断", SessionText.StateLabel(SessionState.Aborted));
+        Assert.Equal("🟡 停止", SessionText.StateLabel(SessionState.Aborted));
         Assert.Equal("🔴 エラー", SessionText.StateLabel(SessionState.Error));
         Assert.Equal("⚪ 閉じた", SessionText.StateLabel(SessionState.Closed));
         Assert.Equal("⚪ 閉じた（導入前）", SessionText.StateLabel(SessionState.Imported));

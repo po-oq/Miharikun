@@ -1,3 +1,5 @@
+using Miharikun.Core.Meta;
+
 namespace Miharikun.Core.Sessions;
 
 /// <summary>カードや詳細に出す文言。画面に依存しないのでテストできる。</summary>
@@ -18,11 +20,20 @@ public static class SessionText
     {
         SessionState.Running => "実行中",
         SessionState.YourTurn => "ボスの番",
-        SessionState.Aborted => "中断",
+        SessionState.Aborted => "停止",
         SessionState.Error => "エラー",
         SessionState.Closed => "閉じた",
         SessionState.Imported => "閉じた（導入前）",
         _ => state.ToString(),
+    };
+
+    /// <summary>ユーザー設定のステータスの名前。null は未設定（絞り込みタブの「未設定」）。</summary>
+    public static string StatusName(SessionStatus? status) => status switch
+    {
+        SessionStatus.Working => "作業中",
+        SessionStatus.Paused => "中断",
+        SessionStatus.Done => "完了",
+        _ => "未設定",
     };
 
     public static string RelativeTime(DateTimeOffset at, DateTimeOffset now)
@@ -96,7 +107,7 @@ public static class SessionText
     public static string TurnStatusLabel(TurnStatus status) => status switch
     {
         TurnStatus.Completed => "済み",
-        TurnStatus.Aborted => "中断",
+        TurnStatus.Aborted => "停止",
         TurnStatus.Error => "エラー",
         TurnStatus.Running => "実行中",
         _ => "結果不明",

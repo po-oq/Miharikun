@@ -36,7 +36,7 @@ public sealed class SessionDetailTextTests
 
     [Theory]
     [InlineData(TurnStatus.Completed, "済み")]
-    [InlineData(TurnStatus.Aborted, "中断")]
+    [InlineData(TurnStatus.Aborted, "停止")]
     [InlineData(TurnStatus.Error, "エラー")]
     [InlineData(TurnStatus.Running, "実行中")]
     [InlineData(TurnStatus.Unknown, "結果不明")]

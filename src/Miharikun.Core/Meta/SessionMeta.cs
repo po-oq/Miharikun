@@ -23,6 +23,10 @@ public sealed record SessionMeta
     public SummaryEntry? PreviousSummary { get; init; }
 
     public string Memo { get; init; } = "";
+
+    /// <summary>ユーザーが設定するステータス。null は未設定。自動では変わらない。</summary>
+    [JsonConverter(typeof(SessionStatusJsonConverter))]
+    public SessionStatus? Status { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 
     [JsonIgnore]
@@ -62,6 +66,11 @@ public sealed record SessionMeta
         PreviousSummary is null ? this : this with { Summary = PreviousSummary, PreviousSummary = Summary, UpdatedAt = now };
 
     public SessionMeta WithMemo(string? memo, DateTimeOffset now) => this with { Memo = memo ?? "", UpdatedAt = now };
+
+    public SessionMeta WithStatus(SessionStatus? status, DateTimeOffset now) => this with { Status = status, UpdatedAt = now };
+
+    /// <summary>ボタン操作用。別の値なら切り替え、選択中の値をもう一度押したら未設定に戻す。</summary>
+    public SessionMeta ToggleStatus(SessionStatus status, DateTimeOffset now) => WithStatus(Status == status ? null : status, now);
 
     /// <summary>全文検索の対象にする文字列（手動タイトル・概要・メモ）。</summary>
     [JsonIgnore]
