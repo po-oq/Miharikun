@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using Miharikun.Core.Agents;
 using Miharikun.Core.Git;
+using Miharikun.Core.Install;
 using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
 using Miharikun.Core.Storage;
@@ -28,7 +29,11 @@ public partial class App : Application
         var meta = new SessionMetaService(new MetaStore(paths, agent.Id, AppLog.Write), log: AppLog.Write);
         _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, new GitClient(folder));
 
-        new MainWindow(_viewModel).Show();
+        // 同梱の Hook exe は Miharikun.exe と同じフォルダ（単一ファイル発行でも実行ファイルの場所を使う）
+        var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+        var hookSetup = new HookSetup(HookInstaller.CreateDefault(paths, appDir));
+
+        new MainWindow(_viewModel, hookSetup).Show();
         _monitor.Start();
         _viewModel.RefreshGit();
     }

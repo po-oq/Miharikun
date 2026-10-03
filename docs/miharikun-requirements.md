@@ -421,6 +421,8 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 ## [ ] Phase 8: hook 導入機能と配布
 - 8章の導入／削除、バックアップ、マージ。publish 設定と zip 作成スクリプト
 - 完了条件：まっさらな環境で zip 展開 → 起動 → 導入 → Cursor で会話するとダッシュボードに出る
+- 状況：導入／削除・バックアップ・マージ・起動時ダイアログ・`scripts/publish.ps1` は実装し、単一ファイルの App と導入の流れは実機で確認済み。
+  **未完了：Hook の NativeAOT 発行**（C++ ビルドツール＋ Windows SDK が必要。この開発環境には無く未検証）。これが通って zip が作れたら `[x]` にする。
 
 ## [ ] Phase 9: 過去セッション取り込み（Step 0 の結果次第）
 - 11章。条件を満たさない場合はスキップして理由を本書に追記

@@ -183,7 +183,18 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="{Binding ProjectFolder}" Opacity="0.7" Margin="2,0,0,8" />
+                    <DockPanel Grid.Row="0" Margin="2,0,0,8">
+                        <ui:Button DockPanel.Dock="Right" Content="⚙" ToolTip="Hook の導入・削除" Appearance="Transparent"
+                                   Padding="8,2" Click="OnMenuButtonClick" AutomationProperties.AutomationId="MenuButton">
+                            <ui:Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Hook を導入 / 再導入" Click="OnInstallHookClick" />
+                                    <MenuItem Header="Hook を削除" Click="OnUninstallHookClick" />
+                                </ContextMenu>
+                            </ui:Button.ContextMenu>
+                        </ui:Button>
+                        <TextBlock Text="{Binding ProjectFolder}" Opacity="0.7" VerticalAlignment="Center" />
+                    </DockPanel>
 
                     <Grid Grid.Row="1">
                         <Grid.ColumnDefinitions>
