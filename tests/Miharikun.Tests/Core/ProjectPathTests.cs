@@ -11,6 +11,9 @@ public sealed class ProjectPathTests
     [InlineData(@"C:\work\proj", @"C:\work\proj\")]         // 末尾区切り（セッション側）
     [InlineData(@"C:\work\proj", @"C:/work/proj")]          // スラッシュ区切り
     [InlineData(@"C:\work\x\..\proj", @"C:\work\proj")]     // 正規化
+    [InlineData(@"C:\work\proj", "/c:/work/proj")]          // 実機：Cursor は workspace_roots を /c:/... の形で渡す
+    [InlineData(@"c:\zDev\repo\Miharikun", "/c:/zDev/repo/Miharikun")]
+    [InlineData(@"C:\work\proj", @"\C:\work\proj")]
     public void Matches(string project, string root) =>
         Assert.True(ProjectPath.Matches(project, [root]));
 

@@ -91,14 +91,7 @@ public sealed partial class GitClient
 
     public static string? NormalizePath(string path)
     {
-        try
-        {
-            return Path.GetFullPath(path).TrimEnd('\\', '/');
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return null;
-        }
+        return Projects.ProjectPath.Normalize(path);
     }
 
     private string? FindRepoRoot()
