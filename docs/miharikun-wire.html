@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Miharikun 確定版ワイヤー</title>
+<style>
+body{font:13px/1.5 "Yu Gothic UI","Meiryo",sans-serif;margin:0;background:#f3f4f6;color:#222}
+header{background:#fff;border-bottom:1px solid #ccc;padding:6px 10px;display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.t{border:1px solid #bbb;padding:2px 8px;background:#fafafa}.t.on{background:#dbeafe}
+.legend{background:#fffbe6;border-bottom:1px solid #e5d58a;padding:6px 10px}
+.wrap{display:grid;grid-template-columns:320px 1fr 340px;gap:8px;padding:8px}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr}}
+.box{background:#fff;border:1px solid #ccc;padding:6px 8px;margin-bottom:8px}
+.box h3{font-size:13px;background:#eee;margin:-6px -8px 6px;padding:3px 8px}
+.s{font-size:11px;padding:0 4px;border-radius:3px;color:#fff;white-space:nowrap}
+.H{background:#2563eb}.T{background:#7c3aed}.G{background:#15803d}.A{background:#555}.M{background:#ea580c}
+.src{font-size:11px;color:#666}
+.card{border:1px solid #bbb;padding:5px 7px;margin:5px 0;background:#f9fafb}
+.card.sel{background:#eff6ff;border-color:#60a5fa}
+.st{font-size:11px;padding:0 5px;border-radius:8px;border:1px solid}
+.run{color:#1d4ed8;border-color:#1d4ed8}.wait{color:#15803d;border-color:#15803d}.err{color:#b91c1c;border-color:#b91c1c}.cls{color:#777;border-color:#999}
+.sum{font-size:12px;margin:3px 0 0;padding-left:4px;border-left:3px solid #ddd}
+.memo{background:#fef9c3;border:1px solid #e5d58a;padding:2px 6px;font-size:12px;margin-top:3px}
+.meta{font-size:11px;color:#555}
+.row{display:flex;justify-content:space-between;gap:6px;border-bottom:1px dashed #e5e5e5;padding:2px 0}
+.bubble{background:#dbeafe;padding:4px 8px;margin:4px 0 4px 30px;border-radius:6px}
+.ai{background:#f3f4f6;padding:4px 8px;margin:4px 30px 4px 0;border-radius:6px}
+.ev{font-size:11px;color:#555;margin:3px 0}
+.cmp{background:#fee2e2;padding:3px 6px;font-size:12px;margin:4px 0}
+.clk{cursor:pointer}.clk:hover{background:#eff6ff}.card{cursor:pointer}
+.hl{outline:3px solid #f59e0b}
+.pend{background:#f5f5f5;border:2px dashed #999}
+.pend li{margin:3px 0}
+input[type=text],textarea{width:100%;box-sizing:border-box;font:inherit}
+button{font:inherit}
+</style></head><body>
+
+<header>
+<b>Miharikun</b> <span class="meta">C:\work\my-project（起動時のカレントで絞り込み）</span>
+<span class="t on" data-tab="dash" onclick="tab('dash')">ダッシュボード</span><span class="t" data-tab="doc" onclick="tab('doc')">ドキュメント（MVP外）</span><span class="t" data-tab="pmemo" onclick="tab('pmemo')">メモ（MVP外）</span>
+</header>
+
+<div id="p-dash">
+<div style="background:#1e293b;color:#fff;padding:6px 10px;font-size:12px">⚠ 実装者へ：これは設計用ワイヤー。取得元バッジ（H/T/G/A/M）・凡例・グレーの注記・「あとで相談」枠・サンプルデータは実装しない。仕様は miharikun-requirements.md を優先。</div>
+<div class="legend">
+<b>取得元：</b><span class="s H">H</span> Hooks
+<span class="s T">T</span> transcript（過去分・時刻なし）
+<span class="s G">G</span> hook内でgitを叩いて記録
+<span class="s A">A</span> アプリ内で保存
+<span class="s M">M</span> 人間が手入力　／ LLM・state.vscdb・トークン/コスト/レート制限は不採用
+</div>
+
+<div class="wrap">
+
+<!-- 左：一覧 -->
+<div>
+<div class="box"><h3>このプロジェクトのセッション <span class="s H">H</span></h3>
+<div class="meta">🔵実行中 1 ／ 🟢ボスの番 2 ／ 🟡中断 1 ／ 🔴エラー 0 ／ ⚪閉じた 12</div>
+<input type="text" placeholder="🔍 プロンプト・メモ・変更ファイルを全文検索">
+<div class="src">検索対象：全 beforeSubmitPrompt ＋ 手動メモ ＋ afterFileEdit のファイル名 <span class="s H">H</span><span class="s A">A</span></div>
+<div class="meta" style="margin-top:4px">☐ 実行中のみ　☐ 未コミットあり　☐ メモあり</div>
+
+<div class="card sel" id="c1" onclick="sel('c1')">
+<span class="st run">🔵 実行中</span> <b>テストタブを足して、Playwrightのテ…</b> ✏️
+<div class="meta">依頼3・最後の動き 1分前・sonnet-5-5・圧縮1回・feature/test-tab</div>
+<div class="sum">📝 テストの一覧に内容も表で表示されるように…<br>🔧 Shell: npx playwright test（実行中）<br>💬 （応答待ち）</div>
+<div class="meta" style="color:#047857">📄 概要：Playwrightのテスト項目・実行回数を出す「テスト」タブを…</div>
+<div class="memo">📌 6〜8まで。続きは明日</div>
+</div>
+
+<div class="card" id="c2" onclick="sel('c2')">
+<span class="st wait">🟢 ボスの番</span> <b>レート制限の5時間ウィンドウを…</b>
+<div class="meta">依頼8・8分前・sonnet-5-5・main・未コミット3</div>
+<div class="sum">📝 7日に切り替えて<br>🔧 Write: src/chart.ts<br>💬 切り替え完了。確認お願いします…</div>
+</div>
+
+<div class="card" id="c3" onclick="sel('c3')">
+<span class="st" style="color:#a16207;border-color:#a16207">🟡 中断</span> <b>セッション一覧のメモ表示</b>
+<div class="meta">依頼3・14時間前・停止ボタン</div>
+<div class="memo">📌 レートリミットになった</div>
+</div>
+
+<div class="card" id="c5" onclick="sel('c5')">
+<span class="st cls">⚪ 閉じた</span> <b>セッション一覧のコスト表示</b>
+<div class="meta">依頼5・3時間前・user_close</div>
+</div>
+
+<div class="card" id="c4" onclick="sel('c4')">
+<span class="st cls">⚪ 閉じた（導入前）</span> <b>ドキュメントタブ実装</b>
+<div class="meta">transcriptから復元・時刻はファイル更新日時 <span class="s T">T</span></div>
+</div>
+
+<div class="src" style="margin-top:6px">
+状態判定（最新イベントで上書き。閉じた後に入力が来たら🔵へ戻る）：🔵 beforeSubmitPrompt後にstop未着 ／ 🟢 stop=completed ／ 🟡 stop=aborted ／ 🔴 stop=error ／ ⚪ sessionEnd（user_close・window_close 等）<br>
+タイトル：1回目のプロンプト先頭＋✏️で手動リネーム <span class="s H">H</span><span class="s M">M</span><br>
+ブランチ・未コミット：hook内でgit <span class="s G">G</span>
+</div>
+</div>
+</div>
+
+<!-- 中央：詳細 -->
+<div>
+<div class="box"><h3>セッション詳細</h3>
+<b>テストタブを足して、Playwrightのテ…</b> ✏️ <span class="st run">🔵 実行中</span>
+<div class="meta">881494c7・開始 10/02 11:18・ブランチ feature/test-tab（開始時と同じ）・モデル claude-sonnet-5-5（thinking on）</div>
+<div class="src">conversation_id / sessionStart受信時刻 / model・model_params <span class="s H">H</span>　ブランチ <span class="s G">G</span></div>
+</div>
+
+<div class="box"><h3>セッション概要 <span class="s H">H</span><span class="s A">A</span></h3>
+<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:4px 6px">Playwrightのテスト項目・実行回数を出す「テスト」タブを開発グループに追加し、一覧を表＋クリックでコード表示にした</div>
+<div class="meta">10/02 12:05 取り込み（ターン4の返事）</div>
+<button>💬 最後の返事を概要に取り込む</button> <button>✏️ 編集</button> <button>↩ 1つ前に戻す</button>
+<div class="src">チャットで「このセッションを1行でまとめて」と頼む → ボタンで最後の afterAgentResponse を概要として保存（上書き＋直前1件を保持）</div>
+</div>
+
+<div class="box"><h3>いまの状況（3行サマリー）<span class="s H">H</span></h3>
+<div class="src">行クリック → タイムラインの該当イベントへスクロール＆ハイライト</div>
+<div class="row clk" onclick="focusEv('e7','入力')"><span>📝 最後に頼んだこと</span><span>テストの一覧に内容も表で表示されるように…</span></div>
+<div class="row clk" onclick="focusEv('e9','ツール')"><span>🔧 最後にやってたこと</span><span>Shell: npx playwright test（実行中・42秒）</span></div>
+<div class="row clk" onclick="focusEv('e8','返事')"><span>💬 最後の返事</span><span>表にして、クリックで右にコードを出すようにしました…</span></div>
+<div class="src">最後の beforeSubmitPrompt ／ preToolUseのみ来てpostToolUse(Failure)未着＝実行中（stopで強制クローズ）／ 最後の afterAgentResponse 先頭</div>
+</div>
+
+<div class="box"><h3>完了チェック <span class="s H">H</span><span class="s G">G</span></h3>
+<div>✓ ターン終了　✓ 裏の作業なし（サブエージェント 0）　✗ 未コミットあり（3ファイル）</div>
+<div class="src">最後がstop ／ subagentStart−subagentStop ／ afterFileEditのファイル × stop時のgit status（※シェル経由の変更は対象外）</div>
+</div>
+
+<div class="box"><h3>稼働状態（コストの目安）</h3>
+<div class="row"><span>ターン / ツール呼び出し</span><span>27 / 70回 <span class="s H">H</span></span></div>
+<div class="row"><span>圧縮</span><span>1回（直近 85%・auto）<span class="s H">H</span></span></div>
+<div class="row"><span>継続時間</span><span>1時間12分 <span class="s H">H</span></span></div>
+<div class="row"><span>サブエージェント</span><span>起動中 0 / 累計 2 <span class="s H">H</span></span></div>
+<div class="row"><span>transcript サイズ</span><span>4.0 MB <span class="s T">T</span></span></div>
+<div class="src">※金額・トークンではなく相対比較用の目安</div>
+</div>
+
+<div class="box"><h3>成果</h3>
+<div class="row"><span>コミット</span><span>2件（開始SHA..最終stop時SHA）<span class="s G">G</span></span></div>
+<div class="row"><span>変更したファイル</span><span>8件 ▸ <span class="s H">H</span></span></div>
+<div class="row"><span>テスト実行</span><span>5回（成功3 / 失敗2）▸ <span class="s H">H</span></span></div>
+<div class="src">テスト：postToolUse(Shell) の command が dotnet test / playwright 等に一致したもの。成否は tool_output の exitCode</div>
+</div>
+
+<div class="box"><h3>ターン一覧 <span class="s H">H</span></h3>
+<div class="row"><span>1. 11:19 済み</span><span>テストタブを足して、…</span></div>
+<div class="row"><span>2. 11:30 済み</span><span>テストタブは開発の方のグループに移動…</span></div>
+<div class="row"><span>3. 11:56 実行中</span><span>テストの一覧に内容も表で表示…</span></div>
+</div>
+</div>
+
+<!-- 右：タイムライン・メモ -->
+<div>
+<div class="box"><h3>メモ <span class="s M">M</span><span class="s A">A</span></h3>
+<textarea rows="3">6〜8まで。続きは明日</textarea>
+<button>保存</button>
+<div class="src">人間の雑メモ（放置理由・続きの予定など）。自由入力のみ</div>
+</div>
+
+<div class="box"><h3>タイムライン <span class="s H">H</span><span class="s T">T</span></h3>
+<div class="meta"><label><input type="checkbox" checked data-f="入力">入力</label> <label><input type="checkbox" checked data-f="返事">返事</label> <label><input type="checkbox" data-f="思考">思考</label> <label><input type="checkbox" data-f="ツール">ツール</label> <label><input type="checkbox" checked data-f="圧縮">圧縮</label></div>
+<div id="tl" style="max-height:260px;overflow:auto">
+<div class="ev">11:18 セッション開始</div>
+<div class="bubble" data-k="入力">11:19 テストタブを足して、Playwrightのテスト項目を表示したい…</div>
+<div class="ai" data-k="返事">11:28 テストタブを追加しました…</div>
+<div class="bubble" data-k="入力">11:30 テストタブは開発の方のグループに移動してください</div>
+<div class="cmp" data-k="圧縮">🗜 11:42 圧縮（auto・85%・45件中30件を要約）</div>
+<div class="ev" data-k="ツール">🔧 11:44 Shell: dotnet test（12秒・exit 0）</div>
+<div class="bubble" id="e7" data-k="入力">11:56 テストの一覧に内容も表で表示されるように…</div>
+<div class="ai" id="e8" data-k="返事">12:03 表にして、クリックで右にコードを出すようにしました…</div>
+<div class="ev" id="e9" data-k="ツール">🔧 12:04 Shell: npx playwright test（実行中）</div>
+</div>
+<div class="src">入力 beforeSubmitPrompt ／ 返事 afterAgentResponse ／ 思考 afterAgentThought ／ ツール pre/postToolUse ／ 圧縮 preCompact ／ 導入前セッションは T（時刻なし）</div>
+</div>
+
+<div class="box"><h3>最近の入力（全セッション横断）<span class="s H">H</span></h3>
+<div class="src">行クリック → 左のカードを選択</div>
+<div class="row clk" onclick="sel('c1')"><span>テストの一覧に内容も表で…</span><span class="meta">1分前</span></div>
+<div class="row clk" onclick="sel('c2')"><span>7日に切り替えて</span><span class="meta">8分前</span></div>
+</div>
+
+<div class="box"><h3>最近閉じたセッション <span class="s H">H</span></h3>
+<div class="src">行クリック → 左のカードを選択</div>
+<div class="row clk" onclick="sel('c5')"><span>セッション一覧のコスト表示</span><span class="meta">3時間前</span></div>
+</div>
+</div>
+</div>
+
+<div class="wrap" style="grid-template-columns:1fr">
+<div class="box pend"><h3>⏸ あとで相談（ワイヤー未反映）</h3>
+<ul>
+<li><b>実装計画とセッションの紐付け／作業状況</b>：計画mdの添付・読み込み（beforeSubmitPrompt attachments / beforeReadFile）でリンク、フェーズの完了マーカーを afterFileEdit で検知する案</li>
+<li><b>✓✓✓✓✗ 完了判定のミニ表示</b>（一覧カード）</li>
+<li><b>「タイムラインを表示」ボタン</b>：既存チャットをIDで開く公式deeplinkは見当たらず → アプリ内タイムラインで代替が有力</li>
+<li><b>タスク・課題の更新</b></li>
+<li><b>承認待ちの判定</b>：hookの発火順を実機で要検証</li>
+<li><b>Step 0 実機検証</b>：Windowsでのhook実行／sessionEndの発火条件／再開時のsessionStart／transcriptのUUID=conversation_id・slug／transcript有効性／Autoのmodel値／Askモード／承認系hookの返し方</li>
+</ul>
+<div class="meta">不採用：レート制限・トークン/コスト・ctxバー・PID・AI要約/要対応・分類タブ・一緒に終わったグルーピング・関連セッション・テスト項目一覧</div>
+</div>
+</div>
+<script>
+function sel(id){document.querySelectorAll('.card').forEach(c=>c.classList.toggle('sel',c.id===id));
+const c=document.getElementById(id);c.scrollIntoView({block:'nearest',behavior:'smooth'});}
+function applyF(){const on=[...document.querySelectorAll('[data-f]')].filter(c=>c.checked).map(c=>c.dataset.f);
+document.querySelectorAll('#tl [data-k]').forEach(e=>e.style.display=on.includes(e.dataset.k)?'':'none');}
+document.querySelectorAll('[data-f]').forEach(c=>c.onchange=applyF);applyF();
+function focusEv(id,kind){const cb=document.querySelector(`[data-f="${kind}"]`);if(!cb.checked){cb.checked=true;applyF();}
+const e=document.getElementById(id);document.querySelectorAll('.hl').forEach(x=>x.classList.remove('hl'));
+e.classList.add('hl');e.scrollIntoView({block:'center',behavior:'smooth'});}
+</script>
+</div>
+<div id="p-doc" style="display:none;padding:8px">
+<div class="wrap" style="grid-template-columns:280px 1fr">
+<div class="box"><h3>ドキュメント（プロジェクト内の .md / .html）</h3>
+📁 docs<br>　📁 plans<br>　　📄 test-tab.md<br>　📄 tests-view.md<br>📄 README.md<br>📄 AGENTS.md
+<div class="src">起動フォルダ配下を走査してツリー表示（bin/obj/node_modules/.git は除外）</div></div>
+<div class="box"><h3>プレビュー</h3><div class="meta">行クリックで右にプレビュー（md は描画、html はそのまま表示）</div>
+<h2 style="margin:6px 0">テストタブ 実装計画</h2><p>Phase 1 …</p></div>
+</div></div>
+<div id="p-pmemo" style="display:none;padding:8px">
+<div class="box"><h3>このプロジェクトのメモ</h3>
+<textarea rows="14">・テストの命名規則はXXX
+・次は計画mdのPhase 9から</textarea>
+<div class="src">プロジェクト単位の自由メモ（セッションのメモとは別）。自動保存</div></div>
+</div>
+<script>
+function tab(t){['dash','doc','pmemo'].forEach(x=>document.getElementById('p-'+x).style.display=x===t?'':'none');
+document.querySelectorAll('[data-tab]').forEach(e=>e.classList.toggle('on',e.dataset.tab===t));}
+</script>
+</body></html>

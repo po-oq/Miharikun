@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart":       [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "sessionEnd":         [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "beforeSubmitPrompt": [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "preToolUse":         [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "postToolUse":        [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "postToolUseFailure": [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "subagentStart":      [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "subagentStop":       [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "afterFileEdit":      [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "afterAgentResponse": [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "afterAgentThought":  [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "preCompact":         [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }],
+    "stop":               [{ "command": "C:/Users/YOURNAME/.cursor/hooks/MiharikunDump.exe", "timeout": 5 }]
+  }
+}
