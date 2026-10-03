@@ -1,4 +1,5 @@
 using System.Windows.Threading;
+using Miharikun.Core.Settings;
 using Miharikun.ViewModels;
 using Wpf.Ui.Controls;
 
@@ -10,11 +11,13 @@ public partial class MainWindow : FluentWindow
     private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
 
     private readonly HookSetup _hookSetup;
+    private readonly ThemeService _theme;
 
-    public MainWindow(MainViewModel viewModel, HookSetup hookSetup)
+    public MainWindow(MainViewModel viewModel, HookSetup hookSetup, ThemeService theme)
     {
         _viewModel = viewModel;
         _hookSetup = hookSetup;
+        _theme = theme;
         DataContext = viewModel;
         InitializeComponent();
 
@@ -48,4 +51,19 @@ public partial class MainWindow : FluentWindow
     private void OnInstallHookClick(object sender, System.Windows.RoutedEventArgs e) => _hookSetup.InstallFromMenu(this);
 
     private void OnUninstallHookClick(object sender, System.Windows.RoutedEventArgs e) => _hookSetup.UninstallFromMenu(this);
+
+    // メニューを開くたびに、いまのテーマにチェックを付ける。
+    private void OnThemeMenuOpened(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.MenuItem parent)
+            return;
+        foreach (var item in parent.Items.OfType<System.Windows.Controls.MenuItem>())
+            item.IsChecked = item.Tag is string tag && tag == _theme.Mode.ToString();
+    }
+
+    private void OnThemeClick(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.MenuItem { Tag: string tag } && Enum.TryParse<AppTheme>(tag, out var mode))
+            _theme.Set(mode);
+    }
 }

@@ -5,6 +5,7 @@ using Miharikun.Core.Git;
 using Miharikun.Core.Install;
 using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
+using Miharikun.Core.Settings;
 using Miharikun.Core.Storage;
 using Miharikun.ViewModels;
 
@@ -34,7 +35,10 @@ public partial class App : Application
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         var hookSetup = new HookSetup(HookInstaller.CreateDefault(paths, appDir));
 
-        new MainWindow(_viewModel, hookSetup).Show();
+        var theme = new ThemeService(new AppSettingsStore(paths, AppLog.Write));
+        var window = new MainWindow(_viewModel, hookSetup, theme);
+        theme.Start(window);
+        window.Show();
         _monitor.Start();
         _viewModel.RefreshGit();
     }

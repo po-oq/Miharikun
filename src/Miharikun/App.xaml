@@ -7,6 +7,8 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ui:ThemesDictionary Theme="Dark" />
+                <!-- 独自の色。ThemeService が起動時・切り替え時に Colors.Light / Colors.Dark へ差し替える -->
+                <ResourceDictionary Source="Themes/Colors.Dark.xaml" />
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
