@@ -36,7 +36,7 @@ public static class SessionAnalyzer
         string? model = null, modelParams = null, branch = null, startBranch = null, startHead = null, latestHead = null;
         string? transcript = null, closedReason = null;
         CompactionInfo? lastCompaction = null;
-        DateTimeOffset? sessionStartAt = null;
+        DateTimeOffset? sessionStartAt = null, lastSessionEndAt = null;
         TimeSpan? endedDuration = null;
         AgentEvent? lastPrompt = null, lastToolResult = null, lastResponse = null;
         var gitSeen = false;
@@ -70,6 +70,7 @@ public static class SessionAnalyzer
                 case AgentEventKind.SessionEnded:
                     running.Clear();
                     closedReason = e.Reason;
+                    lastSessionEndAt = e.At;
                     if (e.Duration is { } d) endedDuration = d;
                     break;
 
@@ -162,7 +163,7 @@ public static class SessionAnalyzer
             tools,
             Math.Max(0, subStart - subStop), subStart,
             compactions, lastCompaction,
-            transcript, closedReason,
+            transcript, closedReason, lastSessionEndAt,
             changedFiles, testRuns, [.. running.Values], turns,
             lastPrompt, lastToolResult, lastResponse);
     }

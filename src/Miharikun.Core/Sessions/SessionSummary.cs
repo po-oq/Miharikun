@@ -40,6 +40,7 @@ public sealed record SessionSummary(
     CompactionInfo? LastCompaction,
     string? TranscriptPath,
     string? ClosedReason,
+    DateTimeOffset? LastSessionEndAt,
     IReadOnlyList<string> ChangedFiles,
     IReadOnlyList<TestRun> TestRuns,
     IReadOnlyList<RunningTool> RunningTools,

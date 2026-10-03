@@ -21,6 +21,9 @@ public partial class MainWindow : FluentWindow
         Title = $"Miharikun - {viewModel.ProjectFolder}";
         TitleBar.Title = Title;
 
+        viewModel.CardScrollRequested += card =>
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () => CardList.ScrollIntoView(card));
+
         // 行が作られてからでないとスクロールできないので、レイアウト後に実行する。
         viewModel.Timeline.ScrollRequested += item =>
             Dispatcher.BeginInvoke(DispatcherPriority.Background, () => TimelineList.ScrollIntoView(item));

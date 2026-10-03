@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Agents;
 using Miharikun.Core.Git;
 using Miharikun.Core.Meta;
@@ -44,6 +45,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public TimelineViewModel Timeline { get; } = new();
     [ObservableProperty] private IReadOnlyList<StateCount> _counts = [];
 
+    // 右ペイン下部：このプロジェクトの全セッション横断の「最近の入力」「最近閉じたセッション」（行クリックで左のカードを選択）
+    [ObservableProperty] private IReadOnlyList<RecentRow> _recentInputs = [];
+    [ObservableProperty] private IReadOnlyList<RecentRow> _recentClosed = [];
+
+    public RelayCommand<SessionKey> SelectSessionCommand { get; }
+
+    /// <summary>選んだカードが見える位置までスクロールしてほしいときに発生する。</summary>
+    public event Action<SessionCardViewModel>? CardScrollRequested;
+
     public bool UncommittedFilterAvailable => true;
     public bool MemoFilterAvailable => true;
 
@@ -62,9 +72,48 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CardsView.SortDescriptions.Add(new SortDescription(nameof(SessionCardViewModel.LastActivityAt), ListSortDirection.Descending));
         CardsView.Filter = o => o is SessionCardViewModel c && Visible(c);
 
+        SelectSessionCommand = new RelayCommand<SessionKey>(SelectSession);
+
         UpdateCounts();
         _monitor.Updated += OnUpdated;
     }
+
+    /// <summary>
+    /// 行クリックで左のカードを選ぶ。検索やフィルタで隠れているカードのときは、フィルタを解除して見えるようにする。
+    /// </summary>
+    private void SelectSession(SessionKey? key)
+    {
+        if (key is null || !_byKey.TryGetValue(key, out var card))
+            return;
+
+        if (!Visible(card))
+        {
+            SearchText = "";
+            RunningOnly = false;
+            UncommittedOnly = false;
+            MemoOnly = false;
+        }
+        Selected = card;
+        CardScrollRequested?.Invoke(card);
+    }
+
+    private void UpdateRecent(DateTimeOffset now)
+    {
+        var summaries = Cards.Select(c => c.Snapshot.Summary).ToList();
+
+        var inputs = RecentActivity.Inputs(summaries)
+            .Select(i => new RecentRow(i.Key, FirstLine(i.Text), SessionText.RelativeTime(i.At, now))).ToList();
+        var closed = RecentActivity.Closed(summaries)
+            .Select(c => new RecentRow(c.Key, _byKey.TryGetValue(c.Key, out var card) ? card.Title : c.Key.SessionId,
+                SessionText.RelativeTime(c.ClosedAt, now))).ToList();
+
+        // 毎秒の更新で中身が同じなら差し替えない（クリック中に行が作り直されるのを避ける）
+        if (!inputs.SequenceEqual(RecentInputs)) RecentInputs = inputs;
+        if (!closed.SequenceEqual(RecentClosed)) RecentClosed = closed;
+    }
+
+    private static string FirstLine(string text) =>
+        text.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
 
     // 監視スレッドから呼ばれる。UI スレッドへ渡すだけにする。
     private void OnUpdated(SessionUpdate update) => _ui.Post(_ => Apply(update), null);
@@ -100,6 +149,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         CardsView.Refresh();
         UpdateCounts();
+        UpdateRecent(now);
 
         // セッションが動いた直後はファイルが変わっている可能性が高いので、少し間引いて git を見直す。
         if (update.Upserts.Count > 0 && now - _lastGitRefresh > GitMinInterval)
@@ -137,6 +187,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         foreach (var card in Cards)
             card.RefreshClock(now);
         Detail?.RefreshClock(now);
+        UpdateRecent(now);
 
         // 利用者が IDE や別のターミナルでコミットすることもあるので、定期的にも見直す。
         if (++_ticks % GitRefreshEveryTicks == 0)
@@ -230,6 +281,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (Detail is not null && Detail.Key == key)
             Detail.RefreshMeta();
         CardsView.Refresh();
+        UpdateRecent(DateTimeOffset.Now);   // 閉じたセッションの表示名が変わるため
     }
 
     /// <summary>入力途中のメモを保存する（ウィンドウを閉じる前など）。</summary>
@@ -242,3 +294,5 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 }
 public sealed record StateCount(SessionState State, string Name, int Count);
+
+public sealed record RecentRow(SessionKey Key, string Text, string TimeText);

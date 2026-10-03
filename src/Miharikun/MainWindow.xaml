@@ -4,6 +4,7 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:vm="clr-namespace:Miharikun.ViewModels"
                  xmlns:b="clr-namespace:Miharikun.Behaviors"
+                 x:Name="RootWindow"
                  xmlns:sessions="clr-namespace:Miharikun.Core.Sessions;assembly=Miharikun.Core"
                  Title="Miharikun" Height="720" Width="1280"
                  ExtendsContentIntoTitleBar="True"
@@ -242,7 +243,7 @@
                                     <CheckBox Content="メモあり" IsChecked="{Binding MemoOnly}"
                                               IsEnabled="{Binding MemoFilterAvailable}" />
                                 </WrapPanel>
-                                <ListBox Grid.Row="3" ItemsSource="{Binding CardsView}"
+                                <ListBox x:Name="CardList" Grid.Row="3" ItemsSource="{Binding CardsView}"
                                          SelectedItem="{Binding Selected, Mode=TwoWay}"
                                          ItemTemplate="{StaticResource SessionCard}"
                                          HorizontalContentAlignment="Stretch"
@@ -510,7 +511,9 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" MinHeight="120" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="230" MinHeight="60" />
                                 </Grid.RowDefinitions>
 
                                 <!-- メモ：入力するたびにメモリへ、フォーカスアウトでファイルへ保存 -->
@@ -548,13 +551,71 @@
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          VirtualizingPanel.IsVirtualizing="True"
                                          VirtualizingPanel.VirtualizationMode="Recycling" />
+
+                                <!-- 区切りをドラッグして、タイムラインと下の2つのリストの高さを調整できる -->
+                                <GridSplitter Grid.Row="4" Height="8" HorizontalAlignment="Stretch" Background="Transparent"
+                                              ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" />
+
+                                <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="0,0,6,0">
+                                        <TextBlock Text="最近の入力（全セッション）" Style="{StaticResource SectionHeading}" />
+                                        <ItemsControl ItemsSource="{Binding RecentInputs}" Margin="0,0,0,10">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <ui:Button Style="{StaticResource JumpRow}" Padding="4,2"
+                                                               Command="{Binding DataContext.SelectSessionCommand, ElementName=RootWindow}"
+                                                               CommandParameter="{Binding Key}">
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding TimeText}" Style="{StaticResource Dim}"
+                                                                       Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                                        </DockPanel>
+                                                    </ui:Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <TextBlock Text="最近閉じたセッション" Style="{StaticResource SectionHeading}" />
+                                        <ItemsControl ItemsSource="{Binding RecentClosed}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <ui:Button Style="{StaticResource JumpRow}" Padding="4,2"
+                                                               Command="{Binding DataContext.SelectSessionCommand, ElementName=RootWindow}"
+                                                               CommandParameter="{Binding Key}">
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding TimeText}" Style="{StaticResource Dim}"
+                                                                       Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                                        </DockPanel>
+                                                    </ui:Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
                             </Grid>
                         </Border>
                     </Grid>
                 </Grid>
             </TabItem>
-            <TabItem Header="ドキュメント" />
-            <TabItem Header="メモ" />
+
+            <!-- MVP 対象外のタブ（タブだけ置く／後で実装） -->
+            <TabItem Header="ドキュメント">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="480">
+                    <TextBlock Text="ドキュメント" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock Text="MVP 対象外" Margin="0,4,0,12" Opacity="0.7" HorizontalAlignment="Center" />
+                    <TextBlock Text="プロジェクト配下の .md / .html をツリーで表示し、クリックで右にプレビューする機能を予定しています。"
+                               TextWrapping="Wrap" Opacity="0.7" TextAlignment="Center" />
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="メモ">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="480">
+                    <TextBlock Text="プロジェクトのメモ" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock Text="MVP 対象外" Margin="0,4,0,12" Opacity="0.7" HorizontalAlignment="Center" />
+                    <TextBlock Text="プロジェクト単位の自由メモを書ける機能を予定しています。セッションごとのメモは、ダッシュボードの右上にあります。"
+                               TextWrapping="Wrap" Opacity="0.7" TextAlignment="Center" />
+                </StackPanel>
+            </TabItem>
         </TabControl>
     </Grid>
 </ui:FluentWindow>
