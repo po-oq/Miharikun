@@ -200,15 +200,16 @@ public sealed partial class SessionDetailViewModel : ObservableObject
             s.SubagentsRunning == 0
                 ? new("✓", "裏の作業なし（サブエージェント 0）", "ok")
                 : new("✗", $"裏の作業あり（サブエージェント {s.SubagentsRunning}）", "ng"),
-            _uncommitted switch
-            {
-                null => new("—", "コミット済み（git が使えないため不明）", "na"),
-                { Count: 0 } => new("✓", "コミット済み（未コミット 0）", "ok"),
-                var files => new("✗", $"未コミットあり（{files.Count}ファイル）", "ng"),
-            },
+            CommitCheckItem(s.ChangedFiles.Count, _uncommitted),
         ];
 
         ChangedFiles = s.ChangedFiles.Select(f => ShortPath(f) + (dirty?.Contains(f) == true ? "（未コミット）" : "")).ToList();
+    }
+
+    private static CheckItem CommitCheckItem(int changedFileCount, IReadOnlyList<string>? uncommitted)
+    {
+        var (level, text) = CommitCheck.Evaluate(changedFileCount, uncommitted);
+        return new(level switch { "ok" => "✓", "ng" => "✗", _ => "—" }, text, level);
     }
 
     /// <summary>プロジェクトフォルダの下にあるファイルは相対パスで表示する（長い絶対パスだと印が隠れるため）。</summary>

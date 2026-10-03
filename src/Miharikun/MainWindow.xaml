@@ -412,7 +412,7 @@
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
-                                                <TextBlock Text="※未コミットは、セッション中に編集されたファイルが対象です（シェル経由の変更は対象外）"
+                                                <TextBlock Text="※コミット済みの判定は、このセッションで編集されたファイルだけが対象です（シェル経由の変更・他の変更は対象外）"
                                                            Style="{StaticResource Dim}" Margin="0,4,0,0" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
