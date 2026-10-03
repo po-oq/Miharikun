@@ -15,7 +15,8 @@ public sealed record StatRow(string Label, string Value);
 
 public sealed record TestRunRow(string Command, string Result, string Duration, string OutputTail, bool Succeeded);
 
-public sealed record TurnRow(string Header, string Prompt);
+/// <summary>ターン一覧の1行。クリックで、右のタイムラインのそのターンの依頼へジャンプする。</summary>
+public sealed record TurnRow(string Header, string Prompt, RelayCommand JumpCommand);
 
 /// <summary>中央ペイン：選択中セッションの詳細（要件 12.3）。</summary>
 public sealed partial class SessionDetailViewModel : ObservableObject
@@ -151,7 +152,8 @@ public sealed partial class SessionDetailViewModel : ObservableObject
 
         Turns = s.Turns.Select(t => new TurnRow(
             imported ? $"{t.Number}." : $"{t.Number}. {SessionText.Clock(t.StartedAt, now)} {SessionText.TurnStatusLabel(t.Status)}",
-            FirstLine(t.Prompt))).ToList();
+            FirstLine(t.Prompt),
+            new RelayCommand(() => Jump((t.StartSeq, TimelineKind.Input))))).ToList();
 
         RefreshMeta(now);
         RefreshClock(now);

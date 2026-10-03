@@ -504,10 +504,12 @@
                                                 <ItemsControl ItemsSource="{Binding Turns}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-                                                            <DockPanel Margin="0,2">
-                                                                <TextBlock DockPanel.Dock="Left" Text="{Binding Header}" Width="150" Opacity="0.8" />
-                                                                <TextBlock Text="{Binding Prompt}" TextTrimming="CharacterEllipsis" />
-                                                            </DockPanel>
+                                                            <ui:Button Style="{StaticResource JumpRow}" Command="{Binding JumpCommand}">
+                                                                <DockPanel>
+                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Header}" Width="150" Opacity="0.8" />
+                                                                    <TextBlock Text="{Binding Prompt}" TextTrimming="CharacterEllipsis" />
+                                                                </DockPanel>
+                                                            </ui:Button>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
