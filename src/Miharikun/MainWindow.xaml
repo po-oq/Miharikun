@@ -383,6 +383,8 @@
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
+                                                <TextBlock Text="※未コミットは、セッション中に編集されたファイルが対象です（シェル経由の変更は対象外）"
+                                                           Style="{StaticResource Dim}" Margin="0,4,0,0" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
 
@@ -408,10 +410,22 @@
                                         <Border Style="{StaticResource SectionBox}">
                                             <StackPanel>
                                                 <TextBlock Text="成果" Style="{StaticResource SectionHeading}" />
-                                                <DockPanel Margin="0,2">
-                                                    <TextBlock DockPanel.Dock="Right" Text="—" />
-                                                    <TextBlock Text="コミット" Opacity="0.8" />
-                                                </DockPanel>
+                                                <Expander>
+                                                    <Expander.Header>
+                                                        <DockPanel Width="440">
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding CommitsText}" />
+                                                            <TextBlock Text="コミット" Opacity="0.8" />
+                                                        </DockPanel>
+                                                    </Expander.Header>
+                                                    <ItemsControl ItemsSource="{Binding Commits}" Margin="8,4,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11"
+                                                                           TextTrimming="CharacterEllipsis" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Expander>
                                                 <Expander Margin="0,4,0,0">
                                                     <Expander.Header>
                                                         <DockPanel Width="440">

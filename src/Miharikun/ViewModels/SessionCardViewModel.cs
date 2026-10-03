@@ -23,6 +23,9 @@ public sealed partial class SessionCardViewModel : ObservableObject
     [ObservableProperty] private string _summaryLine = "";
     [ObservableProperty] private string _memoLine = "";
     [ObservableProperty] private bool _hasMemo;
+
+    /// <summary>未コミットのファイル数。git が使えないときは null（不明）。</summary>
+    public int? UncommittedCount { get; private set; }
     [ObservableProperty] private DateTimeOffset _lastActivityAt;
 
     /// <summary>全文検索の対象（セッションの内容＋手動タイトル・概要・メモ）。</summary>
@@ -62,6 +65,15 @@ public sealed partial class SessionCardViewModel : ObservableObject
         OnPropertyChanged(nameof(SearchText));
     }
 
+    public void SetUncommitted(int? count)
+    {
+        if (UncommittedCount == count)
+            return;
+        UncommittedCount = count;
+        OnPropertyChanged(nameof(UncommittedCount));
+        RefreshClock(DateTimeOffset.Now);
+    }
+
     /// <summary>「◯分前」と実行中ツールの経過秒は時間とともに変わるので、定期的に呼ぶ。</summary>
     public void RefreshClock(DateTimeOffset now)
     {
@@ -70,6 +82,7 @@ public sealed partial class SessionCardViewModel : ObservableObject
         if (s.Model is not null) parts.Add(s.Model);
         if (s.CompactionCount > 0) parts.Add($"圧縮{s.CompactionCount}回");
         if (s.Branch is not null) parts.Add(s.Branch);
+        if (UncommittedCount > 0) parts.Add($"未コミット{UncommittedCount}");
         MetaLine = string.Join("・", parts);
 
         PromptLine = SessionText.PromptLine(s) is { } p ? "📝 " + p : "";

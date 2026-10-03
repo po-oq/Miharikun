@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Miharikun.Core.Agents;
+using Miharikun.Core.Git;
 using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
 
@@ -15,6 +16,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly SessionMetaService _meta;
     private readonly Func<SessionKey, IReadOnlyList<AgentEvent>> _getEvents;
     private readonly Dictionary<SessionKey, SessionCardViewModel> _byKey = [];
+
+    // git（要件 10章：コミット・未コミットは App が実行する）
+    private const int GitRefreshEveryTicks = 5;
+    private static readonly TimeSpan GitMinInterval = TimeSpan.FromSeconds(2);
+    private readonly GitClient _git;
+    private GitStatus? _gitStatus;
+    private bool _gitBusy;
+    private DateTimeOffset _lastGitRefresh = DateTimeOffset.MinValue;
+    private int _ticks;
+    private (string? From, string? To) _commitRange;
 
     public string ProjectFolder { get; }
 
@@ -33,13 +44,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public TimelineViewModel Timeline { get; } = new();
     [ObservableProperty] private IReadOnlyList<StateCount> _counts = [];
 
-    /// <summary>「未コミットあり」は git 連携（Phase 7）、「メモあり」はメタ（Phase 6）で有効になる。</summary>
-    public bool UncommittedFilterAvailable => false;
+    public bool UncommittedFilterAvailable => true;
     public bool MemoFilterAvailable => true;
 
     public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui,
-        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta)
+        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta, GitClient git)
     {
+        _git = git;
         _meta = meta;
         _meta.Changed += OnMetaChanged;
         ProjectFolder = projectFolder;
@@ -66,12 +77,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (_byKey.TryGetValue(snap.Summary.Key, out var card))
             {
                 card.Apply(snap, now);
+                card.SetUncommitted(UncommittedCount(snap.Summary));
                 if (ReferenceEquals(card, Selected))
                     RefreshSelected(snap, now);
             }
             else
             {
                 card = new SessionCardViewModel(snap, now, _meta);
+                card.SetUncommitted(UncommittedCount(snap.Summary));
                 _byKey[card.Key] = card;
                 Cards.Add(card);
             }
@@ -87,15 +100,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         CardsView.Refresh();
         UpdateCounts();
+
+        // セッションが動いた直後はファイルが変わっている可能性が高いので、少し間引いて git を見直す。
+        if (update.Upserts.Count > 0 && now - _lastGitRefresh > GitMinInterval)
+            RefreshGit();
     }
 
     private void RefreshSelected(SessionSnapshot snap, DateTimeOffset now)
     {
         if (Detail is null || Detail.Key != snap.Summary.Key)
-            Detail = new SessionDetailViewModel(snap, now, t => Timeline.JumpTo(t.Seq, t.Kind), _meta);
+            Detail = new SessionDetailViewModel(snap, now, t => Timeline.JumpTo(t.Seq, t.Kind), _meta, ProjectFolder);
         else
             Detail.Update(snap, now);
         Timeline.SetEvents(_getEvents(snap.Summary.Key), now);
+        Detail.SetUncommitted(UncommittedFiles(snap.Summary));
+        LoadCommits(snap.Summary);
     }
 
     partial void OnSelectedChanged(SessionCardViewModel? value)
@@ -103,6 +122,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Detail?.FlushMemo();   // 切り替える前に、入力途中のメモを保存する
         Timeline.Clear();
         Detail = null;
+        _commitRange = default;
         if (value is null)
             return;
 
@@ -117,6 +137,63 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         foreach (var card in Cards)
             card.RefreshClock(now);
         Detail?.RefreshClock(now);
+
+        // 利用者が IDE や別のターミナルでコミットすることもあるので、定期的にも見直す。
+        if (++_ticks % GitRefreshEveryTicks == 0)
+            RefreshGit();
+    }
+
+    private IReadOnlyList<string>? UncommittedFiles(SessionSummary s) =>
+        Uncommitted.Files(_gitStatus, s.ChangedFiles, ProjectFolder);
+
+    private int? UncommittedCount(SessionSummary s) => UncommittedFiles(s)?.Count;
+
+    /// <summary>git status を背景で取り直し、全カードと詳細の未コミットを更新する。実行中なら何もしない。</summary>
+    public async void RefreshGit()
+    {
+        if (_gitBusy)
+            return;
+        _gitBusy = true;
+        try
+        {
+            _gitStatus = await Task.Run(_git.GetStatus);
+            _lastGitRefresh = DateTimeOffset.Now;
+
+            foreach (var card in Cards)
+                card.SetUncommitted(UncommittedCount(card.Snapshot.Summary));
+            if (Selected is not null)
+                Detail?.SetUncommitted(UncommittedFiles(Selected.Snapshot.Summary));
+            CardsView.Refresh();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("git の更新に失敗: " + ex.Message);
+        }
+        finally
+        {
+            _gitBusy = false;
+        }
+    }
+
+    /// <summary>選択中セッションのコミット一覧。開始・最新の HEAD が変わったときだけ git log を実行する。</summary>
+    private async void LoadCommits(SessionSummary s)
+    {
+        var range = (s.StartHead, s.LatestHead);
+        if (range == _commitRange)
+            return;
+        _commitRange = range;
+
+        try
+        {
+            var commits = await Task.Run(() => _git.GetCommits(range.StartHead, range.LatestHead));
+            // 待っている間に選択や範囲が変わっていたら捨てる
+            if (Detail is not null && Detail.Key == s.Key && _commitRange == range)
+                Detail.SetCommits(commits);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("コミット一覧の取得に失敗: " + ex.Message);
+        }
     }
 
     partial void OnSearchTextChanged(string value) => CardsView.Refresh();
@@ -128,7 +205,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (RunningOnly && c.State != SessionState.Running) return false;
         if (MemoOnly && !c.HasMemo) return false;
-        // UncommittedOnly は git 連携（Phase 7）が入ってから判定を足す。
+        if (UncommittedOnly && !(c.UncommittedCount > 0)) return false;
         return SessionSearch.Matches(c.SearchText, SearchText);
     }
 

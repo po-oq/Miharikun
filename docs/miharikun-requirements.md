@@ -414,7 +414,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - リネーム、概要取り込み／編集／1つ前に戻す、メモ自動保存、検索対象への反映
 - 完了条件：再起動後も内容が保持され、検索でヒットする
 
-## [ ] Phase 7: git 連携
+## [x] Phase 7: git 連携
 - コミット一覧、未コミット判定、ブランチ表示
 - 完了条件：git リポジトリでない場合もエラーにならない
 

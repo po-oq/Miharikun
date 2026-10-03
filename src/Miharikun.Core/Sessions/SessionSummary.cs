@@ -30,6 +30,7 @@ public sealed record SessionSummary(
     string? Model,
     string? ModelParams,
     string? Branch,
+    string? StartBranch,
     string? StartHead,
     string? LatestHead,
     int ToolCallCount,

@@ -69,6 +69,14 @@ public static class SessionText
         };
     }
 
+    /// <summary>ブランチ名と、開始時から変わったか。例: feature/x（開始時と同じ） / main（開始時: feature/x）。取れていなければ null。</summary>
+    public static string? BranchText(SessionSummary s)
+    {
+        if (s.Branch is null) return null;
+        if (s.StartBranch is null) return s.Branch;
+        return s.StartBranch == s.Branch ? $"{s.Branch}（開始時と同じ）" : $"{s.Branch}（開始時: {s.StartBranch}）";
+    }
+
     /// <summary>1時間12分 / 3分 / 42秒。</summary>
     public static string Duration(TimeSpan d)
     {

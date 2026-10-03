@@ -33,7 +33,7 @@ public static class SessionAnalyzer
 
         string? autoTitle = null;
         int prompts = 0, stops = 0, tools = 0, subStart = 0, subStop = 0, compactions = 0;
-        string? model = null, modelParams = null, branch = null, startHead = null, latestHead = null;
+        string? model = null, modelParams = null, branch = null, startBranch = null, startHead = null, latestHead = null;
         string? transcript = null, closedReason = null;
         CompactionInfo? lastCompaction = null;
         DateTimeOffset? sessionStartAt = null;
@@ -48,7 +48,11 @@ public static class SessionAnalyzer
             if (e.TranscriptPath is not null) transcript = e.TranscriptPath;
             if (e.Git is { } g)
             {
-                if (g.Branch is not null) branch = g.Branch;
+                if (g.Branch is not null)
+                {
+                    startBranch ??= g.Branch;
+                    branch = g.Branch;
+                }
                 if (g.Head is not null)
                 {
                     if (!gitSeen) startHead = g.Head;
@@ -154,7 +158,7 @@ public static class SessionAnalyzer
             prompts, stops,
             startedAt, last.At,
             endedDuration ?? (last.At - startedAt),
-            model, modelParams, branch, startHead, latestHead,
+            model, modelParams, branch, startBranch, startHead, latestHead,
             tools,
             Math.Max(0, subStart - subStop), subStart,
             compactions, lastCompaction,

@@ -2,6 +2,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Agents;
+using Miharikun.Core.Git;
 using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
 
@@ -21,7 +22,9 @@ public sealed partial class SessionDetailViewModel : ObservableObject
 {
     private readonly Action<(long Seq, TimelineKind Kind)> _jump;
     private readonly SessionMetaService _meta;
+    private readonly string _projectFolder;
     private SessionSummary _summary;
+    private IReadOnlyList<string>? _uncommitted;
     private bool _memoDirty;
     private bool _loadingMemo;
 
@@ -48,6 +51,8 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     [ObservableProperty] private IReadOnlyList<CheckItem> _checks = [];
     [ObservableProperty] private IReadOnlyList<StatRow> _stats = [];
 
+    [ObservableProperty] private string _commitsText = "—";
+    [ObservableProperty] private IReadOnlyList<string> _commits = [];
     [ObservableProperty] private string _changedFilesText = "";
     [ObservableProperty] private IReadOnlyList<string> _changedFiles = [];
     [ObservableProperty] private string _testRunsText = "";
@@ -67,10 +72,11 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     public RelayCommand SaveMemoCommand { get; }
 
     public SessionDetailViewModel(SessionSnapshot snapshot, DateTimeOffset now,
-        Action<(long Seq, TimelineKind Kind)> jump, SessionMetaService meta)
+        Action<(long Seq, TimelineKind Kind)> jump, SessionMetaService meta, string projectFolder)
     {
         _jump = jump;
         _meta = meta;
+        _projectFolder = projectFolder;
         _summary = snapshot.Summary;
         Rename = new RenameState(() => Title, text => _meta.Update(Key, (m, at) => m.WithManualTitle(text, at)));
         ImportSummaryCommand = new RelayCommand(ImportSummary, () => SummaryImport.FromLastResponse(_summary) is not null);
@@ -109,18 +115,11 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         StateText = SessionText.StateName(s.State);
 
         var meta = new List<string> { ShortId(s.Key.SessionId), "開始 " + SessionText.Clock(s.StartedAt, now) };
-        if (s.Branch is not null) meta.Add("ブランチ " + s.Branch);
+        if (SessionText.BranchText(s) is { } branch) meta.Add("ブランチ " + branch);
         if (SessionText.ModelText(s) is { } model) meta.Add("モデル " + model);
         HeaderMeta = string.Join("・", meta);
 
-        Checks =
-        [
-            s.TurnInProgress ? new("✗", "ターン実行中", "ng") : new("✓", "ターン終了", "ok"),
-            s.SubagentsRunning == 0
-                ? new("✓", "裏の作業なし（サブエージェント 0）", "ok")
-                : new("✗", $"裏の作業あり（サブエージェント {s.SubagentsRunning}）", "ng"),
-            new("—", "コミット済み（git 連携で判定）", "na"),
-        ];
+        RebuildGitParts();
 
         var transcript = TranscriptSize(s.TranscriptPath);
         Stats =
@@ -133,7 +132,6 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         ];
 
         ChangedFilesText = s.ChangedFiles.Count == 0 ? "なし" : $"{s.ChangedFiles.Count}件";
-        ChangedFiles = s.ChangedFiles;
         TestRunsText = SessionText.TestRunsText(s);
         TestRuns = s.TestRuns.Select(t => new TestRunRow(
             t.Command,
@@ -151,6 +149,61 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         JumpPromptCommand.NotifyCanExecuteChanged();
         JumpToolCommand.NotifyCanExecuteChanged();
         JumpResponseCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// 未コミットのファイル（git status との突き合わせ結果）。git が使えないときは null。
+    /// 完了チェックの「コミット済み」と、変更ファイル一覧の印に反映する。
+    /// </summary>
+    public void SetUncommitted(IReadOnlyList<string>? files)
+    {
+        _uncommitted = files;
+        RebuildGitParts();
+    }
+
+    /// <summary>開始〜最後の stop のコミット一覧。範囲が解決できない／git が使えないときは null（不明）。</summary>
+    public void SetCommits(IReadOnlyList<GitCommit>? commits)
+    {
+        CommitsText = commits is null ? "—" : $"{commits.Count}件";
+        Commits = commits?.Select(c => c.Subject.Length == 0 ? c.Sha : $"{c.Sha} {c.Subject}").ToList() ?? [];
+    }
+
+    private void RebuildGitParts()
+    {
+        var s = _summary;
+        var dirty = _uncommitted is null ? null : new HashSet<string>(_uncommitted, StringComparer.OrdinalIgnoreCase);
+
+        Checks =
+        [
+            s.TurnInProgress ? new("✗", "ターン実行中", "ng") : new("✓", "ターン終了", "ok"),
+            s.SubagentsRunning == 0
+                ? new("✓", "裏の作業なし（サブエージェント 0）", "ok")
+                : new("✗", $"裏の作業あり（サブエージェント {s.SubagentsRunning}）", "ng"),
+            _uncommitted switch
+            {
+                null => new("—", "コミット済み（git が使えないため不明）", "na"),
+                { Count: 0 } => new("✓", "コミット済み（未コミット 0）", "ok"),
+                var files => new("✗", $"未コミットあり（{files.Count}ファイル）", "ng"),
+            },
+        ];
+
+        ChangedFiles = s.ChangedFiles.Select(f => ShortPath(f) + (dirty?.Contains(f) == true ? "（未コミット）" : "")).ToList();
+    }
+
+    /// <summary>プロジェクトフォルダの下にあるファイルは相対パスで表示する（長い絶対パスだと印が隠れるため）。</summary>
+    private string ShortPath(string path)
+    {
+        if (!Path.IsPathRooted(path))
+            return path;
+        try
+        {
+            var relative = Path.GetRelativePath(_projectFolder, path);
+            return relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative) ? path : relative;
+        }
+        catch (ArgumentException)
+        {
+            return path;
+        }
     }
 
     /// <summary>タイトル・概要・メモはメタから。メタが変わったとき（と更新時）に呼ぶ。</summary>
