@@ -394,7 +394,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - 4プロジェクト作成、5.1 の `IAgent`・`AgentEvent`・`AgentCapabilities` を Core に定義、WPF-UI と CommunityToolkit.Mvvm 導入、FluentWindow で3ペインの空画面
 - 完了条件：ビルドが通り、空の3ペイン画面が表示される
 
-## [ ] Phase 2: Hook exe
+## [x] Phase 2: Hook exe
 - 7章の仕様どおり実装（NativeAOT）。`--agent` 引数、`CursorAgent` の Hook 側メソッド、イベント行モデルとシリアライザー（ソース生成）
 - 完了条件：標準入力にサンプル JSON を流すと JSONL が追記され、出力・終了コードが表どおり
 
