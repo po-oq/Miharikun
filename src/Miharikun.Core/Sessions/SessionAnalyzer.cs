@@ -149,6 +149,7 @@ public static class SessionAnalyzer
         return new SessionSummary(
             key,
             closed ? SessionState.Closed : turnState,
+            turnState == SessionState.Running,
             autoTitle,
             prompts, stops,
             startedAt, last.At,

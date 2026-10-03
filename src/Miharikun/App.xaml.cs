@@ -23,7 +23,7 @@ public partial class App : Application
         var agent = new CursorAgent();
         var store = new ProjectEventStore(agent, paths, folder, log: AppLog.Write);
         _monitor = new SessionMonitor(store, paths.EventsDir(agent.Id));
-        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!);
+        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents);
 
         new MainWindow(_viewModel).Show();
         _monitor.Start();

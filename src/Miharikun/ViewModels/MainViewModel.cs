@@ -11,6 +11,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly SessionMonitor _monitor;
     private readonly SynchronizationContext _ui;
+    private readonly Func<SessionKey, IReadOnlyList<AgentEvent>> _getEvents;
     private readonly Dictionary<SessionKey, SessionCardViewModel> _byKey = [];
 
     public string ProjectFolder { get; }
@@ -25,17 +26,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _uncommittedOnly;
     [ObservableProperty] private bool _memoOnly;
     [ObservableProperty] private SessionCardViewModel? _selected;
+    [ObservableProperty] private SessionDetailViewModel? _detail;
+
+    public TimelineViewModel Timeline { get; } = new();
     [ObservableProperty] private IReadOnlyList<StateCount> _counts = [];
 
     /// <summary>「未コミットあり」は git 連携（Phase 7）、「メモあり」はメタ（Phase 6）で有効になる。</summary>
     public bool UncommittedFilterAvailable => false;
     public bool MemoFilterAvailable => false;
 
-    public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui)
+    public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui,
+        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents)
     {
         ProjectFolder = projectFolder;
         _monitor = monitor;
         _ui = ui;
+        _getEvents = getEvents;
 
         CardsView = CollectionViewSource.GetDefaultView(Cards);
         CardsView.SortDescriptions.Add(new SortDescription(nameof(SessionCardViewModel.LastActivityAt), ListSortDirection.Descending));
@@ -56,6 +62,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (_byKey.TryGetValue(snap.Summary.Key, out var card))
             {
                 card.Apply(snap, now);
+                if (ReferenceEquals(card, Selected))
+                    RefreshSelected(snap, now);
             }
             else
             {
@@ -77,12 +85,33 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         UpdateCounts();
     }
 
+    private void RefreshSelected(SessionSnapshot snap, DateTimeOffset now)
+    {
+        if (Detail is null || Detail.Key != snap.Summary.Key)
+            Detail = new SessionDetailViewModel(snap, now, t => Timeline.JumpTo(t.Seq, t.Kind));
+        else
+            Detail.Update(snap, now);
+        Timeline.SetEvents(_getEvents(snap.Summary.Key), now);
+    }
+
+    partial void OnSelectedChanged(SessionCardViewModel? value)
+    {
+        Timeline.Clear();
+        Detail = null;
+        if (value is null)
+            return;
+
+        RefreshSelected(value.Snapshot, DateTimeOffset.Now);
+        Timeline.ScrollToEnd();
+    }
+
     /// <summary>時刻表示の更新用。1秒ごとに呼ぶ。</summary>
     public void Tick()
     {
         var now = DateTimeOffset.Now;
         foreach (var card in Cards)
             card.RefreshClock(now);
+        Detail?.RefreshClock(now);
     }
 
     partial void OnSearchTextChanged(string value) => CardsView.Refresh();

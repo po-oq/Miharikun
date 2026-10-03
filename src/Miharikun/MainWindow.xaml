@@ -64,6 +64,75 @@
                 </Border>
             </StackPanel>
         </DataTemplate>
+        <Style x:Key="SectionBox" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style x:Key="SectionHeading" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style x:Key="Dim" TargetType="TextBlock">
+            <Setter Property="Opacity" Value="0.65" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style x:Key="CheckMark" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#9AA0A6" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="ok"><Setter Property="Foreground" Value="#3FB950" /></DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="ng"><Setter Property="Foreground" Value="#F85149" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 選択ハイライトなしの行（タイムライン用） -->
+        <Style x:Key="PlainItem" TargetType="ListBoxItem">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem"><ContentPresenter /></ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="TimelineRow" DataType="{x:Type vm:TimelineItemViewModel}">
+            <Border x:Name="Box" Margin="0,3" Padding="8,4" CornerRadius="6" BorderThickness="2" BorderBrush="Transparent">
+                <StackPanel>
+                    <TextBlock Text="{Binding TimeText}" FontSize="10" Opacity="0.6" />
+                    <TextBlock x:Name="Body" Text="{Binding PreviewText}" TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
+                </StackPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="{x:Static sessions:TimelineKind.Input}">
+                    <Setter TargetName="Box" Property="Background" Value="#2B4C7E" />
+                    <Setter TargetName="Box" Property="Margin" Value="24,3,0,3" />
+                    <Setter TargetName="Body" Property="FontSize" Value="12" />
+                    <Setter TargetName="Body" Property="Opacity" Value="1" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="{x:Static sessions:TimelineKind.Response}">
+                    <Setter TargetName="Box" Property="Background" Value="#3A3A3C" />
+                    <Setter TargetName="Box" Property="Margin" Value="0,3,24,3" />
+                    <Setter TargetName="Body" Property="FontSize" Value="12" />
+                    <Setter TargetName="Body" Property="Opacity" Value="1" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="{x:Static sessions:TimelineKind.Compaction}">
+                    <Setter TargetName="Box" Property="Background" Value="#5A2D2D" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                    <Setter TargetName="Box" Property="BorderBrush" Value="#F59E0B" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 3行サマリーの1行。クリックでタイムラインへジャンプ -->
+        <Style x:Key="JumpRow" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Appearance" Value="Transparent" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="6,4" />
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -142,18 +211,238 @@
 
                         <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent" />
 
-                        <!-- 中央：Phase 5 -->
+                        <!-- 中央：セッション詳細 -->
                         <Border Grid.Column="2" Padding="8" CornerRadius="4"
                                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                            <ui:TextBlock Text="セッション詳細" FontTypography="Subtitle" />
+                            <Grid>
+                                <TextBlock Text="左の一覧からセッションを選んでください" Opacity="0.6"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Detail}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <ScrollViewer DataContext="{Binding Detail}" VerticalScrollBarVisibility="Auto">
+                                    <ScrollViewer.Style>
+                                        <Style TargetType="ScrollViewer">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ScrollViewer.Style>
+                                    <StackPanel Margin="0,0,8,0">
+
+                                        <!-- ヘッダー -->
+                                        <Border Style="{StaticResource SectionBox}">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Ellipse Style="{StaticResource StateDot}" />
+                                                        <TextBlock Text="{Binding StateText}" Margin="4,0,0,0" />
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding HeaderMeta}" Style="{StaticResource Dim}" Margin="0,4,0,0"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- セッション概要（取り込み・編集は後続フェーズ） -->
+                                        <Border Style="{StaticResource SectionBox}">
+                                            <StackPanel>
+                                                <TextBlock Text="セッション概要" Style="{StaticResource SectionHeading}" />
+                                                <TextBlock Text="（概要はまだありません）" Opacity="0.6" />
+                                                <WrapPanel Margin="0,8,0,0">
+                                                    <ui:Button Content="💬 最後の返事を概要に取り込む" IsEnabled="False" Margin="0,0,6,0" />
+                                                    <ui:Button Content="✏️ 編集" IsEnabled="False" Margin="0,0,6,0" />
+                                                    <ui:Button Content="↩ 1つ前に戻す" IsEnabled="False" />
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- いまの状況（3行サマリー） -->
+                                        <Border Style="{StaticResource SectionBox}">
+                                            <StackPanel>
+                                                <TextBlock Text="いまの状況" Style="{StaticResource SectionHeading}" />
+                                                <ui:Button Style="{StaticResource JumpRow}" Command="{Binding JumpPromptCommand}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="150" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="📝 最後に頼んだこと" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding PromptLine}" TextTrimming="CharacterEllipsis" />
+                                                    </Grid>
+                                                </ui:Button>
+                                                <ui:Button Style="{StaticResource JumpRow}" Command="{Binding JumpToolCommand}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="150" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="🔧 最後にやってたこと" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding ToolLine}" TextTrimming="CharacterEllipsis" />
+                                                    </Grid>
+                                                </ui:Button>
+                                                <ui:Button Style="{StaticResource JumpRow}" Command="{Binding JumpResponseCommand}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="150" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="💬 最後の返事" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding ResponseLine}" TextTrimming="CharacterEllipsis" />
+                                                    </Grid>
+                                                </ui:Button>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- 完了チェック -->
+                                        <Border Style="{StaticResource SectionBox}">
+                                            <StackPanel>
+                                                <TextBlock Text="完了チェック" Style="{StaticResource SectionHeading}" />
+                                                <ItemsControl ItemsSource="{Binding Checks}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                                                                <TextBlock Text="{Binding Mark}" Style="{StaticResource CheckMark}" />
+                                                                <TextBlock Text="{Binding Text}" Margin="4,0,0,0" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- 稼働状態（コストの目安） -->
+                                        <Border Style="{StaticResource SectionBox}">
+                                            <StackPanel>
+                                                <TextBlock Text="稼働状態（コストの目安）" Style="{StaticResource SectionHeading}" />
+                                                <ItemsControl ItemsSource="{Binding Stats}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <DockPanel Margin="0,2">
+                                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" />
+                                                                <TextBlock Text="{Binding Label}" Opacity="0.8" />
+                                                            </DockPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <TextBlock Text="※金額・トークンではなく相対比較用の目安" Style="{StaticResource Dim}" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- 成果 -->
+                                        <Border Style="{StaticResource SectionBox}">
+                                            <StackPanel>
+                                                <TextBlock Text="成果" Style="{StaticResource SectionHeading}" />
+                                                <DockPanel Margin="0,2">
+                                                    <TextBlock DockPanel.Dock="Right" Text="—" />
+                                                    <TextBlock Text="コミット" Opacity="0.8" />
+                                                </DockPanel>
+                                                <Expander Margin="0,4,0,0">
+                                                    <Expander.Header>
+                                                        <DockPanel Width="440">
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding ChangedFilesText}" />
+                                                            <TextBlock Text="変更したファイル" Opacity="0.8" />
+                                                        </DockPanel>
+                                                    </Expander.Header>
+                                                    <ItemsControl ItemsSource="{Binding ChangedFiles}" Margin="8,4,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Expander>
+                                                <Expander Margin="0,4,0,0">
+                                                    <Expander.Header>
+                                                        <DockPanel Width="440">
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding TestRunsText}" />
+                                                            <TextBlock Text="テスト実行" Opacity="0.8" />
+                                                        </DockPanel>
+                                                    </Expander.Header>
+                                                    <ItemsControl ItemsSource="{Binding TestRuns}" Margin="8,4,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <StackPanel Margin="0,0,0,6">
+                                                                    <TextBlock FontSize="12">
+                                                                        <Run Text="{Binding Command, Mode=OneWay}" FontFamily="Consolas" />
+                                                                        <Run Text="  " /><Run Text="{Binding Result, Mode=OneWay}" />
+                                                                        <Run Text="・" /><Run Text="{Binding Duration, Mode=OneWay}" />
+                                                                    </TextBlock>
+                                                                    <TextBlock Text="{Binding OutputTail}" FontFamily="Consolas" FontSize="10"
+                                                                               Opacity="0.7" MaxHeight="90" TextTrimming="CharacterEllipsis"
+                                                                               TextWrapping="Wrap" />
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Expander>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- ターン一覧 -->
+                                        <Border Style="{StaticResource SectionBox}">
+                                            <StackPanel>
+                                                <TextBlock Text="ターン一覧" Style="{StaticResource SectionHeading}" />
+                                                <ItemsControl ItemsSource="{Binding Turns}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <DockPanel Margin="0,2">
+                                                                <TextBlock DockPanel.Dock="Left" Text="{Binding Header}" Width="150" Opacity="0.8" />
+                                                                <TextBlock Text="{Binding Prompt}" TextTrimming="CharacterEllipsis" />
+                                                            </DockPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Grid>
                         </Border>
 
                         <GridSplitter Grid.Column="3" Width="8" HorizontalAlignment="Center" Background="Transparent" />
 
-                        <!-- 右：Phase 5 -->
+                        <!-- 右：タイムライン -->
                         <Border Grid.Column="4" Padding="8" CornerRadius="4"
                                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                            <ui:TextBlock Text="メモ・タイムライン" FontTypography="Subtitle" />
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="タイムライン" Style="{StaticResource SectionHeading}" />
+                                <WrapPanel Grid.Row="1" Margin="0,0,0,6">
+                                    <CheckBox Content="入力" IsChecked="{Binding Timeline.ShowInput}" Margin="0,0,10,0" />
+                                    <CheckBox Content="返事" IsChecked="{Binding Timeline.ShowResponse}" Margin="0,0,10,0" />
+                                    <CheckBox Content="思考" IsChecked="{Binding Timeline.ShowThought}" Margin="0,0,10,0" />
+                                    <CheckBox Content="ツール" IsChecked="{Binding Timeline.ShowTool}" Margin="0,0,10,0" />
+                                    <CheckBox Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
+                                </WrapPanel>
+                                <ListBox x:Name="TimelineList" Grid.Row="2" ItemsSource="{Binding Timeline.View}"
+                                         ItemTemplate="{StaticResource TimelineRow}"
+                                         ItemContainerStyle="{StaticResource PlainItem}"
+                                         HorizontalContentAlignment="Stretch"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling" />
+                            </Grid>
                         </Border>
                     </Grid>
                 </Grid>

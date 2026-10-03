@@ -20,6 +20,7 @@ public sealed record TurnInfo(int Number, long StartSeq, DateTimeOffset StartedA
 public sealed record SessionSummary(
     SessionKey Key,
     SessionState State,
+    bool TurnInProgress,
     string? AutoTitle,
     int PromptCount,
     int TurnCount,

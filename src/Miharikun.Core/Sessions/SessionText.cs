@@ -57,7 +57,7 @@ public static class SessionText
         return lines.Count == 0 ? null : string.Join('\n', lines);
     }
 
-    private static string ToolLabel(string? name, string? command)
+    public static string ToolLabel(string? name, string? command)
     {
         var cmd = FirstLine(command);
         return (name, cmd) switch
@@ -67,6 +67,84 @@ public static class SessionText
             (_, null) => name,
             _ => $"{name}: {cmd}",
         };
+    }
+
+    /// <summary>1時間12分 / 3分 / 42秒。</summary>
+    public static string Duration(TimeSpan d)
+    {
+        if (d < TimeSpan.Zero) d = TimeSpan.Zero;
+        if (d.TotalHours >= 1) return $"{(int)d.TotalHours}時間{d.Minutes}分";
+        if (d.TotalMinutes >= 1) return $"{(int)d.TotalMinutes}分";
+        return $"{(int)d.TotalSeconds}秒";
+    }
+
+    /// <summary>同じ日なら 11:19、違う日なら 10/02 11:19。</summary>
+    public static string Clock(DateTimeOffset at, DateTimeOffset now)
+    {
+        var a = at.ToLocalTime();
+        return a.Date == now.ToLocalTime().Date ? a.ToString("HH:mm") : a.ToString("MM/dd HH:mm");
+    }
+
+    public static string TurnStatusLabel(TurnStatus status) => status switch
+    {
+        TurnStatus.Completed => "済み",
+        TurnStatus.Aborted => "中断",
+        TurnStatus.Error => "エラー",
+        TurnStatus.Running => "実行中",
+        _ => "結果不明",
+    };
+
+    /// <summary>モデル名。model_params は [{id, value}] 形式なら "id: value" に、それ以外はそのまま添える。</summary>
+    public static string? ModelText(SessionSummary s)
+    {
+        if (s.Model is null) return null;
+        var p = FormatModelParams(s.ModelParams);
+        return p is null ? s.Model : $"{s.Model}（{p}）";
+    }
+
+    private static string? FormatModelParams(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            if (System.Text.Json.Nodes.JsonNode.Parse(json) is not System.Text.Json.Nodes.JsonArray arr || arr.Count == 0)
+                return null;
+
+            var parts = new List<string>();
+            foreach (var item in arr)
+            {
+                if (item is System.Text.Json.Nodes.JsonObject o && o["id"] is { } id && o["value"] is { } value)
+                    parts.Add($"{id.ToString()}: {value.ToString()}");
+                else if (item is not null)
+                    parts.Add(item.ToJsonString());
+            }
+            return parts.Count == 0 ? null : string.Join(", ", parts);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return json;
+        }
+    }
+
+    /// <summary>圧縮：なし / 1回（直近 85%・auto）。</summary>
+    public static string CompactionText(SessionSummary s)
+    {
+        if (s.CompactionCount == 0) return "なし";
+        var detail = new List<string>();
+        if (s.LastCompaction?.ContextUsagePercent is { } pct) detail.Add($"直近 {pct}%");
+        if (s.LastCompaction?.Trigger is { } trig) detail.Add(trig);
+        return detail.Count == 0 ? $"{s.CompactionCount}回" : $"{s.CompactionCount}回（{string.Join("・", detail)}）";
+    }
+
+    /// <summary>テスト実行：なし / 5回（成功3 / 失敗2）。成否が取れなかった分は「不明」。</summary>
+    public static string TestRunsText(SessionSummary s)
+    {
+        if (s.TestRuns.Count == 0) return "なし";
+        var ok = s.TestRuns.Count(t => t.Succeeded == true);
+        var ng = s.TestRuns.Count(t => t.Succeeded == false);
+        var unknown = s.TestRuns.Count - ok - ng;
+        var detail = $"成功{ok} / 失敗{ng}" + (unknown > 0 ? $" / 不明{unknown}" : "");
+        return $"{s.TestRuns.Count}回（{detail}）";
     }
 
     private static string? FirstLine(string? text) =>

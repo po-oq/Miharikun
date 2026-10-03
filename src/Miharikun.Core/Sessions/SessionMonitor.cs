@@ -96,6 +96,13 @@ public sealed class SessionMonitor : IDisposable
         }
     }
 
+    /// <summary>セッション1つ分のイベントのコピー（タイムライン用）。呼び出し元のスレッドで自由に読める。</summary>
+    public IReadOnlyList<AgentEvent> GetEvents(SessionKey key)
+    {
+        lock (_gate)
+            return _store.GetEvents(key).ToArray();
+    }
+
     public void Dispose()
     {
         lock (_gate)

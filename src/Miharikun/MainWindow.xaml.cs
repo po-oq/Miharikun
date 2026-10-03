@@ -18,6 +18,10 @@ public partial class MainWindow : FluentWindow
         Title = $"Miharikun - {viewModel.ProjectFolder}";
         TitleBar.Title = Title;
 
+        // 行が作られてからでないとスクロールできないので、レイアウト後に実行する。
+        viewModel.Timeline.ScrollRequested += item =>
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () => TimelineList.ScrollIntoView(item));
+
         _clock.Tick += (_, _) => _viewModel.Tick();
         _clock.Start();
         Closed += (_, _) => _clock.Stop();

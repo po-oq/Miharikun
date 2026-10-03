@@ -406,7 +406,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - 左ペイン（件数、カード、検索、フィルタ、並び順）、FileSystemWatcher＋ポーリング
 - 完了条件：hook が書いたイベントが数秒以内に一覧へ反映される
 
-## [ ] Phase 5: 詳細とタイムライン
+## [x] Phase 5: 詳細とタイムライン
 - 中央ペイン全セクション、右ペインのタイムライン、3行サマリー → タイムラインのジャンプ
 - 完了条件：12.3・12.4 の項目がすべて表示され、ジャンプとフィルタ自動切替が動く
 
