@@ -31,6 +31,8 @@
 | ターン | ユーザー入力1回（`beforeSubmitPrompt`）〜 `stop` まで |
 | 概要 | チャットに1行要約させた返事を取り込んだもの（セッションごとに1つ） |
 | メモ | 人間が自由に書くセッションごとのメモ |
+| 状態 | Hook のイベントから**自動判定**するセッションの様子（実行中・ボスの番・停止・エラー・閉じた）。10章 |
+| ステータス | **ユーザーが手で設定**するセッションの進み具合（作業中・中断・完了。未設定あり）。自動では変わらない。12章 |
 | プロジェクトメモ | プロジェクト単位の自由メモ（MVP 対象外） |
 
 ## 3. 前提・制約（確定）
@@ -170,8 +172,8 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 |---|---|---|
 | `events\{agentId}\{sessionId}.jsonl` | 生イベント1件1行（Cursor は sessionId = conversation_id） | Hook のみ（追記専用） |
 | `events\{agentId}\_app.jsonl` | セッション ID を持たないイベント（MVP では未登録） | Hook |
-| `meta\{agentId}\{sessionId}.json` | タイトル・概要・メモ | App |
-| `settings.json` | テストコマンドのパターン等 | App |
+| `meta\{agentId}\{sessionId}.json` | タイトル・概要・メモ・ステータス | App |
+| `settings.json` | アプリ全体の設定（テーマ。将来はテストコマンドのパターン等） | App |
 | `logs\hook-error.log` | Hook の例外ログ | Hook |
 
 ### イベント行スキーマ（Hook が書く）
@@ -197,10 +199,18 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
   "summary": { "text": "...", "importedAt": "...", "sourceTurn": 4 },
   "previousSummary": { "text": "...", "importedAt": "...", "sourceTurn": 2 },
   "memo": "6〜8まで。続きは明日",
+  "status": "working",
   "updatedAt": "..."
 }
 ```
+- `status`：省略（未設定）/ `"working"`（作業中）/ `"paused"`（中断）/ `"done"`（完了）。既存ファイルは項目が無い＝未設定として読み、`v` は上げない。知らない値は未設定として扱う
 - 書き込みは一時ファイル → `File.Replace` でアトミックに。複数起動の競合は後勝ちで可
+
+### settings.json
+```json
+{ "theme": "system" }
+```
+- `theme`：`"system"`（OS のライト/ダークに追従。既定）/ `"light"` / `"dark"`。ファイルなし・壊れている・知らない値は `system`
 
 ## 7. Hook exe 仕様
 
@@ -268,12 +278,13 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 |---|---|---|
 | Running | 🔵 実行中 | 最後のターン系イベントが `beforeSubmitPrompt` 以降で、まだ `stop` が来ていない |
 | YourTurn | 🟢 ボスの番 | 最後の `stop.status == "completed"` |
-| Aborted | 🟡 中断 | 最後の `stop.status == "aborted"` |
+| Aborted | 🟡 停止 | 最後の `stop.status == "aborted"` |
 | Error | 🔴 エラー | 最後の `stop.status == "error"` |
 | Closed | ⚪ 閉じた | 最後のイベントが `sessionEnd`（reason 問わず） |
 | Imported | ⚪ 閉じた（導入前） | transcript からの取り込み（11章） |
 
 - `sessionEnd` の後に `beforeSubmitPrompt` 等が来たら（再開）その時点の状態に戻す
+- 呼び名：自動判定の Aborted は「**停止**」（ユーザーが Stop した）。ユーザーが設定するステータスの「中断」（やりかけで置いてある）と混ざらないよう分ける。ターンの状態（12.3 の 7）も同じ
 
 ### 実行中ツールの管理
 - `preToolUse` で `tool_use_id` を実行中リストに追加
@@ -334,16 +345,18 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - 対象フォルダパス
 
 ### 12.2 左：セッション一覧
-- 状態別件数（🔵🟢🟡🔴⚪）
+- 状態別件数（🔵🟢🟡🔴⚪。🟡 は「停止」）
+- **ステータス絞り込み**：全て / 未設定 / 作業中 / 中断 / 完了 のタブ（件数つき、1つだけ選ぶ）。既定は「全て」。件数は他のフィルタ・検索の前の全カードから数える。下のフィルタ・検索と AND
 - 全文検索ボックス：対象は全プロンプト、概要、メモ、タイトル、変更ファイル名。インクリメンタル、大文字小文字無視
 - フィルタ：実行中のみ / 未コミットあり / メモあり
 - 並び順：最後の動きの降順
 - カード表示項目：状態バッジ、タイトル（✏️でリネーム）、依頼数・最後の動き・モデル・圧縮回数・ブランチ、
-  3行サマリー（12.4 と同じ）、概要の先頭、メモ（あれば）
+  3行サマリー（12.4 と同じ）、概要の先頭、メモ（あれば）、**ステータスのバッジ**（未設定のときは出さない）
 - カードクリックで選択 → 中央・右ペインを切り替え
 
 ### 12.3 中央：セッション詳細
 1. **ヘッダー**：タイトル（✏️）、状態、ID 先頭8桁、開始時刻、ブランチ、モデル
+   - **ステータス**：未設定 / 作業中 / 中断 / 完了 のボタン。クリックで即保存（meta の `status`）。選択中をもう一度押すと未設定に戻る。導入前のセッションも設定できる。**自動では変わらない**（完了にしたセッションに新しい依頼が来ても戻さない）。検索の対象にはしない（絞り込みはタブで行う）
 2. **セッション概要**：本文、取り込み日時・元ターン番号、ボタン「💬 最後の返事を概要に取り込む」「✏️ 編集」「↩ 1つ前に戻す」
    - 取り込み：最後の `afterAgentResponse.text` を概要にする。既存の概要は `previousSummary` に退避（1件のみ保持）
    - 戻す：`previousSummary` と入れ替え
@@ -355,7 +368,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 4. **完了チェック**：✓/✗ ターン終了（最後が stop）、裏の作業なし（起動中サブエージェント0）、コミット済み（未コミット0）
 5. **稼働状態（コストの目安）**：ターン数 / ツール呼び出し数、圧縮回数（直近%・auto/manual）、継続時間、サブエージェント起動中/累計、transcript サイズ（`transcript_path` があれば）。「金額・トークンではない」旨を注記
 6. **成果**：コミット件数（展開で一覧）、変更ファイル件数（展開で一覧）、テスト実行回数（成功/失敗、展開でコマンド・所要時間・出力末尾）
-7. **ターン一覧**：番号、開始時刻、状態（済み/中断/エラー/実行中）、依頼文先頭
+7. **ターン一覧**：番号、開始時刻、状態（済み/停止/エラー/実行中）、依頼文先頭
 
 ### 12.4 右ペイン
 1. **メモ**：TextBox（複数行）。フォーカスアウトで自動保存
@@ -366,7 +379,11 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 3. **最近の入力**：このプロジェクトの全セッション横断で beforeSubmitPrompt の新しい順10件。行クリックで左のカードを選択
 4. **最近閉じたセッション**：sessionEnd の新しい順5件。行クリックで左のカードを選択
 
-### 12.5 イベントの一意 ID
+### 12.5 テーマ
+- ⚙ メニューの「テーマ」から OS に合わせる / ライト / ダーク を選ぶ。選択は `settings.json` に保存し、OS 追従のときは実行中の OS 設定変更にも従う
+- 色はテーマ別の色定義（`ThemesColors.Light.xaml` / `Colors.Dark.xaml`）に置き、画面側は DynamicResource で参照する（直書きしない）
+
+### 12.6 イベントの一意 ID
 - App 側で「SessionKey + ファイル内の行番号」を ID とする（AgentEvent.Seq）（3行サマリー → タイムラインのジャンプに使用）
 
 ## 13. 非機能要件
@@ -467,6 +484,11 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 
 ## [x] Phase 10: 最近の入力・最近閉じたセッション、タブのプレースホルダー
 - 右ペイン下部2リスト（クリックでカード選択）、ドキュメント／メモタブの「MVP 対象外」表示
+
+## [ ] Phase 11: ステータス（Issue #2）
+- 12.2 / 12.3 / 6章。`SessionStatus` と meta の保存、一覧のバッジ・絞り込みタブ・件数、詳細のステータス設定。自動判定の「中断」の呼び名を「停止」に変更
+- 完了条件：詳細でステータスを設定すると再起動後も残り、一覧のバッジと絞り込みタブ（件数）に反映される。既存の meta ファイルがそのまま読める。ライト/ダークの両方で表示を確認する
+- 進め方：①要件定義 ②Core（保存。テスト先行）③ViewModel（絞り込みの組み合わせ。テスト先行）④画面
 
 ## 16. テスト方針
 
