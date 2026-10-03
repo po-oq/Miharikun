@@ -3,3 +3,4 @@ obj/
 .vs/
 *.user
 dist/
+docs/step0-dump-hook/out/
