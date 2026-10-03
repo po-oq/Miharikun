@@ -402,7 +402,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - tail 読み込み、`CursorAgent.Normalize`（5.1 対応表）、プロジェクト一致判定、10章の状態判定・派生値（共通イベントのみ使用）
 - 完了条件：サンプル JSONL を使った単体テストで状態・派生値が期待どおり
 
-## [ ] Phase 4: 一覧とファイル監視
+## [x] Phase 4: 一覧とファイル監視
 - 左ペイン（件数、カード、検索、フィルタ、並び順）、FileSystemWatcher＋ポーリング
 - 完了条件：hook が書いたイベントが数秒以内に一覧へ反映される
 
