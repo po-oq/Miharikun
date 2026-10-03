@@ -54,7 +54,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private IReadOnlyList<RecentRow> _recentInputs = [];
     [ObservableProperty] private IReadOnlyList<RecentRow> _recentClosed = [];
 
-    public RelayCommand<SessionKey> SelectSessionCommand { get; }
+    public RelayCommand<RecentRow> SelectRecentCommand { get; }
 
     /// <summary>選んだカードが見える位置までスクロールしてほしいときに発生する。</summary>
     public event Action<SessionCardViewModel>? CardScrollRequested;
@@ -77,10 +77,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         CardsView.SortDescriptions.Add(new SortDescription(nameof(SessionCardViewModel.LastActivityAt), ListSortDirection.Descending));
         CardsView.Filter = o => o is SessionCardViewModel c && Visible(c);
 
-        SelectSessionCommand = new RelayCommand<SessionKey>(SelectSession);
+        SelectRecentCommand = new RelayCommand<RecentRow>(SelectRecent);
 
         UpdateCounts();
         _monitor.Updated += OnUpdated;
+    }
+
+    /// <summary>
+    /// 右ペイン下部の行クリック。左のカードを選び、入力の行ならタイムラインの該当の依頼も選ぶ（同じセッションに連続して入力していても、どの行か分かる）。
+    /// </summary>
+    private void SelectRecent(RecentRow? row)
+    {
+        if (row is null)
+            return;
+        SelectSession(row.Key);
+        if (row.Seq is { } seq && ReferenceEquals(Selected, _byKey.GetValueOrDefault(row.Key)))
+            Timeline.JumpTo(seq, TimelineKind.Input);
     }
 
     /// <summary>
@@ -108,7 +120,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var summaries = Cards.Select(c => c.Snapshot.Summary).ToList();
 
         var inputs = RecentActivity.Inputs(summaries)
-            .Select(i => new RecentRow(i.Key, FirstLine(i.Text), SessionText.RelativeTime(i.At, now))).ToList();
+            .Select(i => new RecentRow(i.Key, FirstLine(i.Text), SessionText.RelativeTime(i.At, now), i.Seq)).ToList();
         var closed = RecentActivity.Closed(summaries)
             .Select(c => new RecentRow(c.Key, _byKey.TryGetValue(c.Key, out var card) ? card.Title : c.Key.SessionId,
                 SessionText.RelativeTime(c.ClosedAt, now))).ToList();
@@ -317,4 +329,5 @@ public sealed partial class StatusTabItem(StatusTab tab, string name) : Observab
 
 public sealed record StateCount(SessionState State, string Name, int Count);
 
-public sealed record RecentRow(SessionKey Key, string Text, string TimeText);
+/// <summary>Seq があれば入力の行（タイムラインの該当位置）。閉じたセッションの行は null。</summary>
+public sealed record RecentRow(SessionKey Key, string Text, string TimeText, long? Seq = null);

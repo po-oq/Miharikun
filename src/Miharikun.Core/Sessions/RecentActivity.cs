@@ -2,7 +2,8 @@ using Miharikun.Core.Agents;
 
 namespace Miharikun.Core.Sessions;
 
-public sealed record RecentInput(SessionKey Key, DateTimeOffset At, string Text);
+/// <summary>Seq は依頼（beforeSubmitPrompt）のイベント位置。タイムラインの該当の行へのジャンプに使う。</summary>
+public sealed record RecentInput(SessionKey Key, long Seq, DateTimeOffset At, string Text);
 
 public sealed record RecentClosed(SessionKey Key, DateTimeOffset ClosedAt);
 
@@ -17,7 +18,7 @@ public static class RecentActivity
         sessions
             .SelectMany(s => s.Turns
                 .Where(t => !string.IsNullOrWhiteSpace(t.Prompt) && s.State != SessionState.Imported)
-                .Select(t => new RecentInput(s.Key, t.StartedAt, t.Prompt!)))
+                .Select(t => new RecentInput(s.Key, t.StartSeq, t.StartedAt, t.Prompt!)))
             .OrderByDescending(i => i.At)
             .Take(count)
             .ToList();

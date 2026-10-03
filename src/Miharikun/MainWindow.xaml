@@ -776,8 +776,8 @@
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <ui:Button Style="{StaticResource JumpRow}" Padding="4,2"
-                                                               Command="{Binding DataContext.SelectSessionCommand, ElementName=RootWindow}"
-                                                               CommandParameter="{Binding Key}">
+                                                               Command="{Binding DataContext.SelectRecentCommand, ElementName=RootWindow}"
+                                                               CommandParameter="{Binding}">
                                                         <DockPanel>
                                                             <TextBlock DockPanel.Dock="Right" Text="{Binding TimeText}" Style="{StaticResource Dim}"
                                                                        Margin="8,0,0,0" VerticalAlignment="Center" />
@@ -793,8 +793,8 @@
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <ui:Button Style="{StaticResource JumpRow}" Padding="4,2"
-                                                               Command="{Binding DataContext.SelectSessionCommand, ElementName=RootWindow}"
-                                                               CommandParameter="{Binding Key}">
+                                                               Command="{Binding DataContext.SelectRecentCommand, ElementName=RootWindow}"
+                                                               CommandParameter="{Binding}">
                                                         <DockPanel>
                                                             <TextBlock DockPanel.Dock="Right" Text="{Binding TimeText}" Style="{StaticResource Dim}"
                                                                        Margin="8,0,0,0" VerticalAlignment="Center" />

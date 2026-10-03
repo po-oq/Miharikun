@@ -39,6 +39,19 @@ public sealed class RecentActivityTests
     }
 
     [Fact]
+    public void Inputs_carry_the_seq_of_the_prompt_event_so_the_timeline_can_jump_to_it()
+    {
+        // 同じセッションに連続して入力した場合でも、行ごとに別の位置を指せる
+        var s = Session("s", Prompt("first", 10), Stop(11), Prompt("second", 20), Stop(21));
+
+        var inputs = RecentActivity.Inputs([s]);
+
+        Assert.Equal(["second", "first"], inputs.Select(i => i.Text));
+        Assert.Equal(s.Turns.Select(t => t.StartSeq).Reverse().ToArray(), inputs.Select(i => i.Seq).ToArray());
+        Assert.NotEqual(inputs[0].Seq, inputs[1].Seq);
+    }
+
+    [Fact]
     public void Inputs_ignore_empty_prompts_and_sessions_without_prompts()
     {
         var s = Session("s", ("beforeSubmitPrompt", "\"prompt\":\"  \"", 1), Prompt("real", 2));
