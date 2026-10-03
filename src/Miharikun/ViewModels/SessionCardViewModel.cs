@@ -24,6 +24,10 @@ public sealed partial class SessionCardViewModel : ObservableObject
     [ObservableProperty] private string _memoLine = "";
     [ObservableProperty] private bool _hasMemo;
 
+    /// <summary>ユーザーが設定したステータス。null は未設定（バッジを出さない）。</summary>
+    [ObservableProperty] private SessionStatus? _status;
+    [ObservableProperty] private string _statusText = "";
+
     /// <summary>未コミットのファイル数。git が使えないときは null（不明）。</summary>
     public int? UncommittedCount { get; private set; }
     [ObservableProperty] private DateTimeOffset _lastActivityAt;
@@ -60,6 +64,8 @@ public sealed partial class SessionCardViewModel : ObservableObject
         Title = meta.DisplayTitle(Snapshot.Summary.AutoTitle) ?? "（依頼なし）";
         SummaryLine = meta.Summary is { } s ? "📄 概要：" + FirstLine(s.Text) : "";
         HasMemo = meta.HasMemo;
+        Status = meta.Status;
+        StatusText = meta.Status is null ? "" : SessionText.StatusName(meta.Status);
         MemoLine = meta.HasMemo ? "📌 " + string.Join("\n", Lines(meta.Memo).Take(2)) : "";
         SearchText = string.Join('\n', new[] { Snapshot.SearchText, meta.SearchText }.Where(t => t.Length > 0));
         OnPropertyChanged(nameof(SearchText));

@@ -43,6 +43,9 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     [ObservableProperty] private string _summaryDraft = "";
     [ObservableProperty] private string _memoText = "";
 
+    /// <summary>ユーザーが設定したステータス。null は未設定。ボタンの選択表示に使う。</summary>
+    [ObservableProperty] private SessionStatus? _status;
+
     public RenameState Rename { get; }
 
     [ObservableProperty] private string _promptLine = "";
@@ -72,6 +75,12 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     public RelayCommand RevertSummaryCommand { get; }
     public RelayCommand SaveMemoCommand { get; }
 
+    /// <summary>作業中 / 中断 / 完了のボタン。選択中をもう一度押すと未設定に戻る。</summary>
+    public RelayCommand<SessionStatus> ToggleStatusCommand { get; }
+
+    /// <summary>「未設定」ボタン。</summary>
+    public RelayCommand ClearStatusCommand { get; }
+
     public SessionDetailViewModel(SessionSnapshot snapshot, DateTimeOffset now,
         Action<(long Seq, TimelineKind Kind)> jump, SessionMetaService meta, string projectFolder)
     {
@@ -96,6 +105,8 @@ public sealed partial class SessionDetailViewModel : ObservableObject
             () => _meta.Update(Key, (m, at) => m.RevertSummary(at)),
             () => _meta.Get(Key).CanRevertSummary);
         SaveMemoCommand = new RelayCommand(FlushMemo);
+        ToggleStatusCommand = new RelayCommand<SessionStatus>(status => _meta.Update(Key, (m, at) => m.ToggleStatus(status, at)));
+        ClearStatusCommand = new RelayCommand(() => _meta.Update(Key, (m, at) => m.WithStatus(null, at)));
         JumpPromptCommand = new RelayCommand(() => Jump(SummaryJump.Prompt(_summary)), () => SummaryJump.Prompt(_summary) is not null);
         JumpToolCommand = new RelayCommand(() => Jump(SummaryJump.Tool(_summary)), () => SummaryJump.Tool(_summary) is not null);
         JumpResponseCommand = new RelayCommand(() => Jump(SummaryJump.Response(_summary)), () => SummaryJump.Response(_summary) is not null);
@@ -234,6 +245,7 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         var meta = _meta.Get(Key);
         Title = meta.DisplayTitle(_summary.AutoTitle) ?? "（依頼なし）";
 
+        Status = meta.Status;
         SummaryText = meta.Summary?.Text ?? "（概要はまだありません）";
         SummaryInfo = meta.Summary is { } e
             ? $"{SessionText.Clock(e.ImportedAt, now ?? DateTimeOffset.Now)} " +

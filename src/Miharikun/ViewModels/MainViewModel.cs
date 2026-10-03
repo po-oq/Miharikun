@@ -39,11 +39,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _runningOnly;
     [ObservableProperty] private bool _uncommittedOnly;
     [ObservableProperty] private bool _memoOnly;
+    [ObservableProperty] private StatusTab _statusTab = StatusTab.All;
     [ObservableProperty] private SessionCardViewModel? _selected;
     [ObservableProperty] private SessionDetailViewModel? _detail;
 
     public TimelineViewModel Timeline { get; } = new();
     [ObservableProperty] private IReadOnlyList<StateCount> _counts = [];
+
+    /// <summary>ステータス絞り込みタブ（全て / 未設定 / 作業中 / 中断 / 完了）。件数は中身だけ更新し、入れ替えない（選択が外れないように）。</summary>
+    public IReadOnlyList<StatusTabItem> StatusTabs { get; } =
+        Enum.GetValues<StatusTab>().Select(t => new StatusTabItem(t, StatusFilter.Name(t))).ToList();
 
     // 右ペイン下部：このプロジェクトの全セッション横断の「最近の入力」「最近閉じたセッション」（行クリックで左のカードを選択）
     [ObservableProperty] private IReadOnlyList<RecentRow> _recentInputs = [];
@@ -92,6 +97,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             RunningOnly = false;
             UncommittedOnly = false;
             MemoOnly = false;
+            StatusTab = StatusTab.All;
         }
         Selected = card;
         CardScrollRequested?.Invoke(card);
@@ -251,17 +257,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnRunningOnlyChanged(bool value) => CardsView.Refresh();
     partial void OnUncommittedOnlyChanged(bool value) => CardsView.Refresh();
     partial void OnMemoOnlyChanged(bool value) => CardsView.Refresh();
+    partial void OnStatusTabChanged(StatusTab value) => CardsView.Refresh();
 
     private bool Visible(SessionCardViewModel c)
     {
         if (RunningOnly && c.State != SessionState.Running) return false;
         if (MemoOnly && !c.HasMemo) return false;
+        if (!StatusFilter.Matches(StatusTab, c.Status)) return false;
         if (UncommittedOnly && !(c.UncommittedCount > 0)) return false;
         return SessionSearch.Matches(c.SearchText, SearchText);
     }
 
     private void UpdateCounts()
     {
+        var statuses = Cards.Select(c => c.Status).ToList();
+        foreach (var tab in StatusTabs)
+            tab.Count = StatusFilter.Count(tab.Tab, statuses);
+
         int Count(params SessionState[] states) => Cards.Count(c => states.Contains(c.State));
         Counts =
         [
@@ -281,6 +293,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (Detail is not null && Detail.Key == key)
             Detail.RefreshMeta();
         CardsView.Refresh();
+        UpdateCounts();   // ステータスのタブの件数が変わるため
         UpdateRecent(DateTimeOffset.Now);   // 閉じたセッションの表示名が変わるため
     }
 
@@ -293,6 +306,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _meta.Changed -= OnMetaChanged;
     }
 }
+/// <summary>絞り込みタブ1つ。Count は他のフィルタに関係なく、全カードから数えた件数。</summary>
+public sealed partial class StatusTabItem(StatusTab tab, string name) : ObservableObject
+{
+    public StatusTab Tab { get; } = tab;
+    public string Name { get; } = name;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(Label))] private int _count;
+    public string Label => $"{Name} {Count}";
+}
+
 public sealed record StateCount(SessionState State, string Name, int Count);
 
 public sealed record RecentRow(SessionKey Key, string Text, string TimeText);

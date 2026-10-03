@@ -6,6 +6,7 @@
                  xmlns:b="clr-namespace:Miharikun.Behaviors"
                  x:Name="RootWindow"
                  xmlns:sessions="clr-namespace:Miharikun.Core.Sessions;assembly=Miharikun.Core"
+                 xmlns:meta="clr-namespace:Miharikun.Core.Meta;assembly=Miharikun.Core"
                  Title="Miharikun" Height="820" Width="1280"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -45,6 +46,87 @@
                     <Setter Property="Fill" Value="{DynamicResource StateErrorBrush}" />
                 </DataTrigger>
             </Style.Triggers>
+        </Style>
+
+        <!-- ステータスのバッジ（カード）。未設定のときは出さない。色は枠で示す -->
+        <Style x:Key="StatusBadge" TargetType="Border">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="BorderBrush" Value="{DynamicResource StateIdleBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Working}"><Setter Property="BorderBrush" Value="{DynamicResource StateRunningBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Paused}"><Setter Property="BorderBrush" Value="{DynamicResource StateWarnBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Done}"><Setter Property="BorderBrush" Value="{DynamicResource StateOkBrush}" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 絞り込みタブ（1つだけ選ぶ）。チップの見た目 -->
+        <Style x:Key="StatusTabItem" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,6,4" />
+            <Setter Property="Padding" Value="9,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Chip" CornerRadius="11" BorderThickness="1" Padding="{TemplateBinding Padding}"
+                                Background="{DynamicResource CardItemBackgroundBrush}" BorderBrush="{DynamicResource CardItemBorderBrush}">
+                            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource CardItemSelectedBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 絞り込みのチェック（複数選べる）。ステータスのタブと同じチップの見た目 -->
+        <Style x:Key="ChipCheckBox" TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,0,6,4" />
+            <Setter Property="Padding" Value="9,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Chip" CornerRadius="11" BorderThickness="1" Padding="{TemplateBinding Padding}"
+                                Background="{DynamicResource CardItemBackgroundBrush}" BorderBrush="{DynamicResource CardItemBorderBrush}">
+                            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource CardItemSelectedBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 詳細のステータスボタン。選択中は Primary にする -->
+        <Style x:Key="StatusButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="MinWidth" Value="64" />
         </Style>
 
         <!-- 空文字のときは行ごと隠す -->
@@ -92,6 +174,9 @@
                     <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse Style="{StaticResource StateDot}" />
                         <TextBlock Text="{Binding StateText}" FontSize="11" Margin="4,0,0,0" />
+                        <Border Style="{StaticResource StatusBadge}">
+                            <TextBlock Text="{Binding StatusText}" FontSize="11" />
+                        </Border>
                     </StackPanel>
                     <ui:Button DockPanel.Dock="Right" Style="{StaticResource PencilButton}"
                                Command="{Binding Rename.BeginCommand}"
@@ -287,7 +372,8 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
-                                <ItemsControl Grid.Row="0" ItemsSource="{Binding Counts}">
+                                <StackPanel Grid.Row="0">
+                                <ItemsControl ItemsSource="{Binding Counts}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
@@ -302,15 +388,31 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                <!-- ステータス絞り込み（件数は他のフィルタに関係なく全体から数える） -->
+                                <ListBox ItemsSource="{Binding StatusTabs}" SelectedValuePath="Tab"
+                                         SelectedValue="{Binding StatusTab, Mode=TwoWay}"
+                                         ItemContainerStyle="{StaticResource StatusTabItem}"
+                                         Margin="0,8,0,0" Background="Transparent" BorderThickness="0" Padding="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                         AutomationProperties.AutomationId="StatusTabs">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                </StackPanel>
                                 <ui:TextBox Grid.Row="1" Margin="0,8,0,0" AutomationProperties.AutomationId="SearchBox"
                                             PlaceholderText="🔍 プロンプト・概要・メモ・変更ファイルを検索"
                                             ClearButtonEnabled="True"
                                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
                                 <WrapPanel Grid.Row="2" Margin="0,6,0,6">
-                                    <CheckBox Content="実行中のみ" IsChecked="{Binding RunningOnly}" Margin="0,0,12,0" />
-                                    <CheckBox Content="未コミットあり" IsChecked="{Binding UncommittedOnly}"
-                                              IsEnabled="{Binding UncommittedFilterAvailable}" Margin="0,0,12,0" />
-                                    <CheckBox Content="メモあり" IsChecked="{Binding MemoOnly}"
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="実行中のみ" IsChecked="{Binding RunningOnly}" />
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="未コミットあり" IsChecked="{Binding UncommittedOnly}"
+                                              IsEnabled="{Binding UncommittedFilterAvailable}" />
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="メモあり" IsChecked="{Binding MemoOnly}"
                                               IsEnabled="{Binding MemoFilterAvailable}" />
                                 </WrapPanel>
                                 <ListBox x:Name="CardList" Grid.Row="3" ItemsSource="{Binding CardsView}"
@@ -383,6 +485,46 @@
                                                 </DockPanel>
                                                 <TextBlock Text="{Binding HeaderMeta}" Style="{StaticResource Dim}" Margin="0,4,0,0"
                                                            TextWrapping="Wrap" />
+                                                <!-- ステータス：自分で決める（自動では変わらない）。選択中をもう一度押すと未設定に戻る -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0" AutomationProperties.AutomationId="StatusButtons">
+                                                    <TextBlock Text="ステータス" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.8" />
+                                                    <ui:Button Content="未設定" Command="{Binding ClearStatusCommand}">
+                                                        <ui:Button.Style>
+                                                            <Style TargetType="ui:Button" BasedOn="{StaticResource StatusButton}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Status}" Value="{x:Null}"><Setter Property="Appearance" Value="Primary" /></DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:Button.Style>
+                                                    </ui:Button>
+                                                    <ui:Button Content="作業中" Command="{Binding ToggleStatusCommand}" CommandParameter="{x:Static meta:SessionStatus.Working}">
+                                                        <ui:Button.Style>
+                                                            <Style TargetType="ui:Button" BasedOn="{StaticResource StatusButton}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Working}"><Setter Property="Appearance" Value="Primary" /></DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:Button.Style>
+                                                    </ui:Button>
+                                                    <ui:Button Content="中断" Command="{Binding ToggleStatusCommand}" CommandParameter="{x:Static meta:SessionStatus.Paused}">
+                                                        <ui:Button.Style>
+                                                            <Style TargetType="ui:Button" BasedOn="{StaticResource StatusButton}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Paused}"><Setter Property="Appearance" Value="Primary" /></DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:Button.Style>
+                                                    </ui:Button>
+                                                    <ui:Button Content="完了" Command="{Binding ToggleStatusCommand}" CommandParameter="{x:Static meta:SessionStatus.Done}">
+                                                        <ui:Button.Style>
+                                                            <Style TargetType="ui:Button" BasedOn="{StaticResource StatusButton}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Done}"><Setter Property="Appearance" Value="Primary" /></DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:Button.Style>
+                                                    </ui:Button>
+                                                </StackPanel>
                                             </StackPanel>
                                         </Border>
 
@@ -613,12 +755,12 @@
 
                                 <Border Grid.Row="1" Grid.RowSpan="3" Style="{StaticResource PanelBox}" />
                                 <TextBlock Grid.Row="1" Text="タイムライン" Style="{StaticResource SectionHeading}" Margin="10,10,10,6" />
-                                <WrapPanel Grid.Row="2" Margin="10,0,10,6">
-                                    <CheckBox Content="入力" IsChecked="{Binding Timeline.ShowInput}" Margin="0,0,10,0" />
-                                    <CheckBox Content="返事" IsChecked="{Binding Timeline.ShowResponse}" Margin="0,0,10,0" />
-                                    <CheckBox Content="思考" IsChecked="{Binding Timeline.ShowThought}" Margin="0,0,10,0" />
-                                    <CheckBox Content="ツール" IsChecked="{Binding Timeline.ShowTool}" Margin="0,0,10,0" />
-                                    <CheckBox Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
+                                <WrapPanel Grid.Row="2" Margin="10,0,10,2">
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="入力" IsChecked="{Binding Timeline.ShowInput}" />
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="返事" IsChecked="{Binding Timeline.ShowResponse}" />
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="思考" IsChecked="{Binding Timeline.ShowThought}" />
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="ツール" IsChecked="{Binding Timeline.ShowTool}" />
+                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
                                 </WrapPanel>
                                 <ListBox x:Name="TimelineList" Grid.Row="3" Margin="6,0,2,6" ItemsSource="{Binding Timeline.View}"
                                          ItemTemplate="{StaticResource TimelineRow}"
