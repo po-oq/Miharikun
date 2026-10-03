@@ -171,6 +171,18 @@ public sealed class SessionAnalyzerTests
     }
 
     [Fact]
+    public void Model_default_from_tool_events_does_not_replace_the_real_model()
+    {
+        var s = Analyze(
+            E("beforeSubmitPrompt", 0, "\"prompt\":\"a\",\"model\":\"grok-4.7-high\",\"model_id\":\"grok-4.7\""),
+            E("preToolUse", 1, Tool("t1") + ",\"model\":\"default\""),
+            E("stop", 2, "\"status\":\"completed\",\"model\":\"default\""));
+
+        Assert.Equal("grok-4.7", s.Model);
+        Assert.Null(Analyze(E("stop", 0, "\"model\":\"default\"")).Model);
+    }
+
+    [Fact]
     public void Start_falls_back_to_first_event_and_session_end_duration_wins()
     {
         var s = Analyze(E("beforeSubmitPrompt", 5, Prompt("a")), E("sessionEnd", 100, "\"duration_ms\":42000"));
@@ -259,6 +271,18 @@ public sealed class SessionAnalyzerTests
 
         Assert.Equal(("p2", 5L, 4L), (s.LastPrompt!.Text, s.LastResponse!.Seq, s.LastPrompt.Seq));
         Assert.Equal(3L, s.LastToolResult!.Seq);
+    }
+
+    [Fact]
+    public void Last_prompt_and_response_skip_events_without_text()
+    {
+        var s = Analyze(
+            E("beforeSubmitPrompt", 0, Prompt("読めた依頼")), E("afterAgentResponse", 1, "\"text\":\"読めた返事\""),
+            E("beforeSubmitPrompt", 2), E("afterAgentResponse", 3));   // 入力が壊れて本文なし
+
+        Assert.Equal("読めた依頼", s.LastPrompt!.Text);
+        Assert.Equal("読めた返事", s.LastResponse!.Text);
+        Assert.Equal(2, s.PromptCount);   // 依頼があったこと自体は数える
     }
 
     [Fact]

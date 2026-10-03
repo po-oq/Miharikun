@@ -43,7 +43,8 @@ public static class SessionAnalyzer
 
         foreach (var e in events)
         {
-            if (e.Model is not null) model = e.Model;
+            // Cursor はツール系などのイベントで model に "default" を入れてくる（実機で確認）。実名を上書きしない。
+            if (e.Model is not null && e.Model != "default") model = e.Model;
             if (e.ModelParams is not null) modelParams = e.ModelParams;
             if (e.TranscriptPath is not null) transcript = e.TranscriptPath;
             if (e.Git is { } g)
@@ -77,7 +78,7 @@ public static class SessionAnalyzer
                 case AgentEventKind.PromptSubmitted:
                     prompts++;
                     turnState = SessionState.Running;
-                    lastPrompt = e;
+                    if (!string.IsNullOrWhiteSpace(e.Text)) lastPrompt = e;   // 本文が取れなかったものより、取れている最新を見せる
                     autoTitle ??= MakeTitle(e.Text);
                     CloseOpenTurn(turns, TurnStatus.Unknown);
                     turns.Add(new TurnInfo(turns.Count + 1, e.Seq, e.At, TurnStatus.Running, e.Text));
@@ -121,7 +122,7 @@ public static class SessionAnalyzer
                     break;
 
                 case AgentEventKind.AssistantMessage:
-                    lastResponse = e;
+                    if (!string.IsNullOrWhiteSpace(e.Text)) lastResponse = e;
                     break;
 
                 case AgentEventKind.SubagentStarted:

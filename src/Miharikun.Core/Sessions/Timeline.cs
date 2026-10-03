@@ -38,15 +38,15 @@ public static class TimelineBuilder
                     break;
 
                 case AgentEventKind.PromptSubmitted:
-                    items.Add(new(e.Seq, null, e.At, TimelineKind.Input, e.Text ?? ""));
+                    items.Add(new(e.Seq, null, e.At, TimelineKind.Input, TextOr(e.Text, "（依頼文を取得できませんでした）")));
                     break;
 
                 case AgentEventKind.AssistantMessage:
-                    items.Add(new(e.Seq, null, e.At, TimelineKind.Response, e.Text ?? ""));
+                    items.Add(new(e.Seq, null, e.At, TimelineKind.Response, TextOr(e.Text, MissingText)));
                     break;
 
                 case AgentEventKind.AssistantThought:
-                    items.Add(new(e.Seq, null, e.At, TimelineKind.Thought, e.Text ?? ""));
+                    items.Add(new(e.Seq, null, e.At, TimelineKind.Thought, TextOr(e.Text, MissingText)));
                     break;
 
                 case AgentEventKind.Compacted:
@@ -76,6 +76,11 @@ public static class TimelineBuilder
     /// <summary>3行サマリーなどのイベント番号から、タイムライン上の行を探す。</summary>
     public static TimelineItem? Find(IEnumerable<TimelineItem> items, long seq) =>
         items.FirstOrDefault(i => i.Seq == seq || i.EndSeq == seq);
+
+    // 入力が壊れて本文を取れなかったイベントが、空白の行にならないように
+    private const string MissingText = "（本文を取得できませんでした）";
+
+    private static string TextOr(string? text, string fallback) => string.IsNullOrWhiteSpace(text) ? fallback : text;
 
     private static void CloseOpenTools(List<TimelineItem> items, Dictionary<string, int> open)
     {

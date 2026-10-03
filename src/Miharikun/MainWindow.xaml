@@ -6,7 +6,7 @@
                  xmlns:b="clr-namespace:Miharikun.Behaviors"
                  x:Name="RootWindow"
                  xmlns:sessions="clr-namespace:Miharikun.Core.Sessions;assembly=Miharikun.Core"
-                 Title="Miharikun" Height="720" Width="1280"
+                 Title="Miharikun" Height="820" Width="1280"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round">
@@ -132,9 +132,15 @@
 
         <DataTemplate x:Key="TimelineRow" DataType="{x:Type vm:TimelineItemViewModel}">
             <Border x:Name="Box" Margin="0,3" Padding="8,4" CornerRadius="6" BorderThickness="2" BorderBrush="Transparent">
+                <Border.InputBindings>
+                    <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleExpandedCommand}" />
+                </Border.InputBindings>
                 <StackPanel>
                     <TextBlock Text="{Binding TimeText}" FontSize="10" Opacity="0.6" />
-                    <TextBlock x:Name="Body" Text="{Binding PreviewText}" TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
+                    <TextBlock x:Name="Body" Text="{Binding DisplayText}" TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
+                    <!-- 長い本文だけ：クリックで全文を開閉 -->
+                    <TextBlock x:Name="ExpandHint" FontSize="10" Opacity="0.6" Margin="0,2,0,0" Visibility="Collapsed"
+                               Text="▼ クリックで全文を表示" />
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
@@ -156,6 +162,17 @@
                 <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
                     <Setter TargetName="Box" Property="BorderBrush" Value="#F59E0B" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding IsTruncated}" Value="True">
+                    <Setter TargetName="ExpandHint" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="Box" Property="Cursor" Value="Hand" />
+                </DataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsTruncated}" Value="True" />
+                        <Condition Binding="{Binding IsExpanded}" Value="True" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ExpandHint" Property="Text" Value="▲ クリックで閉じる" />
+                </MultiDataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
 
@@ -511,9 +528,9 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" MinHeight="120" />
+                                    <RowDefinition Height="*" MinHeight="160" />
                                     <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="230" MinHeight="60" />
+                                    <RowDefinition Height="150" MinHeight="60" />
                                 </Grid.RowDefinitions>
 
                                 <!-- メモ：入力するたびにメモリへ、フォーカスアウトでファイルへ保存 -->
@@ -550,7 +567,8 @@
                                          HorizontalContentAlignment="Stretch"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          VirtualizingPanel.IsVirtualizing="True"
-                                         VirtualizingPanel.VirtualizationMode="Recycling" />
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         VirtualizingPanel.ScrollUnit="Pixel" />
 
                                 <!-- 区切りをドラッグして、タイムラインと下の2つのリストの高さを調整できる -->
                                 <GridSplitter Grid.Row="4" Height="8" HorizontalAlignment="Stretch" Background="Transparent"

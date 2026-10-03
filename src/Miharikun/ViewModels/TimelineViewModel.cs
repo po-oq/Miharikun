@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Agents;
 using Miharikun.Core.Sessions;
 
@@ -9,21 +10,36 @@ namespace Miharikun.ViewModels;
 
 public sealed partial class TimelineItemViewModel : ObservableObject
 {
-    private const int PreviewLength = 400;
-
+    // 長い本文は、一覧が極端に長くならないよう先頭だけ見せ、クリックで全文を開閉する。
     public TimelineItem Item { get; }
     public TimelineKind Kind => Item.Kind;
     public string TimeText { get; }
+
+    /// <summary>折りたたんだときの本文（短ければ全文と同じ）。</summary>
     public string PreviewText { get; }
 
+    /// <summary>全文を見せるには開く必要があるか。</summary>
+    public bool IsTruncated { get; }
+
     [ObservableProperty] private bool _isHighlighted;
+
+    /// <summary>全文を開いているか。</summary>
+    [ObservableProperty] private bool _isExpanded;
+
+    public RelayCommand ToggleExpandedCommand { get; }
 
     public TimelineItemViewModel(TimelineItem item, DateTimeOffset now)
     {
         Item = item;
         TimeText = SessionText.Clock(item.At, now);
-        PreviewText = item.Text.Length <= PreviewLength ? item.Text : item.Text[..PreviewLength] + "…";
+        (PreviewText, IsTruncated) = TextPreview.Make(item.Text);
+        ToggleExpandedCommand = new RelayCommand(() => { if (IsTruncated) IsExpanded = !IsExpanded; });
     }
+
+    /// <summary>画面に出す本文：開いていれば全文、閉じていれば先頭だけ。</summary>
+    public string DisplayText => IsExpanded ? Item.Text : PreviewText;
+
+    partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(DisplayText));
 }
 
 /// <summary>右ペインのタイムライン。表示するセッションの全イベントを持ち、種別フィルタは表示側で絞る。</summary>

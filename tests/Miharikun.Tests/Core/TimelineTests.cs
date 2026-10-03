@@ -36,6 +36,18 @@ public sealed class TimelineTests
     }
 
     [Fact]
+    public void Events_whose_text_could_not_be_read_are_not_blank_rows()
+    {
+        var items = Build(
+            E("beforeSubmitPrompt", 0),
+            E("afterAgentThought", 1),
+            E("afterAgentResponse", 2, "\"text\":\"  \""));
+
+        Assert.All(items, i => Assert.False(string.IsNullOrWhiteSpace(i.Text)));
+        Assert.Equal(["（依頼文を取得できませんでした）", "（本文を取得できませんでした）", "（本文を取得できませんでした）"], items.Select(i => i.Text));
+    }
+
+    [Fact]
     public void Running_tool_is_shown_from_its_pre_event()
     {
         var items = Build(E("preToolUse", 0, Tool("t1", cmd: "npx playwright test")));
