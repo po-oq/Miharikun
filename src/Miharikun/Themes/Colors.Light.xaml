@@ -11,12 +11,17 @@
     <SolidColorBrush x:Key="MemoBackgroundBrush" Color="#FFF1B8" />
     <SolidColorBrush x:Key="MemoTextBrush" Color="#3B2F00" />
     <!-- タイムライン -->
-    <SolidColorBrush x:Key="TimelineInputBrush" Color="#DCEBFF" />
-    <SolidColorBrush x:Key="TimelineResponseBrush" Color="#ECECEF" />
+    <SolidColorBrush x:Key="TimelineInputBrush" Color="#CFE2FF" />
+    <SolidColorBrush x:Key="TimelineResponseBrush" Color="#E2E2E8" />
     <SolidColorBrush x:Key="TimelineCompactionBrush" Color="#FCE0E0" />
     <SolidColorBrush x:Key="TimelineHighlightBrush" Color="#D97706" />
+    <!-- ステータスのバッジ（塗りつぶし）の文字 -->
+    <SolidColorBrush x:Key="BadgeTextBrush" Color="#FFFFFF" />
     <!-- 一覧のカード -->
     <SolidColorBrush x:Key="CardItemBackgroundBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="CardItemBorderBrush" Color="#C4C4CC" />
+    <SolidColorBrush x:Key="CardItemBorderBrush" Color="#9A9AA6" />
+    <!-- 選択中のカード：薄い地 + 太い枠（文字・丸の色は未選択のときと同じ前提で読める） -->
+    <SolidColorBrush x:Key="CardItemSelectedBackgroundBrush" Color="#E8F1FD" />
+    <SolidColorBrush x:Key="CardItemSelectedBorderBrush" Color="#0B63C5" />
     <SolidColorBrush x:Key="CardItemSelectedBrush" Color="#0B63C5" />
 </ResourceDictionary>

@@ -48,19 +48,18 @@
             </Style.Triggers>
         </Style>
 
-        <!-- ステータスのバッジ（カード）。未設定のときは出さない。色は枠で示す -->
+        <!-- ステータスのバッジ（カード）。未設定のときは出さない。色は塗りつぶしで示し、文字はテーマごとに読める色にする -->
         <Style x:Key="StatusBadge" TargetType="Border">
-            <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="Padding" Value="7,0" />
             <Setter Property="Margin" Value="6,0,0,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="BorderBrush" Value="{DynamicResource StateIdleBrush}" />
+            <Setter Property="Background" Value="{DynamicResource StateIdleBrush}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Status}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
-                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Working}"><Setter Property="BorderBrush" Value="{DynamicResource StateRunningBrush}" /></DataTrigger>
-                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Paused}"><Setter Property="BorderBrush" Value="{DynamicResource StateWarnBrush}" /></DataTrigger>
-                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Done}"><Setter Property="BorderBrush" Value="{DynamicResource StateOkBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Working}"><Setter Property="Background" Value="{DynamicResource StateRunningBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Paused}"><Setter Property="Background" Value="{DynamicResource StateWarnBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static meta:SessionStatus.Done}"><Setter Property="Background" Value="{DynamicResource StateOkBrush}" /></DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -70,6 +69,7 @@
             <Setter Property="Padding" Value="9,2" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -98,6 +98,7 @@
             <Setter Property="Padding" Value="9,2" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
@@ -158,9 +159,12 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                             </Trigger>
+                            <!-- 枠が 1px から 2px に太るぶん内側の余白を減らし、選択しても中身がずれないようにする -->
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
-                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource CardItemSelectedBrush}" />
+                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource CardItemSelectedBackgroundBrush}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
+                                <Setter TargetName="Box" Property="BorderThickness" Value="2" />
+                                <Setter TargetName="Box" Property="Padding" Value="7,5" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -175,7 +179,7 @@
                         <Ellipse Style="{StaticResource StateDot}" />
                         <TextBlock Text="{Binding StateText}" FontSize="11" Margin="4,0,0,0" />
                         <Border Style="{StaticResource StatusBadge}">
-                            <TextBlock Text="{Binding StatusText}" FontSize="11" />
+                            <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BadgeTextBrush}" />
                         </Border>
                     </StackPanel>
                     <ui:Button DockPanel.Dock="Right" Style="{StaticResource PencilButton}"
@@ -204,19 +208,8 @@
                                    TextWrapping="Wrap" MaxHeight="36" />
                     </StackPanel>
                 </Border>
-                <!-- 選択中のカードは背景がアクセント色になるので、緑の字が読めなくなる。選択中は白にする -->
-                <TextBlock Text="{Binding SummaryLine}" Margin="0,4,0,0">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock" BasedOn="{StaticResource SummaryLine}">
-                            <Setter Property="Foreground" Value="{DynamicResource SummaryTextBrush}" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                    <Setter Property="Foreground" Value="White" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                <TextBlock Text="{Binding SummaryLine}" Style="{StaticResource SummaryLine}"
+                           Foreground="{DynamicResource SummaryTextBrush}" Margin="0,4,0,0" />
                 <TextBlock Text="{Binding MemoLine}" Style="{StaticResource SummaryLine}"
                            Background="{DynamicResource MemoBackgroundBrush}" Foreground="{DynamicResource MemoTextBrush}" Padding="6,2" Margin="0,4,0,0" TextWrapping="Wrap" />
             </StackPanel>
@@ -268,10 +261,10 @@
                     <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleExpandedCommand}" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="{Binding TimeText}" FontSize="10" Opacity="0.6" />
+                    <TextBlock Text="{Binding TimeText}" FontSize="10" Opacity="0.7" />
                     <TextBlock x:Name="Body" Text="{Binding DisplayText}" TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
                     <!-- 長い本文だけ：クリックで全文を開閉 -->
-                    <TextBlock x:Name="ExpandHint" FontSize="10" Opacity="0.6" Margin="0,2,0,0" Visibility="Collapsed"
+                    <TextBlock x:Name="ExpandHint" FontSize="10" Opacity="0.7" Margin="0,2,0,0" Visibility="Collapsed"
                                Text="▼ クリックで全文を表示" />
                 </StackPanel>
             </Border>
