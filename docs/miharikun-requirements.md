@@ -398,7 +398,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - 7章の仕様どおり実装（NativeAOT）。`--agent` 引数、`CursorAgent` の Hook 側メソッド、イベント行モデルとシリアライザー（ソース生成）
 - 完了条件：標準入力にサンプル JSON を流すと JSONL が追記され、出力・終了コードが表どおり
 
-## [ ] Phase 3: イベント読み込みと状態判定（Core）
+## [x] Phase 3: イベント読み込みと状態判定（Core）
 - tail 読み込み、`CursorAgent.Normalize`（5.1 対応表）、プロジェクト一致判定、10章の状態判定・派生値（共通イベントのみ使用）
 - 完了条件：サンプル JSONL を使った単体テストで状態・派生値が期待どおり
 

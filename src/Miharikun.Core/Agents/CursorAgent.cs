@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 namespace Miharikun.Core.Agents;
 
-public sealed class CursorAgent : IAgent
+public sealed partial class CursorAgent : IAgent
 {
     public const string AgentId = "cursor";
 
@@ -48,10 +48,6 @@ public sealed class CursorAgent : IAgent
         }
         return roots;
     }
-
-    // Phase 3 で実装する。
-    public IEnumerable<AgentEvent> Normalize(RawEventRecord raw) =>
-        throw new NotImplementedException("CursorAgent.Normalize は Phase 3 で実装する。");
 
     private static string? GetString(JsonNode payload, string name) =>
         payload is JsonObject obj && obj[name] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
