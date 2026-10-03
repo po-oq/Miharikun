@@ -450,11 +450,14 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - コミット一覧、未コミット判定、ブランチ表示
 - 完了条件：git リポジトリでない場合もエラーにならない
 
-## [ ] Phase 8: hook 導入機能と配布
+## [x] Phase 8: hook 導入機能と配布
 - 8章の導入／削除、バックアップ、マージ。publish 設定と zip 作成スクリプト
 - 完了条件：まっさらな環境で zip 展開 → 起動 → 導入 → Cursor で会話するとダッシュボードに出る
 - 状況：導入／削除・バックアップ・マージ・起動時ダイアログ・`scripts/publish.ps1` は実装し、単一ファイルの App と導入の流れは実機で確認済み。
-  **未完了：Hook の NativeAOT 発行**（C++ ビルドツール＋ Windows SDK が必要。この開発環境には無く未検証）。これが通って zip が作れたら `[x]` にする。
+  Hook の NativeAOT 発行は、VS 2026 の「C++ によるデスクトップ開発」を入れた環境で通り、zip（約 58 MB：App 約 132 MB、Hook 約 3.9 MB）を作れた。
+  Hook の 1 回の実行は、git なしで中央値 17ms（何もしない exe は 15ms）、git ありで 51ms 前後。要件（git なし 50ms 以内・git あり 3 秒以内）を満たす（通常ビルドの PoC 版は 200〜380ms）。
+  - `publish.ps1` は `vswhere.exe` の場所（VS Installer）を PATH に足す。ILCompiler がリンカーを探すときに呼ぶが、既定では PATH に無く、無いと「Platform linker not found」ではなく link.exe の起動で失敗するため。
+  - 未確認：AOT 版の Hook を実際の Cursor に入れた動作（日本語の文字化け対策を含む）。リリース用 zip での通し確認（展開 → 起動 → 導入 → 会話）は、配布前に利用者が行う。
 
 ## [x] Phase 9: 過去セッション取り込み（Step 0 の結果次第）
 - 11章。条件を満たさない場合はスキップして理由を本書に追記

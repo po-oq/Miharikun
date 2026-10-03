@@ -51,6 +51,11 @@ if ($NoAot) {
 }
 else {
 Write-Host "== Hook（NativeAOT）" -ForegroundColor Cyan
+# ILCompiler がリンカーを探すときに vswhere.exe を PATH から呼ぶ。VS Installer の場所は既定では PATH に無いので足す。
+$installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+if (-not (Get-Command vswhere.exe -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $installer)) {
+    $env:PATH += ";$installer"
+}
 try {
     Invoke-Dotnet @('publish', (Join-Path $root 'src/Miharikun.Hook'), '-c', 'Release', '-r', 'win-x64',
         "-p:Version=$Version", '-o', $hookOut)
