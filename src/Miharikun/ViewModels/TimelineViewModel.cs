@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Agents;
@@ -28,12 +29,33 @@ public sealed partial class TimelineItemViewModel : ObservableObject
 
     public RelayCommand ToggleExpandedCommand { get; }
 
+    /// <summary>ダブルクリックでコピーした直後（約1.5秒）。バブルの文言を「コピーしました」にする。</summary>
+    [ObservableProperty] private bool _justCopied;
+
+    public RelayCommand CopyCommand { get; }
+
+    private readonly DispatcherTimer _copiedTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
+
     public TimelineItemViewModel(TimelineItem item, DateTimeOffset now)
     {
         Item = item;
         TimeText = item.HasTime ? SessionText.Clock(item.At, now) : "";
         (PreviewText, IsTruncated) = TextPreview.Make(item.Text);
         ToggleExpandedCommand = new RelayCommand(() => { if (IsTruncated) IsExpanded = !IsExpanded; });
+        CopyCommand = new RelayCommand(Copy);
+        _copiedTimer.Tick += (_, _) => { _copiedTimer.Stop(); JustCopied = false; };
+    }
+
+    /// <summary>全文（省略表示の分も含む）をコピーする。ダブルクリックの1回目のクリックで全文の開閉が働いているので、元に戻す。</summary>
+    private void Copy()
+    {
+        if (IsTruncated)
+            IsExpanded = !IsExpanded;
+        if (!ClipboardHelper.TrySetText(Item.Text))
+            return;
+        JustCopied = true;
+        _copiedTimer.Stop();
+        _copiedTimer.Start();
     }
 
     /// <summary>画面に出す本文：開いていれば全文、閉じていれば先頭だけ。</summary>
@@ -60,26 +82,65 @@ public sealed partial class TimelineViewModel : ObservableObject
     [ObservableProperty] private bool _showTool;
     [ObservableProperty] private bool _showCompaction = true;
 
+    /// <summary>検索語（要件 12.4）。含む行だけを表示する。種別のチップとは AND。</summary>
+    [ObservableProperty] private string _searchText = "";
+
+    /// <summary>検索中だけ「3/48件」。分母は種別で絞った後の件数。</summary>
+    [ObservableProperty] private string _countText = "";
+
     /// <summary>ジャンプ先の行を見える位置までスクロールしてほしいときに発生する。</summary>
     public event Action<TimelineItemViewModel>? ScrollRequested;
 
     public TimelineViewModel()
     {
         _view = CreateView(_items);
+        _copiedAllTimer.Tick += (_, _) => { _copiedAllTimer.Stop(); CopiedAll = false; };
     }
 
     private ICollectionView CreateView(ObservableCollection<TimelineItemViewModel> items)
     {
         var view = CollectionViewSource.GetDefaultView(items);
-        view.Filter = o => o is TimelineItemViewModel i && IsShown(i.Kind);
+        view.Filter = o => o is TimelineItemViewModel i && IsShown(i.Kind) && TimelineText.Matches(i.Item, SearchText);
         return view;
     }
 
-    partial void OnShowInputChanged(bool value) => View.Refresh();
-    partial void OnShowResponseChanged(bool value) => View.Refresh();
-    partial void OnShowThoughtChanged(bool value) => View.Refresh();
-    partial void OnShowToolChanged(bool value) => View.Refresh();
-    partial void OnShowCompactionChanged(bool value) => View.Refresh();
+    partial void OnShowInputChanged(bool value) => RefreshView();
+    partial void OnShowResponseChanged(bool value) => RefreshView();
+    partial void OnShowThoughtChanged(bool value) => RefreshView();
+    partial void OnShowToolChanged(bool value) => RefreshView();
+    partial void OnShowCompactionChanged(bool value) => RefreshView();
+    partial void OnSearchTextChanged(string value) => RefreshView();
+
+    private void RefreshView()
+    {
+        View.Refresh();
+        UpdateCount();
+    }
+
+    private void UpdateCount()
+    {
+        var shown = View.Cast<object>().Count();
+        var total = Items.Count(i => IsShown(i.Kind));
+        CountText = TimelineText.CountText(shown, total, SearchText);
+    }
+
+    /// <summary>いま表示している行（種別・検索で絞った結果）を、「時刻　種別：本文」の形で連結した文字列。</summary>
+    public string CopyAllText() => TimelineText.CopyAll(View.Cast<TimelineItemViewModel>().Select(i => i.Item));
+
+    /// <summary>「全部コピー」の直後（約1.5秒）。ボタンの文言を「コピーしました」にする。</summary>
+    [ObservableProperty] private bool _copiedAll;
+
+    private readonly DispatcherTimer _copiedAllTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
+
+    [RelayCommand]
+    private void CopyAll()
+    {
+        if (!View.Cast<object>().Any() || !ClipboardHelper.TrySetText(CopyAllText()))
+            return;
+        CopiedAll = true;
+        _copiedAllTimer.Stop();
+        _copiedAllTimer.Start();
+    }
 
     private bool IsShown(TimelineKind kind) => kind switch
     {
@@ -99,6 +160,7 @@ public sealed partial class TimelineViewModel : ObservableObject
             _highlighted = null;
         Items = new ObservableCollection<TimelineItemViewModel>(items);
         View = CreateView(Items);
+        UpdateCount();
     }
 
     /// <summary>
@@ -132,6 +194,7 @@ public sealed partial class TimelineViewModel : ObservableObject
         }
         for (var i = common; i < built.Count; i++)
             Items.Add(new TimelineItemViewModel(built[i], now));
+        UpdateCount();
     }
 
     /// <summary>表示中の最後の行までスクロールする（セッションを開いた直後に最新から見せる）。</summary>
@@ -150,6 +213,8 @@ public sealed partial class TimelineViewModel : ObservableObject
             return false;
 
         EnableFilter(kind);
+        if (!TimelineText.Matches(item.Item, SearchText))
+            SearchText = "";   // 検索で隠れている行へは、検索を解除して飛ぶ
 
         if (_highlighted is not null) _highlighted.IsHighlighted = false;
         item.IsHighlighted = true;

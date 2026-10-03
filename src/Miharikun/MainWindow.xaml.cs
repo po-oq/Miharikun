@@ -31,12 +31,61 @@ public partial class MainWindow : FluentWindow
         viewModel.Timeline.ScrollRequested += item =>
             Dispatcher.BeginInvoke(DispatcherPriority.Background, () => TimelineList.ScrollIntoView(item));
 
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.IsTimelineExpanded))
+                ApplyTimelineExpanded(viewModel.IsTimelineExpanded);
+        };
+
         _clock.Tick += (_, _) => _viewModel.Tick();
         _clock.Start();
         // 画面が出てから、hook が未導入なら導入を提案する
         Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _hookSetup.CheckAtStartup(this));
         Closing += (_, _) => _viewModel.Flush();   // 入力途中のメモを失わない
         Closed += (_, _) => _clock.Stop();
+    }
+
+    // 拡大モード（要件 12.4.1）：左と中央を隠して、右ペインを全幅に広げる。戻すときは元の幅に戻す。
+    private System.Windows.GridLength _savedLeft, _savedRight, _savedRecent;
+
+    private void ApplyTimelineExpanded(bool expanded)
+    {
+        var hide = expanded ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+        PaneLeft.Visibility = Split1.Visibility = PaneCenter.Visibility = Split2.Visibility = hide;
+        RecentSplitter.Visibility = RecentPanel.Visibility = hide;
+
+        if (expanded)
+        {
+            _savedLeft = ColLeft.Width;
+            _savedRight = ColRight.Width;
+            _savedRecent = RowRecent.Height;
+            ColLeft.MinWidth = ColCenter.MinWidth = 0;
+            ColLeft.Width = ColCenter.Width = new System.Windows.GridLength(0);
+            ColRight.Width = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
+            RowRecent.MinHeight = 0;
+            RowRecent.Height = new System.Windows.GridLength(0);
+        }
+        else
+        {
+            ColLeft.MinWidth = 260;
+            ColCenter.MinWidth = 320;
+            ColLeft.Width = _savedLeft.Value > 0 ? _savedLeft : new System.Windows.GridLength(360);
+            ColCenter.Width = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
+            ColRight.Width = _savedRight.Value > 0 ? _savedRight : new System.Windows.GridLength(340);
+            RowRecent.MinHeight = 60;
+            RowRecent.Height = _savedRecent.Value > 0 ? _savedRecent : new System.Windows.GridLength(150);
+        }
+    }
+
+    // Esc で拡大を戻す（名前の編集中の Esc など、先に処理されたものは除く）
+    protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Key == System.Windows.Input.Key.Escape && !e.Handled && _viewModel.IsTimelineExpanded)
+        {
+            _viewModel.ToggleTimelineExpandedCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private void OnMenuButtonClick(object sender, System.Windows.RoutedEventArgs e)

@@ -40,6 +40,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _uncommittedOnly;
     [ObservableProperty] private bool _memoOnly;
     [ObservableProperty] private StatusTab _statusTab = StatusTab.All;
+
+    /// <summary>タイムラインの拡大モード（要件 12.4.1）。左・中央のペインを隠し、右ペインを広げる。保存しない。</summary>
+    [ObservableProperty] private bool _isTimelineExpanded;
+
+    /// <summary>拡大中だけ見出しに出す「— セッション名（状態）」。</summary>
+    public string ExpandedTitle => IsTimelineExpanded && Detail is { } d ? $"— {d.Title}（{d.StateText}）" : "";
+
+    partial void OnIsTimelineExpandedChanged(bool value) => OnPropertyChanged(nameof(ExpandedTitle));
+
+    /// <summary>拡大⇄戻す。セッションを選んでいないときは拡大しない。</summary>
+    [RelayCommand]
+    private void ToggleTimelineExpanded() => IsTimelineExpanded = !IsTimelineExpanded && Selected is not null;
     [ObservableProperty] private SessionCardViewModel? _selected;
     [ObservableProperty] private SessionDetailViewModel? _detail;
 
@@ -189,6 +201,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         Detail?.FlushMemo();   // 切り替える前に、入力途中のメモを保存する
         Timeline.Clear();
+        Timeline.SearchText = "";   // 検索語は、別のセッションに切り替えたらクリア（拡大⇄戻すでは保持）
+        if (value is null)
+            IsTimelineExpanded = false;
         Detail = null;
         _commitRange = default;
         if (value is null)
@@ -205,6 +220,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         foreach (var card in Cards)
             card.RefreshClock(now);
         Detail?.RefreshClock(now);
+        if (IsTimelineExpanded)
+            OnPropertyChanged(nameof(ExpandedTitle));   // 名前や状態が変わったとき
         UpdateRecent(now);
 
         // 利用者が IDE や別のターミナルでコミットすることもあるので、定期的にも見直す。

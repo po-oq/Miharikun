@@ -124,6 +124,20 @@
             </Setter>
         </Style>
 
+        <!-- タイムラインのチップ：狭い幅（340px）でも、チップ5つと検索ボックスが1行に収まるよう、余白を詰める -->
+        <Style x:Key="ChipCheckBoxCompact" TargetType="CheckBox" BasedOn="{StaticResource ChipCheckBox}">
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="Margin" Value="0,0,3,0" />
+        </Style>
+
+        <!-- 見出しの小さいボタン（拡大・全部コピー） -->
+        <Style x:Key="HeadingButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Padding" Value="7,1" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <!-- 詳細のステータスボタン。選択中は Primary にする -->
         <Style x:Key="StatusButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
             <Setter Property="Margin" Value="0,0,6,0" />
@@ -259,9 +273,18 @@
             <Border x:Name="Box" Margin="0,3" Padding="8,4" CornerRadius="6" BorderThickness="2" BorderBrush="Transparent">
                 <Border.InputBindings>
                     <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleExpandedCommand}" />
+                    <!-- ダブルクリック：全文をクリップボードへ（1回目のクリックで働いた全文の開閉は、コピー側で元に戻す） -->
+                    <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding CopyCommand}" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="{Binding TimeText}" FontSize="10" Opacity="0.7" />
+                    <DockPanel MinHeight="14">
+                        <!-- マウスを載せたときだけ出す。コピーしたら「コピーしました」に変わる -->
+                        <Border x:Name="CopyBubble" DockPanel.Dock="Right" Visibility="Collapsed" CornerRadius="8" Padding="6,0"
+                                Background="{DynamicResource CardItemSelectedBrush}">
+                            <TextBlock x:Name="CopyBubbleText" Text="ダブルクリックでコピー" FontSize="10" Foreground="White" />
+                        </Border>
+                        <TextBlock Text="{Binding TimeText}" FontSize="10" Opacity="0.7" VerticalAlignment="Center" />
+                    </DockPanel>
                     <TextBlock x:Name="Body" Text="{Binding DisplayText}" TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
                     <!-- 長い本文だけ：クリックで全文を開閉 -->
                     <TextBlock x:Name="ExpandHint" FontSize="10" Opacity="0.7" Margin="0,2,0,0" Visibility="Collapsed"
@@ -269,6 +292,13 @@
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
+                <Trigger SourceName="Box" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="CopyBubble" Property="Visibility" Value="Visible" />
+                </Trigger>
+                <DataTrigger Binding="{Binding JustCopied}" Value="True">
+                    <Setter TargetName="CopyBubble" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="CopyBubbleText" Property="Text" Value="✓ コピーしました" />
+                </DataTrigger>
                 <DataTrigger Binding="{Binding Kind}" Value="{x:Static sessions:TimelineKind.Input}">
                     <Setter TargetName="Box" Property="Background" Value="{DynamicResource TimelineInputBrush}" />
                     <Setter TargetName="Box" Property="Margin" Value="24,3,0,3" />
@@ -347,15 +377,15 @@
 
                     <Grid Grid.Row="1">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="360" MinWidth="260" />
+                            <ColumnDefinition x:Name="ColLeft" Width="360" MinWidth="260" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" MinWidth="320" />
+                            <ColumnDefinition x:Name="ColCenter" Width="*" MinWidth="320" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="340" MinWidth="240" />
+                            <ColumnDefinition x:Name="ColRight" Width="340" MinWidth="240" />
                         </Grid.ColumnDefinitions>
 
                         <!-- 左：セッション一覧 -->
-                        <Border Grid.Column="0" Padding="8" CornerRadius="4"
+                        <Border x:Name="PaneLeft" Grid.Column="0" Padding="8" CornerRadius="4"
                                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -419,10 +449,10 @@
                             </Grid>
                         </Border>
 
-                        <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent" />
+                        <GridSplitter x:Name="Split1" Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent" />
 
                         <!-- 中央：セッション詳細 -->
-                        <Border Grid.Column="2" Padding="8" CornerRadius="4"
+                        <Border x:Name="PaneCenter" Grid.Column="2" Padding="8" CornerRadius="4"
                                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
                             <Grid>
                                 <TextBlock Text="左の一覧からセッションを選んでください" Opacity="0.6"
@@ -709,10 +739,10 @@
                             </Grid>
                         </Border>
 
-                        <GridSplitter Grid.Column="3" Width="8" HorizontalAlignment="Center" Background="Transparent" />
+                        <GridSplitter x:Name="Split2" Grid.Column="3" Width="8" HorizontalAlignment="Center" Background="Transparent" />
 
                         <!-- 右：タイムライン -->
-                        <Border Grid.Column="4" Padding="8" CornerRadius="4"
+                        <Border x:Name="PaneRight" Grid.Column="4" Padding="8" CornerRadius="4"
                                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -721,7 +751,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" MinHeight="160" />
                                     <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="150" MinHeight="60" />
+                                    <RowDefinition x:Name="RowRecent" Height="150" MinHeight="60" />
                                 </Grid.RowDefinitions>
 
                                 <!-- メモ：入力するたびにメモリへ、フォーカスアウトでファイルへ保存 -->
@@ -747,14 +777,57 @@
                                 </Border>
 
                                 <Border Grid.Row="1" Grid.RowSpan="3" Style="{StaticResource PanelBox}" />
-                                <TextBlock Grid.Row="1" Text="タイムライン" Style="{StaticResource SectionHeading}" Margin="10,10,10,6" />
-                                <WrapPanel Grid.Row="2" Margin="10,0,10,2">
-                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="入力" IsChecked="{Binding Timeline.ShowInput}" />
-                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="返事" IsChecked="{Binding Timeline.ShowResponse}" />
-                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="思考" IsChecked="{Binding Timeline.ShowThought}" />
-                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="ツール" IsChecked="{Binding Timeline.ShowTool}" />
-                                    <CheckBox Style="{StaticResource ChipCheckBox}" Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
-                                </WrapPanel>
+                                <DockPanel Grid.Row="1" Margin="10,8,10,6">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                        <!-- 表示中の行（種別・検索で絞った結果）をまとめてコピー -->
+                                        <ui:Button Command="{Binding Timeline.CopyAllCommand}" ToolTip="いま表示している行をまとめてコピー"
+                                                   AutomationProperties.AutomationId="CopyAllButton">
+                                            <ui:Button.Style>
+                                                <Style TargetType="ui:Button" BasedOn="{StaticResource HeadingButton}">
+                                                    <Setter Property="Content" Value="⧉ 全部コピー" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Timeline.CopiedAll}" Value="True"><Setter Property="Content" Value="✓ コピーしました" /></DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:Button.Style>
+                                        </ui:Button>
+                                        <ui:Button Command="{Binding ToggleTimelineExpandedCommand}" ToolTip="タイムラインを画面いっぱいに広げる／戻す（Esc でも戻る）"
+                                                   AutomationProperties.AutomationId="ExpandButton">
+                                            <ui:Button.Style>
+                                                <Style TargetType="ui:Button" BasedOn="{StaticResource HeadingButton}">
+                                                    <Setter Property="Content" Value="⤢ 拡大" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsTimelineExpanded}" Value="True"><Setter Property="Content" Value="⤡ 戻す" /></DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:Button.Style>
+                                        </ui:Button>
+                                    </StackPanel>
+                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                        <Run Text="タイムライン" FontWeight="SemiBold" />
+                                        <Run Text="{Binding Timeline.CountText, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
+                                        <!-- 拡大中だけ：どのセッションか分かるように -->
+                                        <Run Text="{Binding ExpandedTitle, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </TextBlock>
+                                </DockPanel>
+                                <Grid Grid.Row="2" Margin="10,0,10,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" MinWidth="70" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <CheckBox Style="{StaticResource ChipCheckBoxCompact}" Content="入力" IsChecked="{Binding Timeline.ShowInput}" />
+                                        <CheckBox Style="{StaticResource ChipCheckBoxCompact}" Content="返事" IsChecked="{Binding Timeline.ShowResponse}" />
+                                        <CheckBox Style="{StaticResource ChipCheckBoxCompact}" Content="思考" IsChecked="{Binding Timeline.ShowThought}" />
+                                        <CheckBox Style="{StaticResource ChipCheckBoxCompact}" Content="ツール" IsChecked="{Binding Timeline.ShowTool}" />
+                                        <CheckBox Style="{StaticResource ChipCheckBoxCompact}" Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
+                                    </StackPanel>
+                                    <!-- 検索：含む行だけを表示（種別のチップとは AND） -->
+                                    <ui:TextBox Grid.Column="1" Margin="4,0,0,0" FontSize="12" Padding="6,2" MinHeight="26"
+                                                PlaceholderText="🔍 検索" ClearButtonEnabled="True"
+                                                Text="{Binding Timeline.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                AutomationProperties.AutomationId="TimelineSearch" />
+                                </Grid>
                                 <ListBox x:Name="TimelineList" Grid.Row="3" Margin="6,0,2,6" ItemsSource="{Binding Timeline.View}"
                                          ItemTemplate="{StaticResource TimelineRow}"
                                          ItemContainerStyle="{StaticResource PlainItem}"
@@ -765,10 +838,10 @@
                                          VirtualizingPanel.ScrollUnit="Pixel" />
 
                                 <!-- 区切りをドラッグして、タイムラインと下の2つのリストの高さを調整できる -->
-                                <GridSplitter Grid.Row="4" Height="8" HorizontalAlignment="Stretch" Background="Transparent"
+                                <GridSplitter x:Name="RecentSplitter" Grid.Row="4" Height="8" HorizontalAlignment="Stretch" Background="Transparent"
                                               ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" />
 
-                                <Border Grid.Row="5" Style="{StaticResource PanelBox}">
+                                <Border x:Name="RecentPanel" Grid.Row="5" Style="{StaticResource PanelBox}">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel Margin="0,0,14,0">
                                         <TextBlock Text="最近の入力（全セッション）" Style="{StaticResource SectionHeading}" />
