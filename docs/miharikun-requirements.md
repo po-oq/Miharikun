@@ -173,7 +173,9 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 | `events\{agentId}\{sessionId}.jsonl` | 生イベント1件1行（Cursor は sessionId = conversation_id） | Hook のみ（追記専用） |
 | `events\{agentId}\_app.jsonl` | セッション ID を持たないイベント（MVP では未登録） | Hook |
 | `meta\{agentId}\{sessionId}.json` | タイトル・概要・メモ・ステータス | App |
-| `projects{slug}-{hash8}.json` | プロジェクトごとの設定（ドキュメントタブの除外パターン） | App |
+| `projects\{slug}-{hash8}.json` | プロジェクトごとの設定（ドキュメントタブの除外パターン） | App |
+| `webview2\` | WebView2 の作業フォルダ（キャッシュ・Cookie 等。消してよい。自動掃除しない） | WebView2 |
+| `preview\` | md を HTML にした一時ファイル（1 md＝1 ファイル。起動時に 1 日より古いものを削除） | App |
 | `settings.json` | アプリ全体の設定（テーマ。将来はテストコマンドのパターン等） | App |
 | `logs\hook-error.log` | Hook の例外ログ | Hook |
 
@@ -207,13 +209,13 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - `status`：省略（未設定）/ `"working"`（作業中）/ `"paused"`（中断）/ `"done"`（完了）。既存ファイルは項目が無い＝未設定として読み、`v` は上げない。知らない値は未設定として扱う
 - 書き込みは一時ファイル → `File.Replace` でアトミックに。複数起動の競合は後勝ちで可
 
-### プロジェクト設定（projects{slug}-{hash8}.json）
+### プロジェクト設定（projects\{slug}-{hash8}.json）
 ```json
-{ "v": 1, "documents": { "ignore": ".git/
-node_modules/
-..." } }
+{ "v": 1, "path": "c:\\work\\proj", "documents": { "ignore": ".git/\nnode_modules/\n...", "lastOpened": "docs/README.md" } }
 ```
 - ファイル名：対象フォルダのフルパスを、末尾区切りなし・小文字にしたもの。`slug`＝英数字以外の連なりを `-` にしたもの（読みやすさ用）、`hash8`＝そのパスの SHA-256 先頭8桁（日本語・記号で slug が衝突しても別ファイルになる）
+- `path`：対象フォルダのフルパス（人が見て分かるようにするためだけ。判定には使わない）
+- `documents.lastOpened`：最後に開いたファイルの相対パス（無ければ復元しない）
 - `documents.ignore`：gitignore 形式のテキスト（改行区切り）。キーが無い・ファイルが無い・壊れているときは既定値（12.7）を使う。他のキーは今は無い（将来、プロジェクトごとの設定はここに足す）
 
 ### settings.json
@@ -353,6 +355,7 @@ node_modules/
 ### 12.1 ヘッダー
 - タブ：ダッシュボード / ドキュメント（12.7）/ メモ（MVP 外、プレースホルダー表示）
 - 対象フォルダパス
+- ⚙ ボタンと対象フォルダパスは、**どのタブでも見える共通ヘッダー**に置く（タブの中に置かない）
 
 ### 12.2 左：セッション一覧
 - 状態別件数（🔵🟢🟡🔴⚪。🟡 は「停止」）
@@ -425,18 +428,20 @@ node_modules/
 
 **走査**
 - 背景スレッドで再帰列挙し、除外フォルダは中に入らない（枝刈り）。拡張子 `.md` `.html` `.htm`（大文字小文字無視）のみ拾い、中身は読まない。見つかった分から順にツリーへ出す（画面を固めない）
-- 変更検知は `FileSystemWatcher`（まとめて処理して差分反映）。取りこぼし用に「読み直し」がある。索引のキャッシュ保存はしない（遅ければ後で足す）
+- 変更検知は `FileSystemWatcher`：ファイルの追加/削除/更新/名前変更だけ差分で反映し、フォルダの作成/削除/名前変更・バッファあふれは「読み直し」と同じ全再走査を自動で行う。除外は親フォルダまでさかのぼって判定する。取りこぼし用に「読み直し」がある。索引のキャッシュ保存はしない（遅ければ後で足す）
 - 目標：1万ファイル超のフォルダでも、操作がもたつかず、ツリーが数秒以内に出る
 - 検索はファイル名のみ（本文検索はしない）
 
 **プレビュー**
 - WebView2（Edge の Runtime）を使う。未導入のときは「WebView2 Runtime が必要です」と案内を出し、ツリー・一覧・概要カードは使える。起動時に Runtime の有無を確認する
 - html：元のファイルをそのまま開く（`file:///`）。相対・絶対のローカルパスの css・js・画像・リンクはそのまま効く。JavaScript は実行する。外部 http のリンクは既定ブラウザで開く
-- md：Markdig（`UseAdvancedExtensions`）で HTML にし、`<base>` を元のフォルダにした一時 HTML を開く。相対パスの画像・リンクが効く。他の .md へのリンクはアプリ内で開き、ツリー・一覧も追従する
+- **リンクの振り分け**（html・md 共通。`NavigationStarting` と `NewWindowRequested` の両方）：①http/https → 既定ブラウザ ②対象フォルダ内の .md/.html/.htm → アプリ内で選択（ツリー・一覧・最後のファイルも追従。html→html も同じ）③対象フォルダ外・除外フォルダ内の .md/.html → 既定のアプリ ④その他のローカルファイル・フォルダ → 既定のアプリ／エクスプローラー ⑤`#見出し` だけ → ページ内で移動
+- md：Markdig（`UseAdvancedExtensions`）で HTML にし、`<base>` を元のフォルダにした一時 HTML を開く（見出しの id は日本語を残す GitHub 方式。`#見出し` のリンクはページ内スクロールにする）。相対パスの画像・リンクが効く。他の .md へのリンクはアプリ内で開き、ツリー・一覧も追従する
 - md の**タスクリスト**（`- [ ]` `- [x]` `- [X]`、入れ子、番号付きリスト内）は、チェックボックスとして表示する。読み取り専用（クリックしても md は変わらない）。黒丸は消す。コードブロック内と見出し内の `[x]` は変換しない
-- md の mermaid（`mermaid` 言語のコードブロック）は、CDN の mermaid.js で図にする（ネット接続が前提。繋がらないときはコードのまま表示）。コードブロックは色付けする
+- md の mermaid（`mermaid` 言語のコードブロック）は、CDN の mermaid.js で図にする（ネット接続が前提。繋がらないときはコードのまま表示）。コードブロックは highlight.js（CDN。繋がらないときは色なし）で色付けする
 - md のプレビューはライト/ダークのテーマに追従する（html はファイルの見た目を尊重）
 - ファイルが保存されたら自動で再読み込みする
+- WebView2 の上に WPF の要素を重ねない（Runtime 未導入の案内などは、プレビュー領域と入れ替えて出す）。設定ダイアログは別ウィンドウにする
 
 ## 13. 非機能要件
 
@@ -549,10 +554,25 @@ node_modules/
 - 進め方：①要件定義 ②Core（検索の判定・全部コピーの整形。テスト先行）③ViewModel・画面（拡大モード、検索、コピー）
 - 状況：実装し、隔離した環境（実データのコピー）でライト/ダークの画面確認済み。通常の幅（340px）でチップ5つと検索ボックスが1行に収まること、検索（「1/5件」・✕で解除）、行のダブルクリックコピー（全文がクリップボードに入り、バブルが「コピーしました」に変わる。省略表示の開閉は元のまま）、拡大（全幅で上にメモ、下にタイムライン。Esc で戻る）を確認した。判定・整形は Core の `TimelineText` に置いてテストしている。
 
-## [ ] Phase 13: ドキュメントタブ（Issue #9）
-- 12.7 / 6章。ツリー・一覧・絞り込み・除外設定・プレビュー（md / html）
-- 完了条件：1万ファイル超のフォルダでも画面が固まらずツリーが出る。除外設定の変更が即時に反映され、再起動後も残る。md のチェックボックス（未/済・入れ子・番号付き）が正しく出る。mermaid が図になる。html の相対 css・js・画像が効く。ライト/ダークの両方で確認する
-- 進め方：①要件定義 ②Core（`GitIgnoreMatcher`・`DocumentIndexer`・`DocumentFilter`・md→HTML 変換・プロジェクト設定の保存。テスト先行）③ViewModel・ツリー・一覧・絞り込み・設定ダイアログ ④WebView2 プレビュー（html→md）。各段を実機で確認する
+## Phase 13〜17: ドキュメントタブ（Issue #9）
+12.7 / 6章。実装の分け方・ファイル構成は `docs/issue9-documents-plan.md`（図解 HTML と対）。全体の完了条件：1万ファイル超のフォルダでも画面が固まらずツリーが出る。除外設定の変更が即時に反映され、再起動後も残る。md のチェックボックス（未/済・入れ子・番号付き）が正しく出る。mermaid が図になる。html の相対 css・js・画像が効く。ライト/ダークの両方で確認する。
+
+## [ ] Phase 13: ドキュメント Core
+- `GitIgnoreMatcher`・`DocumentIndexer`・索引・ツリー・`DocumentFilter`・`DocumentOverview`・`ProjectSettingsStore`・`DocumentWatcher`（画面なし。テスト先行）
+- 完了条件：1万ファイルの一時フォルダのテストが数秒以内。`dotnet build --no-incremental` が警告 0
+
+## [ ] Phase 14: ドキュメント md→HTML（新プロジェクト Miharikun.Docs）
+- Markdig（Docs だけが参照。Core は AOT 互換のまま）。チェックボックス・mermaid・テーマ別 CSS
+- 完了条件：チェックボックス 6 ケースのテストが通る。要件定義書そのものを変換できる
+
+## [ ] Phase 15: ドキュメント画面
+- ツリー・一覧・絞り込み・概要カード・最後のファイルの復元・Watcher・設定ダイアログ（プレビューは空）
+
+## [ ] Phase 16: ドキュメントのプレビュー
+- WebView2（html → md）、リンクの扱い、自動再読込、各ボタン。単一ファイル発行で動くかを、この Phase の中で確認する
+
+## [ ] Phase 17: ドキュメントの仕上げ
+- 1万・5万ファイルの実測、Release の発行確認、本書（12.7・5章）の更新
 
 ## 16. テスト方針
 
