@@ -124,6 +124,68 @@ public sealed class HookRunnerTests : IDisposable
         Assert.False(Directory.Exists(_paths.EventsDir("cursor")));
     }
 
+    // 実機で起きたこと：日本語を含む入力が途中で文字コード変換を受けて壊れ、JSON として読めなくなる。
+    // イベント自体を失うと状態が狂うので、イベント名などだけ救出して記録する。
+    [Fact]
+    public void Unparseable_prompt_event_is_salvaged_with_its_ascii_fields_and_the_raw_bytes_are_kept()
+    {
+        var broken = "{\"conversation_id\":\"conv-9\",\"model\":\"grok-4.7\",\"prompt\":\"蜀・ｮｹ\"謨吶∴\",\"session_id\":\"conv-9\"," +
+                     "\"hook_event_name\":\"beforeSubmitPrompt\",\"workspace_roots\":[\"/c:/work/proj\"]}";
+
+        var (exit, output) = Run(broken);
+
+        Assert.Equal(0, exit);
+        Assert.Equal("{\"continue\":true}", output);   // 送信を止めない
+        var node = JsonNode.Parse(Lines("conv-9")[0])!;
+        Assert.Equal("beforeSubmitPrompt", (string)node["event"]!);
+        var payload = node["payload"]!;
+        Assert.Equal("conv-9", (string)payload["conversation_id"]!);
+        Assert.Equal("grok-4.7", (string)payload["model"]!);
+        Assert.Equal("/c:/work/proj", (string)payload["workspace_roots"]![0]!);
+        Assert.True((bool)payload["_salvaged"]!);
+        Assert.NotNull(payload["_parse_error"]);
+        Assert.Null(payload["prompt"]);                // 壊れた本文は信用しない
+
+        var saved = Assert.Single(Directory.GetFiles(Path.Combine(_dir, "logs", "bad-input"), "*.bin"));
+        Assert.Equal(System.Text.Encoding.UTF8.GetBytes(broken), File.ReadAllBytes(saved));   // 元のバイト列をそのまま
+        Assert.Contains("救出", File.ReadAllText(_paths.HookErrorLog));
+    }
+
+    [Theory]
+    [InlineData("stop", "{}", 0)]
+    [InlineData("preToolUse", "", 1)]
+    public void Salvaged_events_follow_the_same_output_table(string evt, string expectedOut, int expectedExit)
+    {
+        var broken = "{\"conversation_id\":\"conv-9\",\"status\":\"completed\",\"hook_event_name\":\"" + evt + "\",\"tool_use_id\":\"call-1\\nfc_2\",\"x\":\"a\"b\"}";
+
+        var (exit, output) = Run(broken);
+
+        Assert.Equal(expectedExit, exit);
+        Assert.Equal(expectedOut, output);
+        var payload = JsonNode.Parse(Lines("conv-9")[0])!["payload"]!;
+        Assert.Equal("completed", (string)payload["status"]!);
+        Assert.Equal("call-1\nfc_2", (string)payload["tool_use_id"]!);   // エスケープも戻す
+    }
+
+    [Fact]
+    public void Unparseable_input_without_an_event_name_is_still_dropped()
+    {
+        var (exit, output) = Run("{\"conversation_id\":\"conv-9\",\"prompt\":\"壊れた\"本文\"}");
+
+        Assert.Equal(1, exit);
+        Assert.Equal("", output);
+        Assert.False(Directory.Exists(_paths.EventsDir("cursor")));
+    }
+
+    [Fact]
+    public void Bad_input_files_are_capped()
+    {
+        for (var i = 0; i < 25; i++)
+            Run("not json " + i);
+
+        Assert.True(Directory.GetFiles(Path.Combine(_dir, "logs", "bad-input")).Length <= 20);
+    }
+
     [Theory]
     [InlineData("--agent", "unknown")]
     [InlineData("--agent")]
@@ -187,6 +249,23 @@ public sealed class HookRunnerTests : IDisposable
         Assert.Equal("feature/x", (string)withGit["branch"]!);
         Assert.Equal(head, (string)withGit["head"]!);
         Assert.Null(JsonNode.Parse(lines[1])!["git"]);
+    }
+
+    [Fact]
+    public void Git_info_is_attached_when_cursor_sends_the_root_as_slash_drive_form()
+    {
+        var repo = Path.Combine(_dir, "repo2");
+        Directory.CreateDirectory(repo);
+        Git(repo, "init", "-b", "main");
+        Git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--allow-empty", "-m", "init");
+        var cursorForm = "/" + repo.Replace("\\", "/");   // 実機：/c:/zDev/repo/Miharikun
+        var json = "{\"hook_event_name\":\"stop\",\"conversation_id\":\"conv-1\",\"workspace_roots\":[\"" + cursorForm + "\"]}";
+
+        Run(json);
+
+        var git = JsonNode.Parse(Lines()[0])!["git"];
+        Assert.NotNull(git);
+        Assert.Equal("main", (string)git!["branch"]!);
     }
 
     [Fact]

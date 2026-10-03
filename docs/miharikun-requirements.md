@@ -386,6 +386,28 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - [ ] 承認系 hook を exit 1 で抜けたとき：アクションが通常どおり進むか、Cursor の確認ダイアログが維持されるか、Hooks 出力チャンネルのエラー表示が許容範囲か
 - [ ] `postToolUse`（Shell）の `tool_output` に `exitCode` が入るか、`tool_use_id` が pre/post で一致するか
 
+### 14.1 実機で分かったこと（Cursor 3.23.12 / Windows、PoC 中の実測）
+
+確認項目の一部が、PoC（本体の hook を実際の Cursor に入れて動かした結果）で分かった。残りは未確認のまま。
+
+- [x] **hooks.json の command は Windows で実行される**。`C:/Users/…/Miharikun.Hook.exe --agent cursor`（`/` 区切り・スペースなし）で動作。`~/.cursor` は `%USERPROFILE%\.cursor`。スペースを含むパスは未確認。
+- [x] **transcript の UUID = conversation_id**。`%USERPROFILE%\.cursor\projects\<slug>\agent-transcripts\<uuid>\<uuid>.jsonl`（`subagents\` あり）。**slug はパスのドライブ文字を小文字にし、区切りを `-` にしたもの**（`C:\zDev\repo\Miharikun` → `c-zDev-repo-Miharikun`）。→ Phase 9 の前提は満たす。
+  - 形式：1行1メッセージ `{"role":"user|assistant","message":{"content":[{"type":"text","text":…}|{"type":"tool_use",…}]}}`。user の本文は `<timestamp>…</timestamp><user_query>…</user_query>` で包まれる。**行ごとの時刻はない**（user メッセージ内の `<timestamp>` のみ）。
+- [x] **`transcript_path` は常には入らない**。`sessionStart` と最初の `beforeSubmitPrompt` では空で、ツール系・`stop` 以降で入る（`c:\Users\…\agent-transcripts\<uuid>\<uuid>.jsonl`）。
+- [x] **モデル**：Agent の `beforeSubmitPrompt` / `stop` は `model:"grok-4.7-high"`、`model_id:"grok-4.7"`、`model_params:[{id,value},…]`（context / reasoning_effort / fast）。**ツール系など多くのイベントは `model:"default"`**（`model_id` なし）→ 表示では `default` を無視する。`sessionStart` は別の値（`cursor-grok-4.6-medium`）。
+- [x] **承認系 hook を無出力・exit 1 で抜けても、`Read` / `Grep` / `Glob` の実行は通常どおり進んだ**。Shell の確認ダイアログへの影響は未確認。
+- [x] **`tool_use_id` は pre / post で一致**（実測 6/6）。値に改行を含む（`call-…\nfc_…`）。
+- [x] **`tool_output` は文字列**（JSON を文字列にしたもの。Read は `{"file_path":…,"content_length":…}`）。`duration` はミリ秒の小数。Shell の `exitCode` は未確認。
+- [x] **`workspace_roots` は `/c:/zDev/repo/Miharikun` の形**（先頭に `/`、ドライブ文字は小文字）。→ `ProjectPath` で先頭の `/` を取り除いて比較する。Hook の `git -C` にも同じ処理が必要だった。
+- [x] **日本語環境の Windows では、Cursor が渡す入力の日本語が壊れる（Cursor 側の不具合。原因と回避策を特定）**。
+  - 症状：`内容教えて` → `蜀・ｮｹ謨吶∴縺ｦ`（UTF-8 のバイト列を CP932 として読み替えた文字列。元には戻せない）。さらに文字列中の `\` `"` が失われて JSON として読めなくなることがある（長い日本語を含む `afterAgentResponse` / `afterAgentThought` など）。入力の先頭には UTF-8 の BOM が付く。
+  - 原因：Cursor は Windows で hook を次のように起動する（Cursor 内部のログには正しい入力が出ている）。
+    `$OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -LiteralPath '%TEMP%\cursor-hook-payload-….json' -Raw | & { $input | <command> }`
+    一時ファイルは BOM なしの UTF-8 だが、Windows PowerShell 5.1 の `Get-Content` は `-Encoding` なしだと既定のコードページ（日本語環境では CP932）で読む。`pwsh`（PowerShell 7）が PATH にあればそちらが使われ、起きないはず（未確認）。
+  - **対応（実装済み）**：Hook は、入力が BOM 付きで非 ASCII を含むとき（または JSON として読めないとき）、元の一時ファイル `cursor-hook-payload-*.json`（hook の実行中だけ存在）を探して正しい内容を読み直す。取り違えないよう、「受け取った文字列 = その一時ファイルを CP932 で読んだもの」と一致する候補だけを採用し、一致を確かめられないときは、イベント名・会話 ID・生成 ID が一意に合うものだけを採用する。見つからなければ従来どおり、イベント名・セッション ID などの ASCII の項目だけを救出して記録する（`_salvaged: true`、元のバイト列は `logs\bad-input\`）。
+  - 回避策（コード変更なし）：PowerShell 7 を入れる、または Windows の「ベータ: ワールドワイド言語サポートで Unicode UTF-8 を使用」を有効にする。
+  - 修正前に記録されたイベント（化けた本文・本文なしのイベント）は元に戻らない。transcript（正しい日本語で保存されている）から補正する案は未実装。- [ ] `sessionEnd` の発火条件と reason ／ 履歴からの再開で `sessionStart` が再度来るか ／ Ask モード ／ Shell の `exitCode` と失敗時のイベント ／ スペースを含むパス：**未確認**
+- 補足：全イベントの payload に `user_email` が入っている（イベントファイルにそのまま保存される）。
 ## 15. 実装フェーズ
 
 フェーズ完了時は見出しの `[ ]` を `[x]` に更新すること。
