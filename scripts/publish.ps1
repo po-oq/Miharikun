@@ -9,13 +9,16 @@
 #>
 param(
     [string]$Version = "0.1.0",
-    [switch]$SkipHook
+    [switch]$SkipHook,
+    # PoC 用：Hook を NativeAOT ではなく通常の自己完結・単一ファイルで作る（C++ ビルドツール不要。1回の実行は約60ms）
+    [switch]$NoAot
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
 $name = "Miharikun-v$Version-win-x64"
+if ($NoAot) { $name += "-poc" }
 $stage = Join-Path $dist $name
 $appOut = Join-Path $dist '_app'
 $hookOut = Join-Path $dist '_hook'
@@ -40,6 +43,13 @@ if ($SkipHook) {
     return
 }
 
+if ($NoAot) {
+    Write-Warning "-NoAot: Hook は NativeAOT ではなく通常ビルドです（PoC 用）。配布用には使わないでください。"
+    Invoke-Dotnet @('publish', (Join-Path $root 'src/Miharikun.Hook'), '-c', 'Release', '-r', 'win-x64', '--self-contained',
+        '-p:PublishAot=false', '-p:PublishSingleFile=true', '-p:DebugType=none', "-p:Version=$Version", '-o', $hookOut)
+    Copy-Item (Join-Path $hookOut 'Miharikun.Hook.exe') $stage
+}
+else {
 Write-Host "== Hook（NativeAOT）" -ForegroundColor Cyan
 try {
     Invoke-Dotnet @('publish', (Join-Path $root 'src/Miharikun.Hook'), '-c', 'Release', '-r', 'win-x64',
@@ -50,6 +60,7 @@ catch {
         "（MSVC と Windows SDK）が入っているか確認してください。`n" + $_)
 }
 Copy-Item (Join-Path $hookOut 'Miharikun.Hook.exe') $stage
+}
 
 @"
 Miharikun（みはりくん） v$Version
