@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>メモタブ実装計画 レビュー</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>メモタブ実装計画（docs/memo-tab-plan.md）レビュー</h1>
+<p><b>結論：<span class="ng">直してから進める</span></b>。全体の分け方（Core → 共通化 → 画面 → 仕上げ）と、WebView2 の環境を 1 つにする方針は妥当。
+ただし <b>7.3 の「予定のファイル」が消える／残り続ける抜け（#1・#2）</b> と、<b>読み込み失敗を「空」と扱うと保存で既存メモを消す危険（#3）</b> は、計画の段階で直しておくべき。
+ほかは計画の文言を足せば済む中〜低の指摘。コードは変えていない。</p>
+
+<h2>1. 確認した範囲</h2>
+<ul>
+<li>計画：<code>docs/memo-tab-plan.md</code>（図解 <code>memo-tab-plan.html</code> は対なので md を正として読んだ）</li>
+<li>仕様：<code>docs/miharikun-requirements.md</code> 6章・12.7・12.10・Phase 23〜26、設計イメージ <code>docs/memo-tab-design.html</code></li>
+<li>コード：<code>src/Miharikun/Views/DocumentPreview.xaml(.cs)</code>・<code>Views/DocumentsView.xaml(.cs)</code>・<code>ViewModels/DocumentsViewModel.cs</code>・<code>MainWindow.xaml(.cs)</code>・<code>App.xaml.cs</code>・<code>PreviewFiles.cs</code>、
+<code>Miharikun.Core/Storage/AppPaths.cs</code>・<code>Storage/AtomicFile.cs</code>・<code>Settings/ProjectSettingsStore.cs</code>・<code>Documents/GitIgnoreMatcher.cs</code>・<code>Documents/DocumentChangeClassifier.cs</code>・<code>Documents/DocumentIndex.cs</code>、<code>Miharikun.Docs/MarkdownRenderer.cs</code></li>
+</ul>
+
+<h2>2. 概念図</h2>
+<h3>7.3 メモのリンク → ドキュメントタブ（DocumentsViewModel の状態ごと）</h3>
+<svg viewBox="0 0 960 400" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="200" height="66" fill="#dfd" stroke="#383"/>
+<text x="20" y="42" font-weight="bold">MemoViewModel</text><text x="20" y="60" font-size="12">OpenLocalLink(fullPath)</text><text x="20" y="77" font-size="12">IsInAppDocument → true</text>
+<line x1="210" y1="53" x2="260" y2="53" stroke="#333" marker-end="url(#a)"/>
+<rect x="260" y="20" width="250" height="66" fill="#dfd" stroke="#383"/>
+<text x="270" y="42" font-weight="bold">OpenFromOutside(rel)</text><text x="270" y="60" font-size="12">計画：索引にあれば SelectPath</text><text x="270" y="77" font-size="12">無ければ 予定に覚えて Start()</text>
+<line x1="510" y1="53" x2="560" y2="53" stroke="#333" marker-end="url(#a)"/>
+<rect x="560" y="20" width="390" height="66" fill="#fde" stroke="#b33"/>
+<text x="570" y="42" font-weight="bold">MainWindow：ドキュメントタブへ切り替え</text><text x="570" y="60" font-size="12">計画は「選ぶ → 切り替え」の順。隠れたタブで</text><text x="570" y="77" font-size="12">PreviewChanged が出る <tspan fill="#b33">← #9</tspan></text>
+<!-- 状態 -->
+<rect x="10" y="120" width="220" height="110" fill="#dff" stroke="#08a"/>
+<text x="20" y="142" font-weight="bold">A. 未開始（_started=false）</text><text x="20" y="162" font-size="12">Start() → Rescan()</text><text x="20" y="180" font-size="12">最後のバッチで _restored=false</text><text x="20" y="198" font-size="12">→ 予定を選ぶ（計画どおり動く）</text><text x="20" y="218" font-size="12" fill="#2a7a2a">OK</text>
+<rect x="250" y="120" width="220" height="110" fill="#fde" stroke="#b33"/>
+<text x="260" y="142" font-weight="bold">B. 最初の走査中</text><text x="260" y="162" font-size="12">対象が先のバッチで索引にある</text><text x="260" y="180" font-size="12">→ SelectPath。その後 IsLast で</text><text x="260" y="198" font-size="12">RestoreLastOpened が再度選ぶ</text><text x="260" y="218" font-size="12" fill="#b33">← #11（二重・上書きの恐れ）</text>
+<rect x="490" y="120" width="220" height="110" fill="#fde" stroke="#b33"/>
+<text x="500" y="142" font-weight="bold">C. 2 回目以降の走査中</text><text x="500" y="162" font-size="12">Rescan で索引は Reset（空）</text><text x="500" y="180" font-size="12">→ 予定に覚える。Start は何もしない</text><text x="500" y="198" font-size="12">IsLast でも _restored=true なので</text><text x="500" y="218" font-size="12" fill="#b33">予定が使われない ← #1</text>
+<rect x="730" y="120" width="220" height="110" fill="#fde" stroke="#b33"/>
+<text x="740" y="142" font-weight="bold">D. 走査済み・索引に無い</text><text x="740" y="162" font-size="12">（判定の直後に消えた・Watcher</text><text x="740" y="180" font-size="12">　の差分がまだ届いていない）</text><text x="740" y="198" font-size="12">走査が来ないので予定が残り続ける</text><text x="740" y="218" font-size="12" fill="#b33">何も起きない ← #2</text>
+<line x1="385" y1="86" x2="120" y2="120" stroke="#888" marker-end="url(#a)"/>
+<line x1="385" y1="86" x2="360" y2="120" stroke="#888" marker-end="url(#a)"/>
+<line x1="385" y1="86" x2="600" y2="120" stroke="#888" marker-end="url(#a)"/>
+<line x1="385" y1="86" x2="840" y2="120" stroke="#888" marker-end="url(#a)"/>
+<!-- 解決 -->
+<rect x="10" y="260" width="940" height="125" fill="#dfd" stroke="#383"/>
+<text x="20" y="282" font-weight="bold">修正後の OpenFromOutside(rel)（案）</text>
+<text x="20" y="302" font-size="12">1. 索引にある → _pending=null・_restored=true にして SelectPath（B の二重選択を防ぐ）</text>
+<text x="20" y="320" font-size="12">2. !_started → _pending=rel; Start()　　3. IsScanning → _pending=rel（後勝ちで上書き）</text>
+<text x="20" y="338" font-size="12">4. それ以外（走査済みで無い）→ その場で既定のアプリで開き、ログ（D）</text>
+<text x="20" y="356" font-size="12">OnBatch(IsLast)：<tspan font-weight="bold">毎回</tspan> _pending を見る。あれば索引で選ぶ（無ければ既定のアプリ＋ログ）・_restored=true（C）</text>
+<text x="20" y="374" font-size="12">　予定が無いときだけ従来どおり !_restored で RestoreLastOpened。OnSelectedRowChanged で _pending=null（#12）</text>
+</svg>
+
+<h3>Phase 24 の共通部品で、ドキュメント専用のまま残るもの</h3>
+<svg viewBox="0 0 960 230" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="200" height="56" fill="#efe" stroke="#383"/><text x="20" y="42" font-weight="bold">DocumentsViewModel</text><text x="20" y="62" font-size="12">PreviewSource.File</text>
+<rect x="10" y="110" width="200" height="56" fill="#efe" stroke="#383"/><text x="20" y="132" font-weight="bold">MemoViewModel</text><text x="20" y="152" font-size="12">Markdown / Message</text>
+<line x1="210" y1="48" x2="270" y2="80" stroke="#333" marker-end="url(#b)"/>
+<line x1="210" y1="138" x2="270" y2="110" stroke="#333" marker-end="url(#b)"/>
+<rect x="270" y="20" width="400" height="190" fill="#fef" stroke="#a3a"/>
+<text x="280" y="42" font-weight="bold">MarkdownPreview（旧 DocumentPreview）× 2 個</text>
+<rect x="285" y="55" width="370" height="36" fill="#fde" stroke="#b33"/><text x="292" y="78" font-size="12">既定文「ファイルを選ぶと…」（XAML） ← #7</text>
+<rect x="285" y="98" width="370" height="36" fill="#fde" stroke="#b33"/><text x="292" y="121" font-size="12">Runtime 未導入の案内「ツリー・一覧・概要は使えます」 ← #7</text>
+<rect x="285" y="141" width="370" height="28" fill="#fde" stroke="#b33"/><text x="292" y="160" font-size="12">ログが target.RelativePath を使う（File に無い） ← #15</text>
+<text x="285" y="195" font-size="12" fill="#666">リンクの振り分け・Reload/Navigate・# リンクは共通で問題なし</text>
+<line x1="670" y1="115" x2="720" y2="115" stroke="#333" marker-end="url(#b)"/>
+<rect x="720" y="70" width="230" height="90" fill="#fde" stroke="#b33"/>
+<text x="730" y="92" font-weight="bold">WebViewEnvironment</text><text x="730" y="112" font-size="12">CreateAsync を 1 回だけ（妥当）</text><text x="730" y="130" font-size="12">失敗した Task を覚え続けると</text><text x="730" y="148" font-size="12">再試行できない ← #8</text>
+</svg>
+
+<h2>3. 問題一覧</h2>
+<table>
+<tr><th>#</th><th>重大度</th><th>何が問題か（根拠）</th><th>どう解決するか</th></tr>
+
+<tr><td>1</td><td class="ng">高</td><td><b>③ 2 回目以降の走査中に来たリンクが消える。</b>計画 7.3-2 は「最初の走査が終わったら <code>RestoreLastOpened</code> の代わりに予定を選ぶ」。しかし走査は最初の 1 回だけではない：<code>Rescan()</code> は索引を <code>_index.Reset()</code> で空にする（<code>DocumentsViewModel.cs:219</code>）、除外設定の保存（<code>:235-239</code>）・フォルダの変更やバッファあふれ（<code>:65</code>・<code>:284-285</code>）・「読み直し」で走る。このとき索引に無いので予定に入るが、<code>Start()</code> は何もせず（<code>:203-205</code>）、最後のバッチでは <code>_restored</code> が true なので何も選ばない（<code>:266-270</code>）。タブは切り替わるのにファイルが選ばれない。</td>
+<td>予定は「最初の走査」でなく<b>毎回の走査の終わり（<code>batch.IsLast</code>）</b>で見る。あれば索引から選ぶ（無ければ既定のアプリ＋ログ）、その後 <code>_restored=true</code>。予定が無いときだけ、従来どおり <code>!_restored</code> で <code>RestoreLastOpened</code>。上の図の「修正後」。計画 7.3-2 の文言と、25-2 の確認に「読み直しの最中にメモのリンクを押す」を足す。</td></tr>
+
+<tr><td>2</td><td class="ng">高</td><td><b>③ 走査済みなのに索引に無いと、予定が残り続けて何も起きない。</b>計画は「無ければ（まだ走査していない・走査中）」と書くが、判定は索引の有無だけ。<code>DocumentLinkRule</code> は除外と拡張子だけ見るので、走査が終わった状態で索引に無いことがある（作った直後で Watcher の差分が 200ms のまとめ・UI への Post 前、判定の直後に消えた、など。<code>:245</code>・<code>:273-287</code>）。このとき <code>Start()</code> は何もしないので、予定は次の走査まで残り、無関係な時に急に選ばれる。</td>
+<td><code>OpenFromOutside</code> を 4 分岐にする：①索引にある→選ぶ ②<code>!_started</code>→予定＋<code>Start()</code> ③<code>IsScanning</code>→予定 ④それ以外→<b>その場で既定のアプリで開き、ログ</b>（計画の「走査が終わっても無ければ」と同じ扱い）。<code>IsScanning</code> は既にある（<code>:190</code>）。</td></tr>
+
+<tr><td>3</td><td class="ng">高</td><td><b>④ 読み込み失敗を「空」と扱うと、保存で既存のメモを消す。</b>23-1 の <code>Load</code> は「無い→空・null」だけ決めていて、ファイルはあるが読めない（ロック・権限・<code>AtomicFile</code> の置き換えの瞬間など）ときが未定。VM が空として表示すると、利用者は「メモはまだありません」→「編集」→保存で、<b>元のメモを空や新しい文で上書き</b>する（<code>AtomicFile.WriteAllText</code> は無条件に置き換える：<code>AtomicFile.cs:27-30</code>）。7.6 の監視での読み直しも同じで、一時的な失敗で空のプレビューになる。</td>
+<td><code>Load</code> は「ファイルが無い」だけを空にし、それ以外の <code>IOException</code>・<code>UnauthorizedAccessException</code> は例外のまま呼び手へ（Save と同じ方針）。VM：最初の読み込みで失敗→バーに理由、<b>「編集」を押せなくする</b>（メッセージで案内）、タブを開き直すか外の変更で再試行。監視での読み直しの失敗→今の表示のまま（ログだけ。<code>OnExternalChange</code> を呼ばない）。23-1 のテストに「読めないとき例外」を足す。</td></tr>
+
+<tr><td>4</td><td>中</td><td><b>④ <code>MemoEditor</code> の名前がぶつかる。</b>23-2 にプロパティ <code>Saved</code> とメソッド <code>Saved(text)</code> が並んでいる。C# では同じクラスに同名のプロパティとメソッドは置けない（CS0102）。</td>
+<td>メソッドを <code>MarkSaved(text)</code>（または <code>OnSaved</code>）に。7.1 の表も同じ名前に揃える。</td></tr>
+
+<tr><td>5</td><td>中</td><td><b>④ 編集中に外で変わったあと「キャンセル」すると、プレビューが古いまま。</b>7.1：編集中の外の変更は <code>Saved</code> だけ変える（正しい）。7.6：「作り直すと返ったときだけ <code>PreviewChanged</code>」。<code>Discard()</code> は「表示は <code>Saved</code>」とあるが、作り直しを出すか決まっていない。プレビューの WebView2 は編集の前の内容を持ったまま（<code>DocumentPreview.xaml.cs:98-104</code> は来たときしか描かない）。</td>
+<td><code>Discard()</code>（と保存なしで戻る場合）は「作り直すか」を返す：編集の始めに表示していた内容（<code>EditBase</code>）と今の <code>Saved</code> が違えば true。VM は true のとき <code>PreviewChanged(Markdown, reload:true)</code>。テストに「編集中に外で変更→破棄→作り直す」を足す（23-2 のテスト欄の「破棄後は新しい内容」をこの形で確かめる）。</td></tr>
+
+<tr><td>6</td><td>中</td><td><b>④ 変更していないのに「保存」を押すと、外の更新を古い内容で戻す。</b>編集中に別の起動が書き換え → こちらは何も変えずに保存 → <code>Draft</code>（＝編集の始めの内容）を書くので、相手の変更が黙って消える。「後勝ち」は両方が変えたときの話で、こちらが何も変えていないのに消えるのは利用者の予想と違う。</td>
+<td>保存の時 <code>!IsDirty</code> なら<b>書かずに</b>プレビューへ戻る（#5 と同じく、<code>Saved</code> が変わっていれば作り直す）。7.1 の表に 1 行足す。</td></tr>
+
+<tr><td>7</td><td>中</td><td><b>① 共通部品に、ドキュメント用の文言が埋まったまま。</b>XAML の既定文「ファイルを選ぶと、ここに表示します」（<code>DocumentPreview.xaml:10</code>）、<code>null</code> のときの同じ文（<code>.xaml.cs:66</code>）、Runtime 未導入の案内「ツリー・一覧・概要は使えます」（<code>:137-138</code>）。メモタブでは、読み込み前の一瞬と Runtime 未導入のときに、間違った案内が出る（12.10 は「編集・保存は使える」）。</td>
+<td>文言をホストから渡す：<code>IPreviewHost</code> に <code>EmptyText</code>（null の時の文）と <code>RuntimeMissingNote</code>（2 行目）を足す。ドキュメント VM は今の文をそのまま返す（挙動不変）。XAML の既定文は空にし、<code>DataContext</code> が付いた時に <code>EmptyText</code> を入れる。または「null を出さず <code>Message</code> を出す」に統一してもよいが、ドキュメント側の差分が増えるので前者を推奨。</td></tr>
+
+<tr><td>8</td><td>中</td><td><b>② 環境の共用で、失敗したときにやり直せなくなる恐れ。</b>今は失敗時に <code>_initTask = null</code> にして次の選択でやり直す（<code>DocumentPreview.xaml.cs:162-169</code>）。<code>WebViewEnvironment.GetAsync</code> が「最初の 1 回の Task」をそのまま覚えると、失敗した Task を返し続け、両方のタブで二度と始まらない。</td>
+<td><code>GetAsync</code> は、覚えた Task が失敗・キャンセルなら捨てて作り直す（成功した環境だけ覚える）。Runtime の有無の確認（<code>GetAvailableBrowserVersionString</code>）は結果を返すだけにし、案内の文はそれぞれの部品が #7 の文言で出す。UI スレッドから呼ぶ前提をコメントに。</td></tr>
+
+<tr><td>9</td><td>中</td><td><b>③ 「選ぶ → タブ切り替え」の順だと、隠れたタブでプレビューが動く。</b>計画 7.3-1 は <code>OpenFromOutside</code> を呼んでから切り替えを頼む。索引にあれば <code>SelectPath</code> がすぐ <code>RaisePreview</code>（<code>DocumentsViewModel.cs:156</code>）し、ドキュメントタブが一度も表示されていなければ WebView2 を隠れた場所で作り始める。今のコードは「画面に載った（ウィンドウハンドルのある）コントロールが要る」前提（<code>DocumentPreview.xaml.cs:149-155</code>）。WPF の WebView2 がハンドルを待ってくれるかは<b>要確認</b>。</td>
+<td>順番を逆にする：<code>MainWindow</code> がタブを切り替え → <code>Dispatcher.BeginInvoke(DispatcherPriority.Loaded, …)</code> で <code>OpenFromOutside</code>。こうすると <code>DocumentsView.Loaded</code> の <code>Start()</code>（<code>DocumentsView.xaml.cs:12</code>）が先に走り、今の「タブを開いてから選ぶ」と同じ道を通る。計画 7.3-1・7.3-4 の文言を直す。</td></tr>
+
+<tr><td>10</td><td>中</td><td><b>⑤ ボタンの名前が要件と合わない。</b>要件 12.10 と設計イメージは［保存］［保存しない］［キャンセル］。計画 7.4・7.5 は既存と同じ <code>MessageBox</code>（<code>HookSetup.cs:62-67</code>）で「はい＝保存／いいえ＝保存しない」。標準の <code>MessageBox</code> はボタンの文字を変えられない。</td>
+<td>下の Q1。どちらかに決めて、要件か計画の片方を直す。</td></tr>
+
+<tr><td>11</td><td>低</td><td><b>③ 最初の走査中に索引にあって選んだあと、<code>RestoreLastOpened</code> がもう一度選ぶ。</b>（図の B）<code>SelectPath</code> は <code>lastOpened</code> を保存するので普通は同じファイルになり、プレビューを 2 回出すだけ。ただし設定の保存に失敗したとき（<code>ProjectSettingsStore.cs:65-72</code> はログだけ）は前回のファイルに戻る。</td>
+<td>#1 の修正で、<code>OpenFromOutside</code> が選んだら <code>_restored = true</code> にする。</td></tr>
+
+<tr><td>12</td><td>低</td><td><b>③ 予定がある間に利用者が自分で選ぶと、走査の終わりで予定に上書きされる。</b></td>
+<td><code>OnSelectedRowChanged</code>（<code>:410-419</code>）で予定を消す。</td></tr>
+
+<tr><td>13</td><td>低</td><td><b>③ 「パスで絞り込み」が入っていると、一覧に出ない。</b><code>SelectPath</code> は絞り込みを変えない（<code>:145-157</code>・<code>:312</code>）。プレビューには出るが一覧で選ばれない。ドキュメント内のリンクも今同じ動きなので、挙動としては揃っている。</td>
+<td>今のままでよい（揃っている）。気になるなら <code>OpenFromOutside</code> だけ絞り込みを空にする。計画に「今と同じ」と一言書いておく。</td></tr>
+
+<tr><td>14</td><td>低</td><td><b>③ 除外の判定を二重に作らない。</b>23-3 の <code>DocumentLinkRule</code> のテストに「親の除外も」とあるが、既に <code>GitIgnoreMatcher.IsPathExcluded</code>（<code>GitIgnoreMatcher.cs:35-42</code>）が親までさかのぼる（Watcher も同じものを使う：<code>DocumentChangeClassifier.cs:54</code>）。また今の「対象フォルダ内か」は <code>rel.StartsWith("..")</code>（<code>DocumentsViewModel.cs:135</code>）で、<code>..memo.md</code> のような名前を外と誤判定する。</td>
+<td><code>DocumentLinkRule</code> は <code>IsPathExcluded(rel, false)</code> と <code>DocumentEntry.TryGetKind</code> を呼ぶだけにする。内外の判定は「最初の区切りまでが <code>..</code>」で見る（新しいコードだけ。既存の <code>OpenLocalLink</code> は Phase 24 では変えない）。</td></tr>
+
+<tr><td>15</td><td>低</td><td><b>① <code>PreviewSource.File(FullPath, Kind)</code> に相対パスが無い。</b>今は失敗のログに <code>target.RelativePath</code> を使う（<code>DocumentPreview.xaml.cs:88</code>）。無くすとログの文が変わる（挙動不変の範囲が少しずれる）。</td>
+<td><code>File(FullPath, RelativePath, Kind)</code> にする（今の <code>PreviewTarget</code> と同じ項目）。メモの <code>Markdown</code> はログに <code>Title</code> を使う。</td></tr>
+
+<tr><td>16</td><td>低</td><td><b>④ 保存のあと「最終更新」の日時をどこから取るか未定。</b>23-1 の <code>Save</code> は戻り値なし、<code>MemoEditor.Saved(text)</code> も日時を持たない。要件 12.10 は「メモのファイルの更新日時」。外の変更のときも同じ。</td>
+<td><code>Save</code> が書いた後の <code>LastWriteTime</code> を返す（または VM が <code>File.GetLastWriteTime</code>）。外の変更の読み直しも <code>Load</code> の日時でバーを更新。25-1 の確認に「保存で日時が変わる」を足す。</td></tr>
+
+<tr><td>17</td><td>低</td><td><b>⑤ Windows のサインアウト・シャットダウンでは <code>Closing</code> が来ない</b>（WPF は <code>Application.SessionEnding</code> を出し、<code>Window.Closing</code> は出さない仕様。<b>要確認</b>）。未保存の入力は黙って消える。要件には書かれていない。</td>
+<td>下の Q2。最小なら「既知の制限」として計画に書く。</td></tr>
+
+<tr><td>18</td><td>低</td><td><b>⑤ <code>MemoViewModel</code> の後始末が計画に無い。</b><code>App.OnExit</code> は今 <code>_viewModel</code>・<code>_documents</code>・<code>_monitor</code> だけ Dispose（<code>App.xaml.cs:74-79</code>）。メモの <code>FileSystemWatcher</code>（7.6）とまとめ用のタイマーが残る。</td>
+<td>25-1 の <code>App.xaml.cs</code> の変更に「<code>OnExit</code> で Dispose」を足す。<code>theme.Changed</code> の購読も <code>MainWindow</code>（<code>MainWindow.xaml.cs:28</code>）と同じ所に足すと書いておく。</td></tr>
+</table>
+
+<h3>問題なしと判断した観点</h3>
+<ul>
+<li><span class="ok">OK</span> ① <b>購読が外れない</b>：<code>DocumentsHost.DataContext</code> は明示的に設定（<code>MainWindow.xaml.cs:27</code>）なので、タブを切り替えても <code>DataContextChanged</code> で外れない。<code>as DocumentsViewModel</code>（<code>DocumentPreview.xaml.cs:35</code>）を <code>as IPreviewHost</code> に変えるだけで同じ動き。メモタブも同じく明示的に設定すればよい。</li>
+<li><span class="ok">OK</span> ① <b>作り直しの順番</b>：<code>RaisePreview</code> の呼び所（選択 <code>:418</code>・リンク <code>:156</code>・復元 <code>:458</code>・保存 <code>:293</code>・テーマ <code>:105</code>・再読み込み <code>:112</code>・選択解除 <code>:344</code>）は VM の中だけなので、型を変えても順番は変わらない。<code>Reload()</code> の条件（<code>:99-104</code>）も部品の中のまま。</li>
+<li><span class="ok">OK</span> ① <b><code>#見出し</code> とメモの <code>&lt;base&gt;</code></b>：<code>&lt;base&gt;</code> を対象フォルダにしても、ページ内リンクは <code>MarkdownRenderer</code> のスクリプトがスクロールに置き換える（<code>MarkdownRenderer.cs:49-57</code>）。</li>
+<li><span class="ok">OK</span> ② <b>環境を 1 つにする方針</b>：同じ作業フォルダで設定の違う環境を作ると失敗するので、共用は正しい。コントロール 2 つで 1 つの環境（同じブラウザのプロセス）を使うのは通常の使い方。メモの WebView2 をタブを最初に開いたときに作るのも、起動を遅くしない点で妥当（失敗時の扱いは #8）。</li>
+<li><span class="ok">OK</span> ② <b>一時 HTML の名前</b>：<code>PreviewFiles.Write</code> はフルパスのハッシュ（<code>PreviewFiles.cs:19-21</code>）。<code>CacheKey</code> をメモのファイルのパスにすれば、ドキュメントの md と重ならない。</li>
+<li><span class="ok">OK</span> ④ <b>保存先と書き方</b>：<code>ProjectSettingsFile</code> の名前の作り方（<code>AppPaths.cs:44-49</code>）を共通にして拡張子だけ変えれば、6 章どおり。<code>AtomicFile</code> はフォルダを作り（<code>AtomicFile.cs:15</code>）、BOM なし（<code>:11</code>）。設定の json を書くのは <code>ProjectSettingsStore.Update</code> だけ（<code>:51-73</code>）なので、メモの保存で json は変わらない。</li>
+<li><span class="ok">OK</span> ④ <b>監視の Filter</b>：<code>AtomicFile</code> の一時ファイルは <code>{path}.{guid}.tmp</code>（<code>AtomicFile.cs:17</code>）で、Filter（メモのファイル名）に当たらない。置き換えは <code>Renamed</code>/<code>Changed</code> として新しい名前で届くので、計画の 4 種で拾える（実機の出方は 25-2 の確認で見る）。自分の保存の反応は「同じ内容なら作り直さない」で吸収できる。</li>
+<li><span class="ok">OK</span> ④ <b>改行の比べ方</b>：比べるときだけ揃え、保存はそのまま、という決めは妥当（自分の保存の反応も文字列が一致するので作り直さない）。</li>
+<li><span class="ok">OK</span> ⑤ <b>閉じるときの順番</b>：今の <code>Closing += … _viewModel.Flush()</code>（<code>MainWindow.xaml.cs:50</code>）の後に確認、キャンセルなら <code>e.Cancel</code>、保存失敗でも <code>e.Cancel</code>、メモタブを選んでから聞く、変更なしなら聞かない — 要件 12.10 と一致。Flush はキャンセルされても害がない（セッションのメモを書くだけ）。</li>
+</ul>
+
+<h2>4. 決めたこと（2026-10-04：Q1＝B、Q2＝A で確定）</h2>
+<div class="sync"><b>Q1 → B</b>：閉じるときの確認は専用ダイアログ［保存］［保存しない］［キャンセル］。要件 12.10 はそのまま（すでにこの文言）。計画 7.4・7.5 の「既存と同じ MessageBox」を直し、6 章のファイル構成に専用ダイアログ（例 <code>Views/UnsavedMemoDialog.xaml(.cs)</code>、25-2）を足す。キャンセルの確認（「変更を破棄しますか？」）は MessageBox のまま。<br>
+<b>Q2 → A</b>：サインアウト・シャットダウン時の未保存の入力は扱わない。計画 7.5 に「既知の制限」として明記する。</div>
+<div class="q"><b>Q1.</b> 閉じるときの確認のボタン（#10）<br>
+A) 標準の <code>MessageBox</code>（はい／いいえ／キャンセル）にして、本文に「はい＝保存、いいえ＝保存しない」を書く。要件 12.10 の文言を直す … 利点：既存の確認と見た目が揃い、コードが小さい／欠点：ボタンの文字が要件と違う<br>
+B) 小さな専用ダイアログ（［保存］［保存しない］［キャンセル］）を作る … 利点：要件どおり、押し間違いが減る／欠点：ダイアログ 1 つ分（xaml・テーマ対応）増える。キャンセルの確認（「変更を破棄しますか？」）は はい／いいえ で困らない<br>
+<span class="rec">推奨：B</span>（入力を失うかどうかの確認で、ボタンの意味を本文で読み替えさせるのは間違いやすい。既に <code>AppSettingsDialog</code> などの専用ダイアログがあり、作り方は揃えられる）。A なら要件 12.10 を先に直す。</div>
+
+<div class="q"><b>Q2.</b> サインアウト・シャットダウンで未保存の入力（#17）<br>
+A) 何もしない。計画に「既知の制限」と書く … 利点：作業なし／欠点：まれに入力を失う<br>
+B) <code>App.SessionEnding</code> で、変更があれば止めて確認する（<code>e.Cancel</code>）… 利点：失わない／欠点：Windows の終了を止める動きになり、要件に無い<br>
+<span class="rec">推奨：A</span>（要件に無く、頻度も低い。まずは制限として明記し、困ったら相談）。</div>
+
+<h2>5. 計画の直し方（まとめ）</h2>
+<table>
+<tr><th>計画の場所</th><th>直すこと</th></tr>
+<tr><td>2 章 23-1</td><td><code>Load</code>：無い→空、読めない→例外（#3）。<code>Save</code> が更新日時を返す（#16）。テストに「読めないとき例外」</td></tr>
+<tr><td>2 章 23-2・7.1</td><td><code>Saved(text)</code> → <code>MarkSaved(text)</code>（#4）。<code>Discard()</code> が作り直すかを返す（#5）。変更なしの保存は書かない（#6）</td></tr>
+<tr><td>2 章 23-3</td><td><code>IsPathExcluded</code> を使う・内外の判定（#14）</td></tr>
+<tr><td>3 章 24-1・7.2</td><td><code>IPreviewHost</code> に <code>EmptyText</code>・<code>RuntimeMissingNote</code>（#7）。<code>File</code> に <code>RelativePath</code>（#15）。<code>WebViewEnvironment</code> は失敗を覚えない（#8）</td></tr>
+<tr><td>7.3</td><td>切り替えてから選ぶ（#9）。<code>OpenFromOutside</code> の 4 分岐・毎回の走査の終わりで予定を見る・<code>_restored</code>・手で選んだら予定を消す（#1・#2・#11・#12）。絞り込みは今と同じ（#13）</td></tr>
+<tr><td>6 章・7.4・7.5</td><td>閉じるときの確認は専用ダイアログ（Q1＝B）。サインアウト時は既知の制限と明記（Q2＝A）</td></tr>
+<tr><td>4 章 25-1・25-2</td><td><code>OnExit</code> で Dispose（#18）。確認に「読み直しの最中にリンク」「走査済みで索引に無いリンク」「編集中に外で変更→キャンセル」「変更なしで保存」「読めないメモ」を足す</td></tr>
+</table>
+<div class="sync">計画の md を直したら、対の <code>memo-tab-plan.html</code> も同じ内容に直す（計画の連動ルール）。Q1 は B に決まったので、要件 12.10 は直さなくてよい。</div>
+</body></html>
