@@ -12,14 +12,17 @@ public partial class MainWindow : FluentWindow
 
     private readonly HookSetup _hookSetup;
     private readonly ThemeService _theme;
+    private readonly DocumentsViewModel _documents;
 
-    public MainWindow(MainViewModel viewModel, HookSetup hookSetup, ThemeService theme)
+    public MainWindow(MainViewModel viewModel, DocumentsViewModel documents, HookSetup hookSetup, ThemeService theme)
     {
         _viewModel = viewModel;
         _hookSetup = hookSetup;
         _theme = theme;
+        _documents = documents;
         DataContext = viewModel;
         InitializeComponent();
+        DocumentsHost.DataContext = documents;
 
         Title = $"Miharikun - {viewModel.ProjectFolder}";
         TitleBar.Title = Title;
@@ -95,6 +98,13 @@ public partial class MainWindow : FluentWindow
             menu.PlacementTarget = button;
             menu.IsOpen = true;
         }
+    }
+
+    private void OnDocumentSettingsClick(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var dialog = new Views.DocumentSettingsDialog(_documents.ProjectFolder, _documents.CurrentIgnoreText, _documents.DefaultIgnoreText) { Owner = this };
+        if (dialog.ShowDialog() == true)
+            _documents.ApplyIgnoreText(dialog.IgnoreText);
     }
 
     private void OnInstallHookClick(object sender, System.Windows.RoutedEventArgs e) => _hookSetup.InstallFromMenu(this);

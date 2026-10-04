@@ -15,6 +15,7 @@ public partial class App : Application
 {
     private SessionMonitor? _monitor;
     private MainViewModel? _viewModel;
+    private DocumentsViewModel? _documents;
 
     private void OnStartup(object sender, StartupEventArgs e)
     {
@@ -36,7 +37,8 @@ public partial class App : Application
         var hookSetup = new HookSetup(HookInstaller.CreateDefault(paths, appDir));
 
         var theme = new ThemeService(new AppSettingsStore(paths, AppLog.Write));
-        var window = new MainWindow(_viewModel, hookSetup, theme);
+        _documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), SynchronizationContext.Current!, AppLog.Write);
+        var window = new MainWindow(_viewModel, _documents, hookSetup, theme);
         theme.Start(window);
         window.Show();
         _monitor.Start();
@@ -46,6 +48,7 @@ public partial class App : Application
     private void OnExit(object sender, ExitEventArgs e)
     {
         _viewModel?.Dispose();
+        _documents?.Dispose();
         _monitor?.Dispose();
     }
 }

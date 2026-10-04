@@ -1,0 +1,174 @@
+<UserControl x:Class="Miharikun.Views.DocumentsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:Miharikun.ViewModels"
+             Loaded="OnLoaded">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- ツリーの行：展開・選択は ViewModel と双方向 -->
+        <Style x:Key="FolderItem" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+        </Style>
+
+        <!-- 一覧の行：選択中は薄い地 + 太い枠（ダッシュボードのカードと同じ流儀） -->
+        <Style x:Key="DocRow" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,10,3" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource CardItemSelectedBackgroundBrush}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
+                                <Setter TargetName="Box" Property="BorderThickness" Value="2" />
+                                <Setter TargetName="Box" Property="Padding" Value="7,4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardItemBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardItemBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+
+        <Style x:Key="CardHeading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Opacity" Value="0.7" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="0,8,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 上段：読み直し・パスで絞り込み・件数 -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+            <ui:Button DockPanel.Dock="Left" Content="読み直し" Command="{Binding RescanCommand}" Margin="0,0,8,0"
+                       ToolTip="全部を調べ直す（自動で反映されないときの保険）" AutomationProperties.AutomationId="RescanButton" />
+            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Opacity="0.7" VerticalAlignment="Center" Margin="12,0,4,0"
+                       AutomationProperties.AutomationId="DocStatus" />
+            <ui:TextBox PlaceholderText="🔍 パスで絞り込み（ファイル名・フォルダ名）" ClearButtonEnabled="True"
+                        Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.AutomationId="DocFilter" />
+        </DockPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" MinWidth="120" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="260" MinWidth="160" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="240" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ツリー -->
+            <TreeView Grid.Column="0" ItemsSource="{Binding TreeRoots}" ItemContainerStyle="{StaticResource FolderItem}"
+                      AutomationProperties.AutomationId="DocTree">
+                <TreeView.ItemTemplate>
+                    <HierarchicalDataTemplate DataType="{x:Type vm:FolderNodeViewModel}" ItemsSource="{Binding Children}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Name}" />
+                            <TextBlock Text="{Binding Count}" Opacity="0.6" Margin="6,0,0,0" />
+                        </StackPanel>
+                    </HierarchicalDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" Background="Transparent" />
+
+            <!-- 一覧 -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="{Binding ListHeader}" Style="{StaticResource CardHeading}" Margin="4,0,0,6" />
+                <ListBox Grid.Row="1" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                         ItemContainerStyle="{StaticResource DocRow}" Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                         AutomationProperties.AutomationId="DocList">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:DocumentRowViewModel}">
+                            <StackPanel>
+                                <TextBlock TextTrimming="CharacterEllipsis">
+                                    <Run Text="{Binding Icon, Mode=OneWay}" />
+                                    <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold" />
+                                </TextBlock>
+                                <TextBlock FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis">
+                                    <Run Text="{Binding ModifiedText, Mode=OneWay}" />
+                                    <Run Text="{Binding FolderLabel, Mode=OneWay}" />
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Grid.Row="1" Text="md / html のファイルが見つかりません。&#10;除外の設定は ⚙ →「ドキュメントの設定…」" TextWrapping="Wrap"
+                           Opacity="0.6" Margin="8,12" VerticalAlignment="Top"
+                           Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}" />
+            </Grid>
+
+            <GridSplitter Grid.Column="3" Width="8" HorizontalAlignment="Center" Background="Transparent" />
+
+            <!-- 右：概要カードと内容（プレビューは次のフェーズ） -->
+            <Grid Grid.Column="4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Style="{StaticResource Card}" Padding="12,8" Margin="0,0,0,8">
+                    <StackPanel>
+                        <TextBlock Text="ドキュメント概要" Style="{StaticResource CardHeading}" />
+                        <TextBlock Text="ファイルを選ぶと概要を表示します" Opacity="0.6">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Overview}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <StackPanel DataContext="{Binding Overview}" AutomationProperties.AutomationId="DocOverview">
+                            <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding RelativePath}" FontSize="11" Opacity="0.7" Margin="0,2,0,0" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding MetaLine}" FontSize="11" Opacity="0.7" Margin="0,2,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Style="{StaticResource Card}" Padding="12,8">
+                    <Grid>
+                        <TextBlock Text="内容" Style="{StaticResource CardHeading}" VerticalAlignment="Top" />
+                        <TextBlock Text="プレビューは準備中です" Opacity="0.6" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>
