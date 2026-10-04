@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メモタブ 設計イメージ</title>
+<style>
+  :root { --bg:#fff; --fg:#222; --dim:#666; --line:#bbb; --box:#f4f6f8; --acc:#2a6fd6; --warn:#fff4d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1e1e1e; --fg:#e6e6e6; --dim:#aaa; --line:#555; --box:#2a2d31; --acc:#6ea8ff; --warn:#3d3620; } }
+  body { background:var(--bg); color:var(--fg); font-family:"Yu Gothic UI","Meiryo",sans-serif; line-height:1.6; max-width:980px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; } h2 { font-size:18px; border-bottom:1px solid var(--line); padding-bottom:2px; margin-top:32px; }
+  table { border-collapse:collapse; width:100%; } td, th { border:1px solid var(--line); padding:4px 8px; vertical-align:top; text-align:left; }
+  code { background:var(--box); padding:0 4px; border-radius:3px; }
+  .note { background:var(--warn); padding:8px 12px; border-radius:4px; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; }
+  .mock { flex:1 1 420px; border:2px solid var(--line); border-radius:6px; overflow:hidden; font-size:13px; }
+  .mock .tabs { background:var(--box); padding:4px 8px; border-bottom:1px solid var(--line); }
+  .mock .tabs b { border-bottom:2px solid var(--acc); }
+  .mock .bar { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid var(--line); }
+  .btn { display:inline-block; border:1px solid var(--line); border-radius:4px; padding:0 8px; margin-left:4px; background:var(--box); }
+  .btn.pri { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .body { height:220px; padding:10px; }
+  .web { background:var(--bg); } .web h3 { margin:0 0 4px; font-size:15px; }
+  .editor { font-family:Consolas,"BIZ UDGothic",monospace; white-space:pre; background:var(--box); }
+  .cap { font-size:12px; color:var(--dim); padding:4px 10px; border-top:1px dashed var(--line); }
+  pre.diagram { background:var(--box); padding:12px; overflow-x:auto; font-size:13px; line-height:1.4; }
+  svg { background:#fafafa; border:1px solid #ccc; max-width:100%; height:auto; color:#222; }
+  .q { border-left:4px solid var(--acc); padding:4px 12px; margin:12px 0; background:var(--box); }
+  .q b { color:var(--acc); }
+</style>
+</head>
+<body>
+<h1>メモタブ 設計イメージ（コードを変える前の確認用）</h1>
+<p>いまはプレースホルダーのメモタブを、<b>プロジェクト単位のメモ帳（Markdown）</b>にする。表示はドキュメントタブの md プレビューと同じで、ふだんはプレビュー、「編集」を押すとエディタに切り替わる。</p>
+<p class="note">WPF には HTML の <code>&lt;textarea&gt;</code> にあたる専用のコントロールはなく、<b><code>TextBox</code> に <code>AcceptsReturn="True"</code>（＋ <code>TextWrapping</code>・縦スクロールバー）</b>を付けたものが複数行の入力欄になる。書式を付けて書く <code>RichTextBox</code> もあるが、Markdown をそのまま書くので要らない。</p>
+
+<h2>1. 画面イメージ</h2>
+<div class="row">
+  <div class="mock">
+    <div class="tabs">ダッシュボード ｜ ドキュメント ｜ <b>メモ</b></div>
+    <div class="bar"><span><b>プロジェクトのメモ</b> <span style="color:var(--dim)">最終更新 10/04 14:20</span></span><span><span class="btn">✎ 編集</span></span></div>
+    <div class="body web">
+      <h3>やること</h3>
+      ☐ v0.3.0 の通し確認<br>☑ タグを揃える<br><br>
+      <h3>メモ</h3>
+      会社 PC の WebView2 を確認する。<a href="#" style="color:var(--acc)">docs/release.md</a> 参照
+    </div>
+    <div class="cap">プレビューモード（既定）：WebView2 で md を表示。ドキュメントタブと同じ見た目・テーマ追従・タスクリスト・mermaid・コード色付け</div>
+  </div>
+  <div class="mock">
+    <div class="tabs">ダッシュボード ｜ ドキュメント ｜ <b>メモ</b></div>
+    <div class="bar"><span><b>プロジェクトのメモ</b> <span style="color:var(--dim)">編集中（未保存）</span></span><span><span class="btn pri">保存</span><span class="btn">キャンセル</span></span></div>
+    <div class="body editor">## やること
+- [ ] v0.3.0 の通し確認
+- [x] タグを揃える
+
+## メモ
+会社 PC の WebView2 を確認する。[docs/release.md](docs/release.md) 参照</div>
+    <div class="cap">編集モード：等幅フォントの大きな TextBox（タブ全体の高さ）。保存・キャンセルは<b>上の右端</b>（「編集」と同じ場所に入れ替わる）</div>
+  </div>
+</div>
+<p>レイアウトはタブの全幅を 1 枚で使う（ツリーなどは無い）。上に細いバー（見出し・最終更新・ボタン）、その下は全部プレビューかエディタ。</p>
+
+<h2>2. 状態の移り変わり</h2>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="30" y="40" width="230" height="120" fill="#dff" stroke="#08a"/><text x="42" y="66" font-weight="bold">プレビュー（既定）</text><text x="42" y="88" font-size="12">WebView2 で md を表示</text><text x="42" y="106" font-size="12">右上に「✎ 編集」</text><text x="42" y="124" font-size="12">外で書き換わったら自動で読み直す</text><text x="42" y="146" font-size="12" fill="#555">タブを開いたとき・起動時はここ</text>
+<rect x="640" y="40" width="290" height="120" fill="#ffe9c8" stroke="#a70"/><text x="652" y="66" font-weight="bold">編集</text><text x="652" y="88" font-size="12">大きな TextBox（等幅・折り返し）</text><text x="652" y="106" font-size="12">右上に「保存」「キャンセル」</text><text x="652" y="124" font-size="12">見出しの横に「編集中（未保存）」</text><text x="652" y="146" font-size="12" fill="#555">外で書き換わっても上書きしない</text>
+<line x1="260" y1="62" x2="640" y2="62" stroke="#333" marker-end="url(#a)"/><text x="300" y="56" font-size="12">「✎ 編集」を押す → いまの内容を TextBox に入れる</text>
+<line x1="640" y1="105" x2="260" y2="105" stroke="#383" stroke-width="2" marker-end="url(#a)"/><text x="300" y="99" font-size="12" fill="#383">「保存」/ Ctrl+S → ファイルに書く → 描き直して表示</text>
+<line x1="640" y1="145" x2="260" y2="145" stroke="#c33" marker-end="url(#a)"/><text x="300" y="139" font-size="12" fill="#c33">「キャンセル」→ 入力を捨てる（変更があれば確認：Q4）</text>
+<text x="640" y="200" font-weight="bold">編集中に起きること</text>
+<line x1="785" y1="160" x2="785" y2="185" stroke="#333" stroke-dasharray="4,3"/>
+<rect x="30" y="215" width="290" height="80" fill="#efe" stroke="#383"/><text x="42" y="240" font-weight="bold">ほかのタブへ移る</text><text x="42" y="262" font-size="12">入力はそのまま残る</text><text x="42" y="280" font-size="12">戻れば編集の続きから</text>
+<rect x="335" y="215" width="290" height="80" fill="#fdd" stroke="#c33"/><text x="347" y="240" font-weight="bold">アプリを閉じる（未保存あり）</text><text x="347" y="262" font-size="12">「保存しますか？」（Q3）</text><text x="347" y="280" font-size="12">[保存] [保存しない] [キャンセル]</text>
+<rect x="640" y="215" width="290" height="80" fill="#eee" stroke="#888"/><text x="652" y="240" font-weight="bold">別の起動が同じメモを保存</text><text x="652" y="262" font-size="12">編集中は上書きしない</text><text x="652" y="280" font-size="12">こちらで保存したら後勝ち（6章と同じ）</text>
+<line x1="785" y1="185" x2="175" y2="185" stroke="#333" stroke-dasharray="4,3"/><line x1="175" y1="185" x2="175" y2="215" stroke="#333" marker-end="url(#a)"/><line x1="480" y1="185" x2="480" y2="215" stroke="#333" marker-end="url(#a)"/><line x1="785" y1="185" x2="785" y2="215" stroke="#333" marker-end="url(#a)"/>
+</svg>
+
+<h2>3. 部品の構成（概念図）</h2>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="310" height="200" fill="#efe" stroke="#383"/><text x="20" y="40" font-weight="bold">MemoView（新規 UserControl・メモタブ）</text>
+<rect x="20" y="50" width="290" height="32" fill="#fff" stroke="#888"/><text x="28" y="71" font-size="12">上のバー：見出し・更新日時・[編集]/[保存][取消]</text>
+<rect x="20" y="92" width="140" height="80" fill="#fef" stroke="#a3a"/><text x="28" y="112" font-weight="bold" font-size="12">MarkdownPreview</text><text x="28" y="130" font-size="12">★ DocumentPreview</text><text x="28" y="146" font-size="12">から切り出す</text><text x="28" y="162" font-size="11" fill="#555">プレビュー中だけ</text>
+<rect x="170" y="92" width="140" height="80" fill="#fff" stroke="#a70"/><text x="178" y="112" font-weight="bold" font-size="12">TextBox</text><text x="178" y="130" font-size="12">AcceptsReturn</text><text x="178" y="146" font-size="12">等幅・折り返し</text><text x="178" y="162" font-size="11" fill="#555">編集中だけ</text>
+<text x="20" y="198" font-size="12" fill="#555">2 つは重ねず Visibility で入れ替え</text><text x="20" y="213" font-size="12" fill="#555">（WebView2 の上に WPF を重ねない：12.7）</text>
+<rect x="10" y="265" width="310" height="50" fill="#efe" stroke="#383"/><text x="20" y="286" font-weight="bold">DocumentsView（既存・ドキュメントタブ）</text><text x="20" y="304" font-size="12">挙動は変えずに、同じ部品を使う形へ</text>
+<line x1="90" y1="265" x2="90" y2="174" stroke="#a3a" stroke-dasharray="5,3" marker-end="url(#b)"/><text x="96" y="250" font-size="11" fill="#a3a">共通の部品</text>
+<rect x="380" y="50" width="230" height="110" fill="#dff" stroke="#08a"/><text x="390" y="72" font-weight="bold">MemoViewModel（新規）</text><text x="390" y="94" font-size="12">IsEditing / EditText / IsDirty</text><text x="390" y="112" font-size="12">Edit / Save / Cancel コマンド</text><text x="390" y="130" font-size="12">閉じる前の確認（未保存の有無）</text><text x="390" y="148" font-size="12" fill="#555">表示用の md 文字列を渡す</text>
+<line x1="320" y1="105" x2="380" y2="105" stroke="#333" marker-end="url(#b)"/><text x="326" y="98" font-size="11" fill="#555">Binding</text>
+<rect x="670" y="50" width="280" height="70" fill="#ffe9c8" stroke="#a70"/><text x="680" y="72" font-weight="bold">ProjectMemoStore（Core・新規）</text><text x="680" y="92" font-size="12">対象フォルダ → ファイルのパス</text><text x="680" y="110" font-size="12">読む・アトミックに書く（テスト先行）</text>
+<line x1="610" y1="85" x2="670" y2="85" stroke="#333" marker-end="url(#b)"/><text x="616" y="78" font-size="11" fill="#555">読む/書く</text>
+<rect x="670" y="150" width="280" height="50" fill="#eee" stroke="#888"/><text x="680" y="170" font-size="12" font-weight="bold">%LOCALAPPDATA%\Miharikun\projects\</text><text x="680" y="188" font-size="12">{slug}-{hash8}.memo.md（Q1 の案 A）</text>
+<line x1="810" y1="120" x2="810" y2="150" stroke="#333" marker-end="url(#b)"/>
+<rect x="380" y="240" width="230" height="75" fill="#fef" stroke="#a3a"/><text x="390" y="262" font-weight="bold">MarkdownRenderer（既存）</text><text x="390" y="282" font-size="12">Miharikun.Docs。そのまま使う</text><text x="390" y="300" font-size="12">md → HTML（base＝対象フォルダ）</text>
+<line x1="160" y1="150" x2="380" y2="270" stroke="#333" marker-end="url(#b)"/><text x="250" y="230" font-size="11" fill="#555">描画を頼む</text>
+<rect x="670" y="240" width="280" height="75" fill="#eee" stroke="#888"/><text x="680" y="262" font-weight="bold">preview\ の一時 HTML</text><text x="680" y="282" font-size="12">→ WebView2 で開く（ドキュメントと同じ）</text><text x="680" y="300" font-size="12">webview2\ の作業フォルダは共用</text>
+<line x1="610" y1="277" x2="670" y2="277" stroke="#333" marker-end="url(#b)"/>
+</svg>
+<ul>
+  <li><b>プレビューの共通化</b>：いまの <code>DocumentPreview</code> は <code>DocumentsViewModel</code> 専用。WebView2 の準備・未導入の案内・md の描画・リンクの振り分けを、ドキュメントとメモの両方で使える形に切り出す。WebView2 の作業フォルダ（<code>webview2\</code>）は共用（同じ設定なら 2 つ目の WebView2 も同じ環境で動く）。</li>
+  <li><b>WebView2 の上に WPF の要素を重ねない</b>（12.7 のルール）：エディタとプレビューは重ねずに Visibility で入れ替える。ボタンは WebView2 の外（上のバー）に置く。</li>
+  <li><b>md の基準フォルダ</b>：対象フォルダ（プロジェクトのルート）。メモに <code>[説明](docs/release.md)</code> や <code>![](docs/img.png)</code> と書けば、そのまま効く。</li>
+  <li><b>Core の新規</b>：<code>ProjectMemoStore</code>（パスを決める・読む・アトミックに書く）。テストを先に書く。</li>
+</ul>
+
+<h2>4. 保存先（案）</h2>
+<table>
+  <tr><th></th><th>場所</th><th>よい点</th><th>気になる点</th></tr>
+  <tr><td><b>A（推奨）</b></td><td><code>%LOCALAPPDATA%\Miharikun\projects\{slug}-{hash8}.memo.md</code><br>（プロジェクト設定の json と同じ名前に <code>.memo.md</code>）</td><td>中身がただの md なので、エディタで直接開ける・バックアップしやすい。json の中に長文を入れずに済む。既存のプロジェクト判定（6章）をそのまま使える</td><td>リポジトリには入らない（共有されない）</td></tr>
+  <tr><td>B</td><td>プロジェクト設定の json の <code>memo</code> キー</td><td>ファイルが増えない</td><td>改行がエスケープされ、外から読みにくい。ドキュメントの設定の保存と同じファイルを奪い合う</td></tr>
+  <tr><td>C</td><td>対象フォルダの中（例 <code>.miharikun\memo.md</code>）</td><td>git で共有できる</td><td>利用者のリポジトリに書き込む。.gitignore の判断が要る</td></tr>
+</table>
+<p>書き込みは一時ファイル → 置き換え（既存の <code>AtomicFile</code>）。複数起動の競合は後勝ち（6章と同じ）。ほかのプロセスがファイルを書き換えたら、プレビュー中なら自動で読み直す（編集中は上書きしない）。</p>
+
+<h2>5. 決めたこと（2026-10-04：Q1〜Q8 はすべて案のとおりで確定。要件定義 12.10 に反映）</h2>
+<div class="q"><b>Q1. 保存先</b>：A（アプリのデータフォルダに md ファイル）でよいか。B・C がよければそちら。</div>
+<div class="q"><b>Q2. プレビューの中のリンク</b>：ドキュメントタブと同じく ①http → 既定ブラウザ ②対象フォルダ内の md/html → <b>ドキュメントタブに切り替えて、そのファイルを開く</b>（案）③それ以外 → 既定のアプリ。②は「既定のアプリで開く」でもよい。</div>
+<div class="q"><b>Q3. 未保存のままアプリを閉じたとき</b>：確認ダイアログ（保存／保存しない／キャンセル）を出す案。セッションのメモのように「黙って自動保存」がよければそちら。</div>
+<div class="q"><b>Q4. キャンセルで入力を捨てるとき</b>：変更があれば「変更を捨てますか？」と確認する案。確認なしで即戻る、でもよい。</div>
+<div class="q"><b>Q5. キーボード</b>：Ctrl+S で保存を付ける案。Esc でキャンセルは、うっかり消しやすいので付けない案。</div>
+<div class="q"><b>Q6. メモは 1 プロジェクト 1 つ</b>でよいか（複数のメモやフォルダ分けはしない）。</div>
+<div class="q"><b>Q7. ダッシュボードの全文検索</b>：プロジェクトのメモは対象にしない案（検索はセッションを探すためのもの）。</div>
+<div class="q"><b>Q8. 空のとき</b>：プレビューに「メモはまだありません。右上の『編集』で書けます」と出す案。</div>
+
+<h2>6. やらないこと</h2>
+<ul>
+  <li>プレビューとエディタの左右同時表示、入力しながらのリアルタイムプレビュー</li>
+  <li>エディタの Markdown の色付け・補完・ツールバー（太字ボタンなど）</li>
+  <li>履歴・元に戻す（保存前の Ctrl+Z は TextBox の標準のまま効く）</li>
+  <li>プレビューのチェックボックスをクリックして md を書き換える（ドキュメントと同じく読み取り専用）</li>
+</ul>
+
+<h2>7. 進め方（回答のあと）</h2>
+<ol>
+  <li>要件定義を更新：4章（メモタブを MVP 対象へ）、6章（保存先）、12 章に「12.10 メモタブ」、15 章に Phase を追加</li>
+  <li>実装計画（md と HTML の対）→ 別セッションでレビュー → 指摘への対応</li>
+  <li>実装の目安：
+    <b>Phase 23</b> Core：<code>ProjectMemoStore</code>（テスト先行）／
+    <b>Phase 24</b> プレビューの共通化（ドキュメントタブの挙動は変えない）／
+    <b>Phase 25</b> メモタブの画面と ViewModel（編集・保存・キャンセル・閉じるときの確認）／
+    <b>Phase 26</b> 仕上げ（ライト/ダーク・WebView2 未導入時の確認、要件定義の反映）</li>
+</ol>
+</body>
+</html>

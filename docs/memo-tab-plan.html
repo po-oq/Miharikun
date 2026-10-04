@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>メモタブ 実装計画（図解）</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.6;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:30px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:10px 0} .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px} .rec{color:#c05000;font-weight:bold}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%;height:auto}
+</style></head><body>
+<h1>メモタブ 実装計画（図解）（Issue #14）</h1>
+<div class="sync"><b>連動ルール</b>：この HTML と <code>memo-tab-plan.md</code> は対。<b>どちらかを直したら、もう一方も同じ内容に直す。</b><br>仕様の正は <code>miharikun-requirements.md</code>（2・4・6・12.1・<b>12.10</b>・16 章・Phase 23〜26）。設計イメージは <code>memo-tab-design.html</code>。この計画は、実装の分け方・コミット・ファイル構成と、<b>実装で迷いやすい所の決めごと（7 章）</b>。<br>進め方は他の Phase と同じ：Core（テスト先行）→ ViewModel → 画面。各 Phase の終わりに隔離環境（<code>MIHARIKUN_DATA_DIR</code>）で確認し、要件定義の <code>[x]</code> と「状況」を更新して、ビルドの有無と出力先を報告する。コミットは頼まれたときだけ（ここは区切りの目安）。途中のコミットは <code>Refs #14</code>、最後だけ <code>Fixes #14</code>。</div>
+
+<h2>1. 全体像</h2>
+<svg viewBox="0 0 960 150" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="210" height="100" fill="#dff" stroke="#08a"/><text x="20" y="42" font-weight="bold">23 Core</text><text x="20" y="62" font-size="12">ProjectMemoStore・MemoEditor</text><text x="20" y="78" font-size="12">DocumentLinkRule（テスト先行）</text><text x="20" y="102" font-size="12" fill="#555">3 コミット</text>
+<rect x="250" y="20" width="210" height="100" fill="#ffe9c8" stroke="#a70"/><text x="260" y="42" font-weight="bold">24 プレビューの共通化</text><text x="260" y="62" font-size="12">挙動は変えない</text><text x="260" y="78" font-size="12">ドキュメントタブが正</text><text x="260" y="102" font-size="12" fill="#555">1〜2 コミット</text>
+<rect x="490" y="20" width="210" height="100" fill="#efe" stroke="#383"/><text x="500" y="42" font-weight="bold">25 メモタブの画面</text><text x="500" y="62" font-size="12">表示・編集・保存・キャンセル</text><text x="500" y="78" font-size="12">閉じる確認・リンク・監視</text><text x="500" y="102" font-size="12" fill="#555">2 コミット</text>
+<rect x="730" y="20" width="220" height="100" fill="#eee" stroke="#888"/><text x="740" y="42" font-weight="bold">26 仕上げ</text><text x="740" y="62" font-size="12">README.txt・release.md</text><text x="740" y="78" font-size="12">要件定義の状況</text><text x="740" y="102" font-size="12" fill="#555">1 コミット（Fixes #14）</text>
+<line x1="220" y1="70" x2="250" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="460" y1="70" x2="490" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="700" y1="70" x2="730" y2="70" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ul><li>新しい依存パッケージは無い（md→HTML は既存の <code>Miharikun.Docs.MarkdownRenderer</code>、書き込みは既存の <code>AtomicFile</code>）。</li><li>Core は AOT 互換のまま（リフレクションを使わない）。Hook exe には触らない。</li><li><b>Phase 24 は挙動を変えない共通化</b>。ドキュメントタブの見た目・リンク・自動再読み込みが変わらないことが完了条件（下の品質ゲート）。</li><li>いまのテスト：792 件合格 + スキップ 4（<code>PerfFact</code>）。<b>件数は減らさない</b>。</li></ul>
+<h3>品質ゲート（Phase 24 の完了条件）</h3>
+<ol><li><code>dotnet test</code> が全部通る（件数を減らさない）。</li><li><code>dotnet build src/Miharikun.Core --no-incremental</code> が警告 0。</li><li>隔離環境のドキュメントタブで、Phase 16 で確かめた項目が従来どおり：md（チェックボックス・日本語の見出し id・mermaid・コードの色付け・相対パスの画像）、<code>#</code> リンクのページ内移動、md→md と html→md のリンク（アプリ内で選択）、html の相対 css・js・画像、ファイル保存での自動再読み込み、タブを切り替えて戻っても表示が戻る、テーマの切り替えで md が作り直される、ダーク。</li><li>見る方法は Phase 16 と同じ（DevTools プロトコル <code>--remote-debugging-port</code> か UI Automation。スクリーンショットは隔離環境のダミーのデータだけ）。</li></ol>
+
+<h2>2. Phase 23：Core（テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>23-1</td><td><code>ProjectMemoStore</code></td><td><code>AppPaths.ProjectMemoFile(projectPath)</code>（<code>ProjectSettingsFile</code> と同じ <code>{slug}-{hash8}</code> に <code>.memo.md</code>。名前を作る処理は共通にする）。<code>ProjectMemoStore(AppPaths, log)</code>：<code>Load(projectPath) → MemoFile(Text, LastWriteTime?)</code>（無い → 空・null。<code>FileShare.ReadWrite | Delete</code> で読む。BOM があれば外す）、<code>Save(projectPath, text)</code>（<code>AtomicFile.WriteAllText</code>。フォルダが無ければ作る。失敗は例外のまま呼び手へ）</td><td>一時フォルダ：パス（設定の json と同じ接頭辞・大文字小文字・末尾区切り）・無いとき・書いて読む・上書き・BOM なしで書く・BOM 付きのファイルも読める・空文字の保存・同じフォルダの設定の json を消さない／変えない・更新日時</td></tr>
+<tr><td>23-2</td><td><code>MemoEditor</code>（状態）</td><td>画面に依存しない、編集の状態の部品（7.1）。<code>Saved</code>・<code>IsEditing</code>・<code>Draft</code>・<code>IsDirty</code>・<code>BeginEdit()</code>・<code>Saved(text)</code>（保存できた）・<code>Discard()</code>・<code>OnExternalChange(text)</code> → 「表示を作り直すか」を返す</td><td>7.1 の表の行ごと：編集の始め・変更の有無・保存・破棄・編集中の外の変更（下書きを変えない・破棄後は新しい内容）・プレビュー中の外の変更（同じ内容なら作り直さない）・改行コードの違い（7.1）</td></tr>
+<tr><td>23-3</td><td><code>DocumentLinkRule</code></td><td>プレビューのリンク（ローカルファイル）を、ドキュメントタブで開けるかの判定（7.3）。<code>TryGetInAppPath(root, fullPath, matcher, out relativePath)</code></td><td>対象フォルダ内の md/html/htm（大文字小文字）・対象フォルダ外・<code>..</code> を含む・別ドライブ・除外フォルダ内（親の除外も）・除外されたファイル・md/html 以外・フォルダ・<code>/</code> 区切りに直す</td></tr></table>
+<p>完了条件：テストが通る。Core は AOT 互換（警告 0）。</p>
+
+<h2>3. Phase 24：md プレビューの共通化（挙動は変えない）</h2>
+<svg viewBox="0 0 960 270" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="20" font-weight="bold">前</text>
+<rect x="10" y="30" width="300" height="56" fill="#fdd" stroke="#c33"/><text x="20" y="52" font-weight="bold">DocumentPreview（UserControl）</text><text x="20" y="72" font-size="12">WebView2 の準備・md の描画・リンクの振り分け</text>
+<rect x="380" y="30" width="300" height="56" fill="#dff" stroke="#08a"/><text x="390" y="52" font-weight="bold">DocumentsViewModel 専用</text><text x="390" y="72" font-size="12">PreviewTarget・OpenLocalLink・IsDark ほか</text>
+<line x1="310" y1="58" x2="380" y2="58" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="120" font-weight="bold">後</text>
+<rect x="10" y="130" width="300" height="70" fill="#fef" stroke="#a3a"/><text x="20" y="152" font-weight="bold">MarkdownPreview（UserControl）</text><text x="20" y="172" font-size="12">中身は今の DocumentPreview と同じ</text><text x="20" y="190" font-size="12">PreviewSource を受けて表示する</text>
+<rect x="10" y="215" width="300" height="45" fill="#eee" stroke="#888"/><text x="20" y="235" font-weight="bold" font-size="12">WebViewEnvironment</text><text x="20" y="252" font-size="12">CoreWebView2Environment を 1 つだけ作って共用</text>
+<line x1="160" y1="200" x2="160" y2="215" stroke="#333" marker-end="url(#a)"/>
+<rect x="380" y="140" width="210" height="50" fill="#ffe9c8" stroke="#a70"/><text x="390" y="160" font-weight="bold">IPreviewHost</text><text x="390" y="178" font-size="12">PreviewChanged・OpenLocalLink</text>
+<line x1="310" y1="165" x2="380" y2="165" stroke="#333" marker-end="url(#a)"/>
+<rect x="660" y="120" width="290" height="55" fill="#dff" stroke="#08a"/><text x="670" y="142" font-weight="bold">DocumentsViewModel</text><text x="670" y="162" font-size="12">PreviewSource.File を出す（処理は変えない）</text>
+<rect x="660" y="195" width="290" height="55" fill="#efe" stroke="#383"/><text x="670" y="217" font-weight="bold">MemoViewModel（Phase 25）</text><text x="670" y="237" font-size="12">PreviewSource.Markdown / Message を出す</text>
+<line x1="660" y1="147" x2="590" y2="160" stroke="#333" marker-end="url(#a)"/><line x1="660" y1="222" x2="590" y2="178" stroke="#333" marker-end="url(#a)"/><text x="600" y="200" font-size="11" fill="#555">実装</text>
+</svg>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認</th></tr>
+<tr><td>24-1</td><td>共通の部品に切り出す</td><td><code>Views/MarkdownPreview</code>（今の <code>DocumentPreview</code> を改名して一般化。7.2）。<code>IPreviewHost</code>（<code>PreviewDir</code>・<code>IsDark</code>・<code>Log</code>・<code>OpenLocalLink</code>・<code>PreviewChanged</code>）と <code>PreviewSource</code>（<code>File</code> / <code>Markdown</code> / <code>Message</code>）。<code>WebViewEnvironment</code>（<code>CoreWebView2Environment</code> を 1 回だけ作って共用。7.2）。<code>DocumentsViewModel</code> は <code>IPreviewHost</code> を実装し、<code>PreviewTarget</code> → <code>PreviewSource.File</code> に変えて出す（中身の処理は変えない）。<code>DocumentsView.xaml</code> は <code>MarkdownPreview</code> を使う</td><td>品質ゲート 1〜4</td></tr></table>
+<p><b>注意</b>：ドキュメントの選択・保存・テーマ変更・再読み込みで <code>PreviewChanged</code> を出す箇所と順番は、変えない。<code>reload=true</code> のときの <code>Reload()</code>（スクロール位置を保つ）も同じ。</p>
+
+<h2>4. Phase 25：メモタブの画面</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認（隔離環境）</th></tr>
+<tr><td>25-1</td><td>表示・編集・保存・キャンセル</td><td><code>ViewModels/MemoViewModel</code>（<code>IPreviewHost</code> を実装。中身は <code>MemoEditor</code> と <code>ProjectMemoStore</code>）。<code>Views/MemoView</code>（上のバー＋ <code>MarkdownPreview</code> ＋ <code>TextBox</code>。7.4）。<code>MainWindow.xaml</code> のメモタブのプレースホルダーを <code>MemoView</code> に差し替え、<code>App.xaml.cs</code> で組み立てる。タブが最初に表示されたときに読み込む（<code>DocumentsView</code> と同じ）。テーマの変更で作り直す。空のときの案内。保存（ボタン・Ctrl+S）・失敗したら理由を出して編集のまま・キャンセル（変更があれば確認）</td><td>書く→保存→プレビューに出る・再起動後も残る・キャンセル（変更なし→すぐ戻る／あり→確認→破棄）・Ctrl+S・タブを移って戻っても入力が残る・空の案内・保存先のファイルが <code>projects\</code> にでき、設定の json はそのまま</td></tr>
+<tr><td>25-2</td><td>閉じるときの確認・リンク・外の変更</td><td><code>MainWindow.Closing</code>：未保存なら確認（7.5）。リンク：<code>DocumentLinkRule</code> で判定し、ドキュメントタブに切り替えて選ぶ（<code>DocumentsViewModel.OpenFromOutside</code>。7.3）。それ以外は今と同じ振り分け。メモのファイルの監視（7.6）：プレビュー中は読み直し、編集中は取り込まない</td><td>未保存で閉じる（保存／保存しない／キャンセル）・保存に失敗したら閉じない（ファイルを読み取り専用にして試す）・メモのリンクからドキュメントタブへ（タブを一度も開いていないとき・開いたあと）・除外フォルダ内の md は既定のアプリ・http は既定ブラウザ（コードのみでも可）・別のエディタで <code>.memo.md</code> を書き換える → プレビュー中は変わる・編集中は変わらない</td></tr></table>
+<p>完了条件：12.10 の各動作を隔離環境で確かめる。ライト/ダークの両方。ドキュメントタブの品質ゲート 3 をもう一度（共通化の後で壊れていないか）。</p>
+
+<h2>5. Phase 26：仕上げ</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr>
+<tr><td>26-1</td><td>仕上げ</td><td>配布 zip の <code>README.txt</code>（<code>scripts/publish.ps1</code>）と <code>docs/release.md</code> のチェックにメモタブを足す。要件定義の <code>[x]</code> と「状況」。<code>CLAUDE.md</code> は変えない（守ることに変化が無い）。<code>Fixes #14</code></td></tr></table>
+
+<h2>6. ファイル構成（追加・変更）</h2>
+<pre>src/Miharikun.Core/
+├─ Storage/AppPaths.cs                 23-1 変更：ProjectMemoFile（名前の作り方を ProjectSettingsFile と共通に）
+├─ Memo/ProjectMemoStore.cs            23-1 新規：読む・書く・更新日時
+├─ Memo/MemoEditor.cs                  23-2 新規：編集の状態（画面に依存しない）
+└─ Documents/DocumentLinkRule.cs       23-3 新規：リンク → ドキュメントタブで開けるか
+
+src/Miharikun/
+├─ WebViewEnvironment.cs               24-1 新規：CoreWebView2Environment を 1 つだけ作って共用
+├─ Views/MarkdownPreview.xaml(.cs)     24-1 新規（DocumentPreview を改名・一般化。DocumentPreview は消す）
+├─ Views/IPreviewHost.cs               24-1 新規：IPreviewHost・PreviewSource
+├─ Views/DocumentsView.xaml            24-1 変更：MarkdownPreview を使う
+├─ ViewModels/DocumentsViewModel.cs    24-1 変更：IPreviewHost／25-2 変更：OpenFromOutside
+├─ ViewModels/MemoViewModel.cs         25-1 新規
+├─ Views/MemoView.xaml(.cs)            25-1 新規
+├─ MainWindow.xaml(.cs)                25-1 変更：メモタブ・タブの名前（切り替え用）／25-2 変更：閉じるときの確認・ドキュメントタブへの切り替え
+└─ App.xaml.cs                         25-1 変更：MemoViewModel の組み立て
+
+scripts/publish.ps1（README.txt）、docs/release.md   26-1 変更
+
+tests/Miharikun.Tests/Core/
+├─ ProjectMemoStoreTests.cs            23-1 新規
+├─ MemoEditorTests.cs                  23-2 新規
+└─ DocumentLinkRuleTests.cs            23-3 新規</pre>
+
+<h2>7. 実装の決めごと（迷いやすい所）</h2>
+<h3>7.1 編集の状態（<code>MemoEditor</code>）</h3>
+<svg viewBox="0 0 960 190" width="960" font-size="13" font-family="sans-serif">
+<rect x="20" y="40" width="260" height="110" fill="#dff" stroke="#08a"/><text x="32" y="64" font-weight="bold">プレビュー（IsEditing = false）</text><text x="32" y="86" font-size="12">表示 ＝ Saved</text><text x="32" y="104" font-size="12">外の変更 → Saved を更新して描き直す</text><text x="32" y="122" font-size="12">（同じ内容なら描き直さない）</text>
+<rect x="660" y="40" width="280" height="110" fill="#ffe9c8" stroke="#a70"/><text x="672" y="64" font-weight="bold">編集（IsEditing = true）</text><text x="672" y="86" font-size="12">Draft（入力欄）・EditBase（始めの内容）</text><text x="672" y="104" font-size="12">IsDirty ＝ Draft ≠ EditBase（改行は揃える）</text><text x="672" y="122" font-size="12">外の変更 → Saved だけ更新（Draft は変えない）</text>
+<line x1="280" y1="62" x2="660" y2="62" stroke="#333" marker-end="url(#a)"/><text x="320" y="56" font-size="12">BeginEdit()：Draft = EditBase = Saved</text>
+<line x1="660" y1="100" x2="280" y2="100" stroke="#383" stroke-width="2" marker-end="url(#a)"/><text x="320" y="94" font-size="12" fill="#383">Saved(text)：保存できた → Saved = text</text>
+<line x1="660" y1="138" x2="280" y2="138" stroke="#c33" marker-end="url(#a)"/><text x="320" y="132" font-size="12" fill="#c33">Discard()：Draft を捨てる（表示は最新の Saved）</text>
+<path d="M800,150 C800,180 870,180 870,150" fill="none" stroke="#888" marker-end="url(#a)"/><text x="660" y="178" font-size="12" fill="#555">保存できなかった：何も変えない（編集のまま）</text>
+</svg>
+<table><tr><th>操作</th><th>結果</th></tr>
+<tr><td>初期</td><td><code>Saved</code> ＝ 読み込んだ内容、<code>IsEditing = false</code></td></tr>
+<tr><td><code>BeginEdit()</code></td><td><code>IsEditing = true</code>、<code>Draft = Saved</code>、編集の始めの内容 <code>EditBase = Saved</code> を覚える</td></tr>
+<tr><td><code>Draft</code> を変える</td><td><code>IsDirty = Draft != EditBase</code>（<b>改行は <code>\r\n</code> と <code>\n</code> を同じとみなして比べる</b>。WPF の TextBox は Enter で <code>\r\n</code> を入れ、読み込んだ <code>\n</code> はそのまま残すため、混ざっても「変更あり」にしない）</td></tr>
+<tr><td>保存できた <code>Saved(text)</code></td><td><code>Saved = text</code>、<code>IsEditing = false</code></td></tr>
+<tr><td>保存できなかった</td><td>何も変えない（編集のまま。VM が理由を出す）</td></tr>
+<tr><td><code>Discard()</code></td><td><code>IsEditing = false</code>、<code>Draft</code> を捨てる（表示は <code>Saved</code>）</td></tr>
+<tr><td><code>OnExternalChange(text)</code> プレビュー中</td><td><code>Saved = text</code>。前と同じ内容なら「作り直さない」を返す（自分の保存で監視が反応したとき）</td></tr>
+<tr><td><code>OnExternalChange(text)</code> 編集中</td><td><code>Saved = text</code> だけ（<code>Draft</code>・<code>EditBase</code> は変えない）。破棄すると新しい内容が出る。保存すると後勝ち</td></tr></table>
+<p>保存は文字をそのまま書く（改行コードを直さない）。</p>
+
+<h3>7.2 プレビューの共通化</h3>
+<ul><li><code>PreviewSource</code>：<ul><li><code>File(FullPath, Kind)</code>：ドキュメント。html はそのまま、md は読んで HTML に（<code>&lt;base&gt;</code> は md のフォルダ）。今の <code>PreviewTarget</code> の処理と同じ。</li><li><code>Markdown(Text, BaseFolder, CacheKey, Title)</code>：メモ。<code>MarkdownRenderer.Render(Text, BaseFolder, isDark, Title)</code> → <code>PreviewFiles.Write(previewDir, CacheKey, html)</code>。<b><code>BaseFolder</code> は対象フォルダ</b>、<code>CacheKey</code> はメモのファイルのパス（一時 HTML の名前がドキュメントの md と重ならない）。</li><li><code>Message(Text)</code>：WebView2 を出さずに案内の文字だけ（空のメモ）。</li></ul></li><li><code>IPreviewHost</code>：<code>PreviewDir</code>、<code>IsDark</code>、<code>Log(string)</code>、<code>OpenLocalLink(string fullPath)</code>、<code>event Action&lt;PreviewSource?, bool&gt; PreviewChanged</code>。<code>WebViewDataDir</code> は <code>WebViewEnvironment</code> へ移す。</li><li><b>WebView2 の環境は 1 つを共用する</b>（<code>WebViewEnvironment.GetAsync(dataDir)</code>。最初の 1 回だけ <code>CoreWebView2Environment.CreateAsync</code>）。同じ作業フォルダで環境を 2 つ作ると、設定が違ったときに失敗するため。Runtime の有無の確認も、ここに 1 つ。</li><li>2 つ目の WebView2（メモ）は、メモタブを最初に表示したときに作る（起動を遅くしない）。</li><li>リンクの振り分け（<code>NavigationStarting</code> / <code>NewWindowRequested</code>）は部品の中のまま。ローカルファイルだけ <code>host.OpenLocalLink</code> に渡す。</li></ul>
+
+<h3>7.3 メモのリンクからドキュメントタブへ</h3>
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="200" height="50" fill="#efe" stroke="#383"/><text x="20" y="42" font-weight="bold">メモのプレビュー</text><text x="20" y="60" font-size="12">ローカルのリンクを押す</text>
+<rect x="250" y="20" width="270" height="50" fill="#dff" stroke="#08a"/><text x="260" y="40" font-weight="bold" font-size="12">MemoViewModel.OpenLocalLink</text><text x="260" y="58" font-size="12">File.Exists ＋ DocumentLinkRule（除外）</text>
+<line x1="210" y1="45" x2="250" y2="45" stroke="#333" marker-end="url(#a)"/>
+<rect x="580" y="20" width="370" height="50" fill="#eee" stroke="#888"/><text x="590" y="40" font-size="12" font-weight="bold">当たらない</text><text x="590" y="58" font-size="12">ShellOpen.Open（既定のアプリ。12.7 の ③④）</text>
+<line x1="520" y1="45" x2="580" y2="45" stroke="#333" marker-end="url(#a)"/>
+<line x1="385" y1="70" x2="385" y2="100" stroke="#333" marker-end="url(#a)"/><text x="392" y="90" font-size="12">当たる（rel）</text>
+<rect x="250" y="100" width="270" height="50" fill="#ffe9c8" stroke="#a70"/><text x="260" y="120" font-weight="bold" font-size="11">DocumentsViewModel.OpenFromOutside(rel)</text><text x="260" y="138" font-size="12">＋ MainWindow がドキュメントタブを選ぶ</text>
+<rect x="10" y="185" width="290" height="55" fill="#efe" stroke="#383"/><text x="20" y="205" font-weight="bold" font-size="12">索引にある</text><text x="20" y="223" font-size="12">今の SelectPath と同じ（ツリー・一覧が追従）</text>
+<rect x="330" y="185" width="300" height="55" fill="#fef" stroke="#a3a"/><text x="340" y="205" font-weight="bold" font-size="12">まだ無い（未走査・走査中）</text><text x="340" y="223" font-size="12">予定として覚えて Start() → 走査の後に選ぶ</text>
+<rect x="660" y="185" width="290" height="55" fill="#fdd" stroke="#c33"/><text x="670" y="205" font-weight="bold" font-size="12">走査の後も無い</text><text x="670" y="223" font-size="12">既定のアプリで開き、ログに残す</text>
+<line x1="330" y1="150" x2="155" y2="185" stroke="#333" marker-end="url(#a)"/><line x1="385" y1="150" x2="480" y2="185" stroke="#333" marker-end="url(#a)"/><line x1="630" y1="212" x2="660" y2="212" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ol><li><code>MemoViewModel.OpenLocalLink(fullPath)</code>：<code>File.Exists</code> かつ <code>DocumentLinkRule.TryGetInAppPath(root, fullPath, 今の除外設定, out rel)</code> なら、<code>DocumentsViewModel.OpenFromOutside(rel)</code> を呼び、<code>MainWindow</code> にドキュメントタブへの切り替えを頼む（イベント）。それ以外は <code>ShellOpen.Open</code>（今の 12.7 の ③④ と同じ）。</li><li><code>DocumentsViewModel.OpenFromOutside(rel)</code>：<ul><li>索引にあれば、今の <code>SelectPath</code> と同じ（ツリー・一覧・最後のファイルが追従）。</li><li>無ければ（まだ走査していない・走査中）、<b>選ぶ予定として覚えて</b>、<code>Start()</code> を呼ぶ。最初の走査が終わったら、<code>RestoreLastOpened</code> の代わりに予定のファイルを選ぶ。後から別の予定が来たら上書き。</li><li>走査が終わっても索引に無ければ（判定の後に消えた・除外された）、既定のアプリで開き、ログに残す。</li></ul></li><li>除外設定は <code>DocumentsViewModel</code> が持っている <code>GitIgnoreMatcher</code> を使う（<code>DocumentsViewModel.IsInAppDocument(fullPath, out rel)</code> として公開し、中で <code>DocumentLinkRule</code> を呼ぶ）。</li><li>タブの切り替え：<code>MainWindow.xaml</code> の <code>TabControl</code> と各 <code>TabItem</code> に <code>x:Name</code> を付け、<code>DocumentsTab</code> を選ぶ。</li></ol>
+
+<h3>7.4 画面（<code>MemoView</code>）</h3>
+<ul><li>上のバー（<code>DockPanel</code>）：左に「プロジェクトのメモ」＋状態の文字（最終更新 <code>yyyy/MM/dd HH:mm</code>／「編集中」／「編集中（未保存）」）＋保存の失敗の理由（赤）。右に、プレビュー中は「✎ 編集」、編集中は「保存」「キャンセル」。</li><li>下：<code>MarkdownPreview</code> と <code>TextBox</code> を同じセルに置き、<code>IsEditing</code> で Visibility を入れ替える（重ねない）。</li><li><code>TextBox</code>：<code>AcceptsReturn=True</code>、<code>TextWrapping=Wrap</code>、<code>VerticalScrollBarVisibility=Auto</code>、<code>FontFamily="Consolas, BIZ UDGothic, MS Gothic"</code>、<code>AcceptsTab=False</code>（Tab でフォーカスが移る。タブ文字は入れない）、<code>Text</code> は <code>UpdateSourceTrigger=PropertyChanged</code>。「✎ 編集」を押したら入力欄にフォーカスし、カーソルは先頭。</li><li>Ctrl+S：<code>MemoView</code> の <code>InputBindings</code>（編集中だけ効く。<code>CanExecute</code> で）。</li><li>キャンセルの確認・閉じるときの確認は、既存（<code>HookSetup</code>）と同じ <code>MessageBox</code>（オーナーはメインウィンドウ）。VM は確認の関数（<code>Func&lt;bool&gt;</code>）を受け取る。</li><li>空の案内：<code>Saved</code> が空・空白だけなら <code>PreviewSource.Message("メモはまだありません。右上の『編集』で書けます")</code>。</li></ul>
+
+<h3>7.5 未保存のまま閉じる</h3>
+<ul><li><code>MainWindow.Closing</code> で、今の <code>_viewModel.Flush()</code>（セッションのメモ）の後に、<code>memo.IsDirty</code> なら、メモタブを選んでから確認する：「プロジェクトのメモが保存されていません。保存しますか？」（はい＝保存／いいえ＝保存しない／キャンセル）。</li><li>はい：保存。失敗したら <code>e.Cancel = true</code>（理由はバーに出る）。いいえ：そのまま閉じる。キャンセル：<code>e.Cancel = true</code>。</li><li>編集中でも変更が無ければ、聞かずに閉じる。</li></ul>
+
+<h3>7.6 メモのファイルの監視</h3>
+<ul><li><code>FileSystemWatcher</code>（<code>projects\</code> フォルダ、<code>Filter</code> ＝ メモのファイル名、<code>LastWrite | FileName | Size</code>、<code>Changed / Created / Renamed / Deleted</code>）。<code>AtomicFile</code> は置き換えで書くので、<code>Renamed</code> と <code>Changed</code> の両方を拾う。</li><li>300ms まとめてから UI スレッドで読み直し、<code>MemoEditor.OnExternalChange</code> に渡す。作り直すと返ったときだけ <code>PreviewChanged</code>。</li><li><code>projects\</code> が無ければ作ってから監視する（アプリのデータフォルダなので作ってよい）。</li><li>監視はメモタブを最初に表示したときに始める。ただし閉じるときの確認は、タブを開いていなければ編集もしていないので要らない。</li></ul>
+
+<h2>8. リスクと対策</h2>
+<table><tr><th>リスク</th><th>対策</th></tr>
+<tr><td>共通化でドキュメントタブの挙動が変わる</td><td>Phase 24 を単独で終わらせ、品質ゲート 3 を確かめる。<code>PreviewChanged</code> を出す箇所・順番を変えない</td></tr>
+<tr><td>WebView2 を 2 つ作ると失敗する・遅い</td><td>環境を 1 つ共用（7.2）。メモの WebView2 はタブを最初に開いたときに作る</td></tr>
+<tr><td>編集中の文字を失う</td><td>保存の失敗では編集のまま。外の変更は編集中に取り込まない。閉じるときに確認。タブを移っても VM が持つ</td></tr>
+<tr><td>自分の保存で監視が反応して描き直す</td><td>同じ内容なら作り直さない（7.1）</td></tr>
+<tr><td>改行コードの混在で「未保存」と誤表示</td><td>比べるときだけ改行を揃える（7.1）</td></tr>
+<tr><td>リンク先のドキュメントがまだ索引に無い</td><td>予定として覚え、最初の走査の後に選ぶ（7.3）</td></tr>
+<tr><td>WebView2 の上に WPF を重ねて隠れる</td><td>バーは WebView2 の外。エディタとは Visibility で入れ替え</td></tr></table>
+
+<h2>9. 決定事項（確認済み。設計イメージの Q1〜Q8）</h2>
+<ol><li>保存先は <code>%LOCALAPPDATA%\Miharikun\projects\{slug}-{hash8}.memo.md</code>。</li><li>対象フォルダ内の md/html へのリンクは、ドキュメントタブに切り替えて開く。</li><li>未保存で閉じるときは確認（保存／保存しない／キャンセル）。</li><li>キャンセルは、変更があれば確認。</li><li>Ctrl+S で保存。Esc でキャンセルはしない。</li><li>メモは 1 プロジェクトに 1 つ。</li><li>ダッシュボードの全文検索の対象にしない。</li><li>空のときは案内を出す。</li></ol>
+<p>計画で決めたこと（要件にない細部）：保存の失敗は編集のまま／閉じるときの保存が失敗したら閉じない／WebView2 が無くても編集・保存はできる／空のまま保存すると空のファイル／Tab キーはフォーカス移動（タブ文字を入れない）／改行コードは比べるときだけ揃え、保存は書いたまま。</p>
+
+<h2>10. 実装するセッションへの注意（必ず読む）</h2>
+<h3>10.1 始める前に</h3>
+<ul><li><b>この計画・<code>memo-tab-design.html</code>・<code>HANDOFF.md</code>・要件定義の変更が見えることを確かめる</b>。これらはコミットされていないことがある。作業ツリー（worktree）で始まったセッションには未追跡のファイルが無い。見つからなければ、推測で進めずに利用者に聞く。</li><li>計画と要件定義（12.10）に食い違いが無いか確かめる。あれば要件定義が正。判断がつかなければ聞く。</li><li><code>HANDOFF.md</code> の「やりとりのルール」と「落とし穴」を読む（コミットは頼まれたときだけ・<code>git add</code> はパス指定・完了報告にビルドの有無と出力先・本物の <code>%LOCALAPPDATA%\Miharikun\</code> は使わず <code>MIHARIKUN_DATA_DIR</code> で隔離・ビルドの前にアプリを止める・Core を直したら App を再ビルドしてから確認）。</li></ul>
+<h3>10.2 各 Phase の終わり</h3>
+<ul><li>隔離環境で確かめ、要件定義の <code>[x]</code> と「状況」を更新する。</li><li>報告には、ビルドの有無と出力先、テスト件数、できなかった確認を書く。<b>次の Phase に進む前に止まって報告する</b>。</li><li>Phase 24 の後は、利用者が望めば Opus のレビューを挟む（共通化の差分と品質ゲートの結果を渡す）。</li></ul>
+<p><b>状態：レビュー待ち</b>（別セッションの Opus に、この計画のレビューを頼む）。</p>
+</body></html>
