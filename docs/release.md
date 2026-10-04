@@ -72,3 +72,4 @@ gh run list --workflow release.yml --limit 3
 - [ ] ローカルで `dotnet test tests/Miharikun.Tests` が通る
 - [ ] 試運転で zip を作り、中身を確認した（必要なときだけ）
 - [ ] 本物の Cursor で、導入 → 会話 → ダッシュボード表示 を確認した（大きな変更のとき）
+- [ ] 試運転の zip の Miharikun.exe で、「ドキュメント」タブに md / html が表示される（WebView2 を使うので、単一ファイル発行で動くか。大きな変更のとき）

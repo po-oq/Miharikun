@@ -78,6 +78,10 @@ Miharikun（みはりくん） v$Version
 4. Cursor でチャットを始めると、ダッシュボードに表示されます。反映されないときは Cursor を再起動してください。
 
 Hook を外すときは、画面右上の ⚙ → 「Hook を削除」。
+
+「ドキュメント」タブ：プロジェクト配下の .md / .html を読めます。表示には Microsoft Edge の WebView2 Runtime が要ります
+（Windows 11 や、Edge が入っている環境では、たいてい入っています）。
+除外するフォルダ・ファイルは、画面右上の ⚙ → 「ドキュメントの設定…」で変えられます（gitignore 形式）。
 "@ | Set-Content (Join-Path $stage 'README.txt') -Encoding UTF8
 
 $zip = Join-Path $dist "$name.zip"

@@ -72,9 +72,10 @@ Cursor IDE ──(stdin JSON)──▶ Miharikun.Hook.exe --agent cursor ──a
 | プロジェクト | 種別 | 役割 |
 |---|---|---|
 | `Miharikun.Core` | クラスライブラリ | `IAgent`、共通イベントモデル、`CursorAgent`、状態判定、パス正規化。**AOT 互換で書く**（System.Text.Json はソースジェネレーター使用、リフレクション禁止） |
+| `Miharikun.Docs` | クラスライブラリ | ドキュメントタブの md→HTML（12.7。Markdig・mermaid・色付け・CSS）。**Markdig はここだけが参照する**（Core に入れると NativeAOT の Hook にも依存が混ざる）。`net10.0`、Core への参照なし |
 | `Miharikun.Hook` | コンソール, NativeAOT | stdin を受けて JSONL に追記するだけ。高速起動が最優先 |
-| `Miharikun` | WPF | 画面。WPF-UI 4.x を使用 |
-| `Miharikun.Tests` | xUnit | Core のテスト |
+| `Miharikun` | WPF | 画面。WPF-UI 4.x を使用。ドキュメントのプレビューに WebView2（Edge の Runtime）を使う |
+| `Miharikun.Tests` | xUnit | Core と Docs のテスト |
 
 - ターゲット：.NET 10（`net10.0` / `net10.0-windows`）
 - UI ライブラリ：WPF-UI（lepoco/wpfui）4.x。選定理由は継続的に保守されていること
@@ -429,7 +430,7 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 **走査**
 - 背景スレッドで再帰列挙し、除外フォルダは中に入らない（枝刈り）。拡張子 `.md` `.html` `.htm`（大文字小文字無視）のみ拾い、中身は読まない。見つかった分から順にツリーへ出す（画面を固めない）
 - 変更検知は `FileSystemWatcher`：ファイルの追加/削除/更新/名前変更だけ差分で反映し、フォルダの作成/削除/名前変更・バッファあふれは「読み直し」と同じ全再走査を自動で行う。除外は親フォルダまでさかのぼって判定する。取りこぼし用に「読み直し」がある。索引のキャッシュ保存はしない（遅ければ後で足す）
-- 目標：1万ファイル超のフォルダでも、操作がもたつかず、ツリーが数秒以内に出る
+- 目標：1万ファイル超のフォルダでも、操作がもたつかず、ツリーが数秒以内に出る。走査にかかった時間は、上段の件数の横に「（走査 N 秒）」と出し、`logsapp.log` にも残す（実環境での実測に使う）
 - 検索はファイル名のみ（本文検索はしない）
 
 **プレビュー**
@@ -575,8 +576,9 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - WebView2（html → md）、リンクの扱い、自動再読込、各ボタン。単一ファイル発行で動くかを、この Phase の中で確認する
 - 状況：実装済み（`Views/DocumentPreview`、`PreviewFiles`、`ShellOpen`、`ThemeService.Changed`）。WebView2 の初期化には画面に載った（ウィンドウハンドルのある）コントロールが要るので、先に載せてから始める。DevTools プロトコル（`--remote-debugging-port`）で、隔離した環境のデバッグ版と、`scripts/publish.ps1 -SkipHook` で作った単一ファイル版（133.8MB）の両方を確認済み：md（チェックボックス 3 個・うち 2 個チェック済み、日本語の見出し id、mermaid の図、コードの色付け、相対パスの画像、`<base>`）、`#` リンクのページ内スクロール、md 内の別の md へのリンクと html 内の md へのリンク（アプリ内で選択）、html の相対 css・js・画像と JavaScript、ファイル保存での自動再読み込み、タブを切り替えて戻っても表示が戻る、ダーク（背景 #1E1E1E）。http リンクの既定ブラウザ起動、Runtime 未導入時の案内は、この PC が実環境のため実機では未確認（コードのみ）
 
-## [ ] Phase 17: ドキュメントの仕上げ
+## [x] Phase 17: ドキュメントの仕上げ
 - 1万・5万ファイルの実測、Release の発行確認、本書（12.7・5章）の更新
+- 状況：Release の発行（`scripts/publish.ps1`。Hook は NativeAOT、zip 58.5MB）を確認済み：展開した zip の Miharikun.exe（単一ファイル、133.8MB）で、隔離環境のドキュメントタブに md が表示された（チェックボックス・mermaid・色付け）。zip の README.txt と `docs/release.md` のチェックに、ドキュメントタブ（WebView2 Runtime）を追記した。走査時間を画面と `app.log` に出すようにした。**1万ファイル超の実フォルダでの実測は、利用者が会社の PC で行う**（結果待ち。5万ファイルの合成測定は行わない）。目安：ツリーが数秒以内に出ること。遅ければ、索引のキャッシュを別 Issue にする
 
 ## 16. テスト方針
 

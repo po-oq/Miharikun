@@ -40,6 +40,8 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     private string? _selectedFolder;          // null＝すべて
     private string? _selectedPath;            // 選んでいるファイルの相対パス。再走査で一覧が空になっても覚えておく
     private bool _syncing;                    // コードから選択・展開を変えている間は、画面の操作として扱わない
+    private readonly System.Diagnostics.Stopwatch _scanTimer = new();
+    private TimeSpan? _lastScanTime;
     private bool _started;
     private bool _restored;
     private bool _disposed;
@@ -216,6 +218,8 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
         _scanCts = new CancellationTokenSource();
         var generation = _index.Reset();
         IsScanning = true;
+        _lastScanTime = null;
+        _scanTimer.Restart();
         _scheduler.MarkScanStarted();
 
         var matcher = _matcher;
@@ -254,6 +258,9 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
             return;
 
         IsScanning = false;
+        _scanTimer.Stop();
+        _lastScanTime = _scanTimer.Elapsed;
+        _log?.Invoke($"ドキュメントの走査：{_index.Count:N0} 件、{_scanTimer.Elapsed.TotalSeconds:0.00} 秒（{_root}）");
         _scheduler.ScanCompleted();
         RefreshNow();
         if (!_restored)
@@ -345,7 +352,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     private void UpdateStatus(int? matched = null, bool hasQuery = false)
     {
         var count = hasQuery && matched is { } m ? $"{m} / {_index.Count} 件" : $"{_index.Count} 件";
-        StatusText = IsScanning ? $"走査中… {count}" : count;
+        StatusText = IsScanning ? $"走査中… {count}" : _lastScanTime is { } t ? $"{count}（走査 {t.TotalSeconds:0.0} 秒）" : count;
     }
 
     /// <summary>VM を使い回しながら、子フォルダの並びを合わせる（展開状態を保つ）。</summary>
