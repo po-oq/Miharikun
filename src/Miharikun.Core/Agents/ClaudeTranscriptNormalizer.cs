@@ -281,7 +281,8 @@ public sealed class ClaudeTranscriptNormalizer
                     hasText = true;
                     events.Add(new AgentEvent(_key, seq, at, AgentEventKind.AssistantMessage, Text: t, Model: model));
                     break;
-                case "thinking" when Str(block, "thinking") is { } th:
+                // 本文の無い思考は出さない。実ログ（2.1.286）の思考の 93% は thinking が空で signature だけ（本文を記録していない）。
+                case "thinking" when Str(block, "thinking") is { } th && !string.IsNullOrWhiteSpace(th):
                     events.Add(new AgentEvent(_key, seq, at, AgentEventKind.AssistantThought, Text: th));
                     break;
                 case "tool_use":

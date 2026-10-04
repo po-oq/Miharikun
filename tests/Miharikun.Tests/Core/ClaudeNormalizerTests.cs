@@ -191,6 +191,37 @@ public sealed class ClaudeNormalizerTests
         Assert.Equal("claude-opus-x", events[1].Model);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\n")]
+    public void Thinking_without_text_is_not_an_event(string text)
+    {
+        // 実ログ（2.1.286）の思考の 93% は、thinking が空で signature だけ。タイムラインに「本文を取得できませんでした」が並ぶだけなので出さない。
+        var events = Without(Run(_b.User("a"), _b.AssistantThinking(text), _b.AssistantText("返事")), AgentEventKind.SessionStarted);
+
+        Assert.DoesNotContain(events, e => e.Kind == AgentEventKind.AssistantThought);
+        Assert.Contains(events, e => e.Kind == AgentEventKind.AssistantMessage);
+    }
+
+    [Fact]
+    public void Thinking_with_text_next_to_empty_ones_is_kept_in_order()
+    {
+        var events = Run(_b.AssistantThinking(""), _b.AssistantThinking("考えた内容"), _b.AssistantThinking(""));
+
+        var thoughts = events.Where(e => e.Kind == AgentEventKind.AssistantThought).ToList();
+        Assert.Equal("考えた内容", Assert.Single(thoughts).Text);
+        Assert.Equal(2, thoughts[0].Seq);   // 行番号は、空の思考の行も数える
+    }
+
+    [Fact]
+    public void An_empty_thinking_line_with_end_turn_still_does_not_end_the_turn()
+    {
+        var events = Run(_b.User("a"), _b.AssistantThinking("", stopReason: "end_turn", messageId: "m1"), _b.AssistantText("本文", stopReason: "end_turn", messageId: "m1"));
+
+        Assert.Equal(3, Assert.Single(events, e => e.Kind == AgentEventKind.TurnEnded).Seq);
+    }
+
     [Fact]
     public void Synthetic_model_is_null()
     {

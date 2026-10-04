@@ -177,7 +177,7 @@ tests/Miharikun.Tests/Core/
 | **人の入力**：`type=user` の文字の行で、`isMeta` でない・`tool_result` でない・`origin` が無いか `origin.kind == "human"`・`[Request interrupted` で始まらない | PromptSubmitted | 古い版（2.1.156）は `origin` 欄そのものが無い（16 件）。`origin.kind = "task-notification"`（27 件）は入力にしない（B11）。スラッシュコマンドや `<local-command…>` はそのまま文字で |
 | `[Request interrupted…]`（`origin` 無し） | TurnEnded（Aborted） | |
 | `assistant` の `text` | AssistantMessage | `Model = message.model`。**`<synthetic>` は null**（5 件。B5） |
-| `assistant` の `thinking` | AssistantThought | |
+| `assistant` の `thinking` | AssistantThought | **本文（`thinking`）が空・空白だけのものは出さない**（実ログ 2.1.286 の思考 700 件のうち 648 件は、本文が空で `signature` だけ。Claude Code が思考の本文を記録していない） |
 | `stop_reason == "end_turn"` | TurnEnded（Completed） | **`text` を含む行で出す**。思考の行と本文の行の両方に付くことがある（449 件中 172 件）。念のため同じ `message.id` では 1 回だけ（B1）。本文の後に出す |
 | `isApiErrorMessage` の返答 | TurnEnded（Error） | `system` の `api_error` は使わない |
 | `tool_use` | ToolStarted | `ToolName` は共通名（`Bash` / `PowerShell` → `Shell`）。`Command = input.command`。`input.run_in_background` を覚えておく |

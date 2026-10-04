@@ -192,7 +192,7 @@ Cursor は、ツール系などのイベントで `model` に `"default"` を入
 | ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻は最初の `timestamp`。ブランチは `gitBranch`（hash は無し。コミットは App が git で、ブランチと時刻から求める。10.1）。**実ログ（2.1.286）の最初の記録は `queue-operation` で、`cwd` も `gitBranch` も無い**ので、ブランチは「最初に `gitBranch` を持つ行」の最初のイベントの Git に載せ、変わったときにも載せる（セッションの途中の切り替えを追える） |
 | `user` の人の入力：文字の行で、`isMeta` でない・`tool_result` でない・**`origin` が無いか `origin.kind=human`**・`[Request interrupted` で始まらない | PromptSubmitted | Text = `message.content`。古い版（2.1.156）は `origin` 欄が無い。`origin.kind=task-notification`（裏の作業の終わりの通知）は入力にしない。スラッシュコマンドや `<local-command…>` はそのまま文字で出す（実機で確認） |
 | `assistant` の `text` | AssistantMessage | Model = `message.model`。**`<synthetic>`（合成の返答）は null**（Cursor の `"default"` と同じ扱い） |
-| `assistant` の `thinking` | AssistantThought | |
+| `assistant` の `thinking` | AssistantThought | **本文（`thinking`）が空・空白だけのものは出さない**（実ログ 2.1.286 の思考 700 件のうち 648 件は、本文が空で `signature` だけ。Claude Code が思考の本文を記録していない） |
 | `tool_use` | ToolStarted | ToolUseId = `id`。**ToolName は共通名に直す**：`Bash` と `PowerShell` → `Shell`、ほかは元の名前（Read・Edit・Write・Grep・`mcp__…`）。Command = `input.command` |
 | `tool_result`（`is_error=false`） | ToolSucceeded | Shell の ExitCode = 0。**ただし裏で動かした Bash（`input.run_in_background`、または結果に `backgroundTaskId`）は ExitCode = null**（すぐ返るため、結果は不明）。Output = **Shell だけ内容の末尾 2000 字**（ほかは持たない。メモリのため）。Duration = 結果の時刻 − 呼び出しの時刻 |
 | `tool_result`（内容が `Exit code N` で始まる） | **ToolSucceeded**（ExitCode = N） | コマンドは実行できて、終了コードが 0 でなかった。**失敗したテストを成果に出すため、ToolFailed にしない**（テスト判定は ToolSucceeded のとき記録する） |
