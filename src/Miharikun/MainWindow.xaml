@@ -49,6 +49,29 @@
             </Style.Triggers>
         </Style>
 
+        <!-- エージェントのバッジ（Cursor / Claude）。枠線と文字だけで、塗りつぶしのステータスのバッジと区別する。DataContext に AgentId / AgentName があれば使える -->
+        <Style x:Key="AgentBadge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="5,0" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="BorderBrush" Value="{DynamicResource StateIdleBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding AgentId}" Value="cursor"><Setter Property="BorderBrush" Value="{DynamicResource AgentCursorBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding AgentId}" Value="claude"><Setter Property="BorderBrush" Value="{DynamicResource AgentClaudeBrush}" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="AgentBadgeText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource StateIdleBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding AgentId}" Value="cursor"><Setter Property="Foreground" Value="{DynamicResource AgentCursorBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding AgentId}" Value="claude"><Setter Property="Foreground" Value="{DynamicResource AgentClaudeBrush}" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- ステータスのバッジ（カード）。未設定のときは出さない。色は塗りつぶしで示し、文字はテーマごとに読める色にする -->
         <Style x:Key="StatusBadge" TargetType="Border">
             <Setter Property="CornerRadius" Value="8" />
@@ -195,6 +218,9 @@
                         <TextBlock Text="{Binding StateText}" FontSize="11" Margin="4,0,0,0" />
                         <Border Style="{StaticResource StatusBadge}">
                             <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BadgeTextBrush}" />
+                        </Border>
+                        <Border Style="{StaticResource AgentBadge}" AutomationProperties.AutomationId="AgentBadge">
+                            <TextBlock Text="{Binding AgentName}" Style="{StaticResource AgentBadgeText}" />
                         </Border>
                     </StackPanel>
                     <ui:Button DockPanel.Dock="Right" Style="{StaticResource PencilButton}"
@@ -408,6 +434,21 @@
                                         <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
+                                <!-- エージェント絞り込み（全て / Cursor / Claude Code。1 つだけ選ぶ。件数は全体から数える） -->
+                                <ListBox ItemsSource="{Binding AgentTabs}" SelectedValuePath="Key"
+                                         SelectedValue="{Binding AgentKey, Mode=TwoWay}"
+                                         ItemContainerStyle="{StaticResource StatusTabItem}"
+                                         Margin="0,0,0,0" Background="Transparent" BorderThickness="0" Padding="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                         AutomationProperties.AutomationId="AgentTabs">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                                 </StackPanel>
                                 <ui:TextBox Grid.Row="1" Margin="0,8,0,0" AutomationProperties.AutomationId="SearchBox"
                                             PlaceholderText="🔍 プロンプト・概要・メモ・変更ファイルを検索"
@@ -468,6 +509,9 @@
                                             <StackPanel>
                                                 <DockPanel>
                                                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Border Style="{StaticResource AgentBadge}" Margin="0,0,10,0" AutomationProperties.AutomationId="DetailAgentBadge">
+                                                            <TextBlock Text="{Binding AgentName}" Style="{StaticResource AgentBadgeText}" />
+                                                        </Border>
                                                         <Ellipse Style="{StaticResource StateDot}" />
                                                         <TextBlock Text="{Binding StateText}" Margin="4,0,0,0" />
                                                     </StackPanel>
@@ -886,7 +930,7 @@
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Margin="0,3,16,0" Panel.ZIndex="10">
             <TextBlock Text="{Binding ProjectFolder}" Opacity="0.7" VerticalAlignment="Center" />
-            <ui:Button Content="⚙" ToolTip="Hook の導入・削除、テーマ、ドキュメントの設定" Appearance="Transparent"
+            <ui:Button Content="⚙" ToolTip="Hook の導入・削除、テーマ、設定、ドキュメントの設定" Appearance="Transparent"
                        Padding="8,2" Margin="6,0,0,0" Click="OnMenuButtonClick" AutomationProperties.AutomationId="MenuButton">
                 <ui:Button.ContextMenu>
                     <ContextMenu>
@@ -899,6 +943,7 @@
                             <MenuItem Header="ダーク" Tag="Dark" Click="OnThemeClick" />
                         </MenuItem>
                         <Separator />
+                        <MenuItem Header="設定…" Click="OnSettingsClick" AutomationProperties.AutomationId="SettingsMenu" />
                         <MenuItem Header="ドキュメントの設定…" Click="OnDocumentSettingsClick" AutomationProperties.AutomationId="DocumentSettingsMenu" />
                     </ContextMenu>
                 </ui:Button.ContextMenu>

@@ -26,9 +26,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool _gitBusy;
     private DateTimeOffset _lastGitRefresh = DateTimeOffset.MinValue;
     private int _ticks;
-    private (string? From, string? To) _commitRange;
+    private (string?, string?, string?, DateTimeOffset, DateTimeOffset) _commitKey;
 
     public string ProjectFolder { get; }
+
+    /// <summary>「実行中」のまま新しい記録が来ないとき「停止」と表示するまでの時間（分）。0 以下で無効。設定画面で変わる（SetRunningTimeout）。</summary>
+    public int RunningTimeoutMinutes { get; private set; }
 
     public ObservableCollection<SessionCardViewModel> Cards { get; } = [];
 
@@ -40,6 +43,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _uncommittedOnly;
     [ObservableProperty] private bool _memoOnly;
     [ObservableProperty] private StatusTab _statusTab = StatusTab.All;
+
+    /// <summary>エージェントの絞り込み（AgentFilter.All = 全て）。</summary>
+    [ObservableProperty] private string _agentKey = AgentFilter.All;
 
     /// <summary>タイムラインの拡大モード（要件 12.4.1）。左・中央のペインを隠し、右ペインを広げる。保存しない。</summary>
     [ObservableProperty] private bool _isTimelineExpanded;
@@ -62,6 +68,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public IReadOnlyList<StatusTabItem> StatusTabs { get; } =
         Enum.GetValues<StatusTab>().Select(t => new StatusTabItem(t, StatusFilter.Name(t))).ToList();
 
+    /// <summary>エージェント絞り込みのチップ（全て / Cursor / Claude Code）。ステータスのタブと同じく、件数は全カードから数え、入れ替えない。</summary>
+    public IReadOnlyList<AgentTabItem> AgentTabs { get; } =
+        AgentFilter.Options.Select(o => new AgentTabItem(o.Key, o.Name)).ToList();
+
     // 右ペイン下部：このプロジェクトの全セッション横断の「最近の入力」「最近閉じたセッション」（行クリックで左のカードを選択）
     [ObservableProperty] private IReadOnlyList<RecentRow> _recentInputs = [];
     [ObservableProperty] private IReadOnlyList<RecentRow> _recentClosed = [];
@@ -75,8 +85,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool MemoFilterAvailable => true;
 
     public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui,
-        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta, GitClient git)
+        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta, GitClient git,
+        int runningTimeoutMinutes = StalledRule.DefaultTimeoutMinutes)
     {
+        RunningTimeoutMinutes = runningTimeoutMinutes;
         _git = git;
         _meta = meta;
         _meta.Changed += OnMetaChanged;
@@ -122,6 +134,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             UncommittedOnly = false;
             MemoOnly = false;
             StatusTab = StatusTab.All;
+            AgentKey = AgentFilter.All;
         }
         Selected = card;
         CardScrollRequested?.Invoke(card);
@@ -162,7 +175,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
             else
             {
-                card = new SessionCardViewModel(snap, now, _meta);
+                card = new SessionCardViewModel(snap, now, _meta, () => RunningTimeoutMinutes);
                 card.SetUncommitted(UncommittedCount(snap.Summary));
                 _byKey[card.Key] = card;
                 Cards.Add(card);
@@ -189,7 +202,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void RefreshSelected(SessionSnapshot snap, DateTimeOffset now)
     {
         if (Detail is null || Detail.Key != snap.Summary.Key)
-            Detail = new SessionDetailViewModel(snap, now, t => Timeline.JumpTo(t.Seq, t.Kind), _meta, ProjectFolder);
+            Detail = new SessionDetailViewModel(snap, now, t => Timeline.JumpTo(t.Seq, t.Kind), _meta, ProjectFolder, () => RunningTimeoutMinutes);
         else
             Detail.Update(snap, now);
         Timeline.SetEvents(_getEvents(snap.Summary.Key), now);
@@ -205,7 +218,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (value is null)
             IsTimelineExpanded = false;
         Detail = null;
-        _commitRange = default;
+        _commitKey = default;
         if (value is null)
             return;
 
@@ -217,16 +230,38 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Tick()
     {
         var now = DateTimeOffset.Now;
-        foreach (var card in Cards)
-            card.RefreshClock(now);
-        Detail?.RefreshClock(now);
-        if (IsTimelineExpanded)
-            OnPropertyChanged(nameof(ExpandedTitle));   // 名前や状態が変わったとき
+        RefreshClocks(now);
         UpdateRecent(now);
 
         // 利用者が IDE や別のターミナルでコミットすることもあるので、定期的にも見直す。
         if (++_ticks % GitRefreshEveryTicks == 0)
             RefreshGit();
+    }
+
+    /// <summary>
+    /// 時間とともに変わる表示（◯分前・表示用の状態）を更新する。表示用の状態（実行中 → 停止）が変わったカードがあれば、
+    /// 絞り込み（「実行中のみ」など）と件数も取り直す（丸・文字・絞り込み・件数が食い違わないように）。
+    /// </summary>
+    private void RefreshClocks(DateTimeOffset now)
+    {
+        var stateChanged = false;
+        foreach (var card in Cards)
+            stateChanged |= card.RefreshClock(now);
+        Detail?.RefreshClock(now);
+        if (stateChanged)
+        {
+            CardsView.Refresh();
+            UpdateCounts();
+        }
+        if (IsTimelineExpanded)
+            OnPropertyChanged(nameof(ExpandedTitle));   // 名前や状態が変わったとき
+    }
+
+    /// <summary>設定画面で「停止とみなす時間」が変わったとき。すぐ効く（再起動は要らない）。</summary>
+    public void SetRunningTimeout(int minutes)
+    {
+        RunningTimeoutMinutes = minutes;
+        RefreshClocks(DateTimeOffset.Now);
     }
 
     private IReadOnlyList<string>? UncommittedFiles(SessionSummary s) =>
@@ -261,19 +296,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>選択中セッションのコミット一覧。開始・最新の HEAD が変わったときだけ git log を実行する。</summary>
+    /// <summary>
+    /// 選択中セッションのコミット一覧。範囲（開始・最新の HEAD、または head を持たないセッションのブランチと時刻）が変わったときだけ git を実行する。
+    /// head を持たない Claude Code は、ブランチと時刻から head を求める（SessionCommits）。
+    /// </summary>
     private async void LoadCommits(SessionSummary s)
     {
-        var range = (s.StartHead, s.LatestHead);
-        if (range == _commitRange)
+        var key = SessionCommits.Key(s);
+        if (key == _commitKey)
             return;
-        _commitRange = range;
+        _commitKey = key;
 
         try
         {
-            var commits = await Task.Run(() => _git.GetCommits(range.StartHead, range.LatestHead));
+            var commits = await Task.Run(() => SessionCommits.Load(s, _git));
             // 待っている間に選択や範囲が変わっていたら捨てる
-            if (Detail is not null && Detail.Key == s.Key && _commitRange == range)
+            if (Detail is not null && Detail.Key == s.Key && _commitKey == key)
                 Detail.SetCommits(commits);
         }
         catch (Exception ex)
@@ -287,12 +325,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnUncommittedOnlyChanged(bool value) => CardsView.Refresh();
     partial void OnMemoOnlyChanged(bool value) => CardsView.Refresh();
     partial void OnStatusTabChanged(StatusTab value) => CardsView.Refresh();
+    partial void OnAgentKeyChanged(string value) => CardsView.Refresh();
 
     private bool Visible(SessionCardViewModel c)
     {
         if (RunningOnly && c.State != SessionState.Running) return false;
         if (MemoOnly && !c.HasMemo) return false;
         if (!StatusFilter.Matches(StatusTab, c.Status)) return false;
+        if (!AgentFilter.Matches(AgentKey, c.AgentId)) return false;
         if (UncommittedOnly && !(c.UncommittedCount > 0)) return false;
         return SessionSearch.Matches(c.SearchText, SearchText);
     }
@@ -302,16 +342,25 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var statuses = Cards.Select(c => c.Status).ToList();
         foreach (var tab in StatusTabs)
             tab.Count = StatusFilter.Count(tab.Tab, statuses);
+        var agentIds = Cards.Select(c => c.AgentId).ToList();
+        foreach (var tab in AgentTabs)
+            tab.Count = AgentFilter.Count(tab.Key, agentIds);
 
         int Count(params SessionState[] states) => Cards.Count(c => states.Contains(c.State));
-        Counts =
-        [
+        var closed = Count(SessionState.Closed, SessionState.Imported);
+        // 「閉じた」は、終了の記録を持つエージェント（Cursor）だけの状態。Claude Code のセッションしか無いときは出さない（要件 12.8）。
+        var showClosed = closed > 0 || Cards.Count == 0 ||
+                         Cards.Any(c => AgentCatalog.Find(c.AgentId)?.Capabilities.HasFlag(AgentCapabilities.SessionEnd) ?? true);
+        var counts = new List<StateCount>
+        {
             new(SessionState.Running, SessionText.StateName(SessionState.Running), Count(SessionState.Running)),
             new(SessionState.YourTurn, SessionText.StateName(SessionState.YourTurn), Count(SessionState.YourTurn)),
             new(SessionState.Aborted, SessionText.StateName(SessionState.Aborted), Count(SessionState.Aborted)),
             new(SessionState.Error, SessionText.StateName(SessionState.Error), Count(SessionState.Error)),
-            new(SessionState.Closed, SessionText.StateName(SessionState.Closed), Count(SessionState.Closed, SessionState.Imported)),
-        ];
+        };
+        if (showClosed)
+            counts.Add(new(SessionState.Closed, SessionText.StateName(SessionState.Closed), closed));
+        Counts = counts;
     }
 
     // タイトル・概要・メモが変わったら、カード・詳細・検索結果に反映する。
@@ -339,6 +388,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 public sealed partial class StatusTabItem(StatusTab tab, string name) : ObservableObject
 {
     public StatusTab Tab { get; } = tab;
+    public string Name { get; } = name;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(Label))] private int _count;
+    public string Label => $"{Name} {Count}";
+}
+
+/// <summary>エージェント絞り込みのチップ 1 つ。Count は他のフィルタに関係なく、全カードから数えた件数。</summary>
+public sealed partial class AgentTabItem(string key, string name) : ObservableObject
+{
+    public string Key { get; } = key;
     public string Name { get; } = name;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(Label))] private int _count;
     public string Label => $"{Name} {Count}";

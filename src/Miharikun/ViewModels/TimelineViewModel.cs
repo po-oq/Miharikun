@@ -208,7 +208,9 @@ public sealed partial class TimelineViewModel : ObservableObject
     /// <summary>該当イベントの行を強調してスクロールする。種別フィルタが OFF なら ON に切り替える。</summary>
     public bool JumpTo(long seq, TimelineKind kind)
     {
-        var item = Items.FirstOrDefault(i => i.Item.Seq == seq || i.Item.EndSeq == seq);
+        // 番号と種類が両方一致する行を優先する（Claude Code は 1 行のログから複数のイベントが出て、同じ番号になることがある）
+        var found = TimelineBuilder.Find(Items.Select(i => i.Item).ToList(), seq, kind);
+        var item = found is null ? null : Items.FirstOrDefault(i => ReferenceEquals(i.Item, found));
         if (item is null)
             return false;
 

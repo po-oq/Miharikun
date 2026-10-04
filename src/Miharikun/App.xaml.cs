@@ -26,18 +26,22 @@ public partial class App : Application
         AppLog.Init(paths);
         LogUnhandledExceptions();
 
-        var theme = new ThemeService(new AppSettingsStore(paths, AppLog.Write));
+        var appSettings = new AppSettingsStore(paths, AppLog.Write);
+        var theme = new ThemeService(appSettings);
 
         // 読み込みの元（Source）のリスト。エージェントが増えたら、ここに足す。
         List<ISessionSource> sources =
         [
             new CursorSessionSource(new CursorAgent(), paths, folder, log: AppLog.Write,
                 importer: new CursorTranscriptImporter(HookInstaller.ResolveCursorDir(), AppLog.Write)),
+            // Claude Code は会話ログを読むだけ（Hook は使わない）。.claude\projects が無くても入れてよい（読むだけで、無ければ何も出ない）
+            new ClaudeSessionSource(folder, ClaudeLocations.ResolveClaudeDir(), AppLog.Write),
         ];
         var store = new ProjectEventStore(sources, log: AppLog.Write);
         _monitor = new SessionMonitor(store);
         var meta = new SessionMetaService(agentId => new MetaStore(paths, agentId, AppLog.Write), log: AppLog.Write);
-        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, new GitClient(folder));
+        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, new GitClient(folder),
+            runningTimeoutMinutes: appSettings.LoadRunningTimeoutMinutes());
 
         // 同梱の Hook exe は Miharikun.exe と同じフォルダ（単一ファイル発行でも実行ファイルの場所を使う）
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
@@ -46,7 +50,7 @@ public partial class App : Application
         _ = Task.Run(() => PreviewFiles.CleanOld(paths.PreviewDir));   // 1 日より古い md の一時 HTML を消す
         _documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), paths, () => theme.IsDark,
             SynchronizationContext.Current!, AppLog.Write);
-        var window = new MainWindow(_viewModel, _documents, hookSetup, theme);
+        var window = new MainWindow(_viewModel, _documents, hookSetup, theme, appSettings);
         theme.Start(window);
         window.Show();
         _monitor.Start();

@@ -155,6 +155,29 @@ public static class SessionText
         return detail.Count == 0 ? $"{s.CompactionCount}回" : $"{s.CompactionCount}回（{string.Join("・", detail)}）";
     }
 
+    /// <summary>
+    /// サブエージェント：なし / 動いている 1（調べる） / 動いた 2。動いているものは説明を最大 3 件まで添える（長い説明は切る）。
+    /// 「動いた」は、終わったもの。
+    /// </summary>
+    public static string SubagentText(SessionSummary s)
+    {
+        if (s.SubagentsTotal == 0)
+            return "なし";
+
+        var running = s.Subagents.Where(x => x.Running).ToList();
+        var names = running.Select(x => ShortDescription(x.Description)).OfType<string>().Take(3).ToList();
+        var detail = names.Count == 0 ? "" : $"（{string.Join("、", names)}{(running.Count > names.Count ? " ほか" : "")}）";
+        return $"動いている {running.Count}{detail} / 動いた {s.SubagentsTotal - running.Count}";
+    }
+
+    private static string? ShortDescription(string? description)
+    {
+        var line = FirstLine(description);
+        if (line is null)
+            return null;
+        return line.Length <= 24 ? line : line[..24] + "…";
+    }
+
     /// <summary>テスト実行：なし / 5回（成功3 / 失敗2）。成否が取れなかった分は「不明」。</summary>
     public static string TestRunsText(SessionSummary s)
     {

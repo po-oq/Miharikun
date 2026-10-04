@@ -17,6 +17,9 @@
     <SolidColorBrush x:Key="TimelineHighlightBrush" Color="#D97706" />
     <!-- ステータスのバッジ（塗りつぶし）の文字 -->
     <SolidColorBrush x:Key="BadgeTextBrush" Color="#FFFFFF" />
+    <!-- エージェントのバッジ（枠線と文字。カードの地の上で読める色） -->
+    <SolidColorBrush x:Key="AgentCursorBrush" Color="#57606A" />
+    <SolidColorBrush x:Key="AgentClaudeBrush" Color="#B35A1F" />
     <!-- 一覧のカード -->
     <SolidColorBrush x:Key="CardItemBackgroundBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="CardItemBorderBrush" Color="#9A9AA6" />

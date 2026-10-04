@@ -28,6 +28,7 @@ public sealed class ClaudeTranscriptNormalizer
 
     private readonly SessionKey _key;
     private readonly string _fileName;
+    private readonly string? _transcriptPath;
     private readonly ClaudeFormatLog? _formatLog;
     private readonly Dictionary<string, PendingTool> _pending = new(StringComparer.Ordinal);
     /// <summary>まだ終わっていないサブエージェント（Agent ツールの呼び出し）の tool_use の id。</summary>
@@ -43,10 +44,12 @@ public sealed class ClaudeTranscriptNormalizer
     /// <param name="sessionId">セッション ID（SessionKey の元）。</param>
     /// <param name="fileName">ログに書くファイル名（行の中身ではなく、場所の手がかり）。</param>
     /// <param name="formatLog">形式の変化のログ。起動ごとに 1 つを、全ファイルで共有する。null ならログを出さない。</param>
-    public ClaudeTranscriptNormalizer(string sessionId, string fileName, ClaudeFormatLog? formatLog = null)
+    /// <param name="transcriptPath">会話ログのファイルのパス（SessionStarted に載せる。画面の transcript サイズ用）。</param>
+    public ClaudeTranscriptNormalizer(string sessionId, string fileName, ClaudeFormatLog? formatLog = null, string? transcriptPath = null)
     {
         _key = new SessionKey(ClaudeCodeAgent.AgentId, sessionId);
         _fileName = fileName;
+        _transcriptPath = transcriptPath;
         _formatLog = formatLog;
     }
 
@@ -145,7 +148,7 @@ public sealed class ClaudeTranscriptNormalizer
         if (_started || at is null)
             return;
         events.Add(new AgentEvent(_key, seq, at.Value, AgentEventKind.SessionStarted,
-            Git: new GitSnapshot(Str(root, "gitBranch"), null)));
+            Git: new GitSnapshot(Str(root, "gitBranch"), null), TranscriptPath: _transcriptPath));
     }
 
     private void ConvertUser(JsonObject root, DateTimeOffset at, long seq, List<AgentEvent> events)

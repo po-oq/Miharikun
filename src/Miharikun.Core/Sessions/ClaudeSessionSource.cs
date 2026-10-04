@@ -21,7 +21,7 @@ public sealed class ClaudeSessionSource : ISessionSource
         public string Path { get; } = path;
         public string SessionId { get; } = sessionId;
         public JsonlTail Tail { get; } = new();
-        public ClaudeTranscriptNormalizer Normalizer { get; set; } = new(sessionId, System.IO.Path.GetFileName(path), formatLog);
+        public ClaudeTranscriptNormalizer Normalizer { get; set; } = new(sessionId, System.IO.Path.GetFileName(path), formatLog, path);
         public Match Match { get; set; }
         /// <summary>最初の cwd が見つかるまでに読んだ行（見つかったら、まとめて変換する）。</summary>
         public List<(long LineNumber, string Text)> Pending { get; } = [];
@@ -30,7 +30,7 @@ public sealed class ClaudeSessionSource : ISessionSource
 
         public void Reset(ClaudeFormatLog? formatLog)
         {
-            Normalizer = new ClaudeTranscriptNormalizer(SessionId, System.IO.Path.GetFileName(Path), formatLog);
+            Normalizer = new ClaudeTranscriptNormalizer(SessionId, System.IO.Path.GetFileName(Path), formatLog, Path);
             Match = Match.Unknown;
             Pending.Clear();
             EventCount = 0;

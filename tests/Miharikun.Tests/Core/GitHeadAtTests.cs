@@ -232,4 +232,73 @@ public sealed class GitHeadAtTests : IDisposable
         Assert.Contains("編集なし", CommitCheck.Evaluate(0, [], worktreeFileCount: 0).Text);
         Assert.Equal("ok", CommitCheck.Evaluate(2, []).Level);
     }
+
+    // ---- セッションのコミット一覧（Phase 21-3） ----
+
+    private static SessionSummary ClaudeSession(int stepSeconds, string? branch = "main")
+    {
+        var b = new ClaudeLogBuilder("s", @"C:\work\proj", branch) { Step = stepSeconds };
+        var normalizer = new Miharikun.Core.Agents.ClaudeTranscriptNormalizer("s", "s.jsonl");
+        var events = new List<Miharikun.Core.Agents.AgentEvent>();
+        var i = 0;
+        foreach (var line in new[] { b.User("やって"), b.AssistantText("途中"), b.AssistantText("おわり", stopReason: "end_turn") })
+            events.AddRange(normalizer.NormalizeLine(++i, line));
+        return SessionAnalyzer.Analyze(new Miharikun.Core.Agents.SessionKey("claude", "s"), events);
+    }
+
+    [Fact]
+    public void A_claude_session_without_heads_gets_its_commits_from_the_branch_and_the_times()
+    {
+        ThreeCommits();   // main: one (10/1 10:00Z), two (10/2 10:00Z), three (10/3 10:00Z)
+        // 開始 10/3 06:00Z（head は two）、最後の動き 10/3 14:00Z（head は three）→ その間の three
+        var s = ClaudeSession(stepSeconds: 4 * 3600);
+
+        Assert.Null(s.StartHead);
+        Assert.Equal("main", s.Branch);
+        var commits = SessionCommits.Load(s, new GitClient(_dir));
+
+        Assert.Equal(["three"], commits!.Select(c => c.Subject));
+    }
+
+    [Fact]
+    public void A_session_with_heads_uses_them_and_does_not_ask_for_the_branch()
+    {
+        var (c1, _, c3) = ThreeCommits();
+        var cursor = new Miharikun.Core.Agents.CursorAgent();
+        var events = new[]
+        {
+            cursor.Normalize(TestData.Raw("sessionStart", line: 1, sec: 0, git: new Miharikun.Core.Agents.GitSnapshot("not-a-branch", c1))).Single(),
+            cursor.Normalize(TestData.Raw("stop", "\"status\":\"completed\"", line: 2, sec: 5, git: new Miharikun.Core.Agents.GitSnapshot("not-a-branch", c3))).Single(),
+        };
+        var s = SessionAnalyzer.Analyze(new Miharikun.Core.Agents.SessionKey("cursor", "conv-1"), events);
+
+        var commits = SessionCommits.Load(s, new GitClient(_dir));
+
+        Assert.Equal(["three", "two"], commits!.Select(c => c.Subject));
+    }
+
+    [Fact]
+    public void Without_heads_and_without_a_branch_the_commits_are_unknown()
+    {
+        ThreeCommits();
+
+        Assert.Null(SessionCommits.Load(ClaudeSession(4 * 3600, branch: null), new GitClient(_dir)));
+    }
+
+    [Fact]
+    public void Commit_key_changes_with_the_last_activity_only_for_sessions_without_heads()
+    {
+        var a = ClaudeSession(60);
+        var b = ClaudeSession(120);
+
+        Assert.Equal(SessionCommits.Key(a), SessionCommits.Key(ClaudeSession(60)));
+        Assert.NotEqual(SessionCommits.Key(a), SessionCommits.Key(b));   // 最後の動きが違う → 取り直す
+
+        var cursor = new Miharikun.Core.Agents.CursorAgent();
+        Miharikun.Core.Agents.AgentEvent Ev(int sec) =>
+            cursor.Normalize(TestData.Raw("stop", "\"status\":\"completed\"", line: 1, sec: sec, git: new Miharikun.Core.Agents.GitSnapshot("main", "abc1234"))).Single();
+        var k1 = SessionCommits.Key(SessionAnalyzer.Analyze(new Miharikun.Core.Agents.SessionKey("cursor", "c"), [Ev(0)]));
+        var k2 = SessionCommits.Key(SessionAnalyzer.Analyze(new Miharikun.Core.Agents.SessionKey("cursor", "c"), [Ev(0), Ev(30)]));
+        Assert.Equal(k1, k2);   // head を持つセッションは、時刻が進んでも同じ（git log を実行し直さない）
+    }
 }

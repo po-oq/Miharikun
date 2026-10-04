@@ -77,6 +77,16 @@ public static class TimelineBuilder
     public static TimelineItem? Find(IEnumerable<TimelineItem> items, long seq) =>
         items.FirstOrDefault(i => i.Seq == seq || i.EndSeq == seq);
 
+    /// <summary>
+    /// イベント番号と種類から行を探す。<b>番号と種類が両方一致する行を優先</b>し、無ければ番号だけで探す。
+    /// Claude Code は 1 行のログから複数のイベントが出て、同じ番号になることがある（セッション開始と最初の依頼など）。
+    /// </summary>
+    public static TimelineItem? Find(IEnumerable<TimelineItem> items, long seq, TimelineKind kind)
+    {
+        var list = items as IReadOnlyList<TimelineItem> ?? items.ToList();
+        return list.FirstOrDefault(i => i.Kind == kind && (i.Seq == seq || i.EndSeq == seq)) ?? Find(list, seq);
+    }
+
     // 入力が壊れて本文を取れなかったイベントが、空白の行にならないように
     private const string MissingText = "（本文を取得できませんでした）";
 

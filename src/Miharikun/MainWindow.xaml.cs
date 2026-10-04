@@ -13,9 +13,11 @@ public partial class MainWindow : FluentWindow
     private readonly HookSetup _hookSetup;
     private readonly ThemeService _theme;
     private readonly DocumentsViewModel _documents;
+    private readonly AppSettingsStore _settings;
 
-    public MainWindow(MainViewModel viewModel, DocumentsViewModel documents, HookSetup hookSetup, ThemeService theme)
+    public MainWindow(MainViewModel viewModel, DocumentsViewModel documents, HookSetup hookSetup, ThemeService theme, AppSettingsStore settings)
     {
+        _settings = settings;
         _viewModel = viewModel;
         _hookSetup = hookSetup;
         _theme = theme;
@@ -99,6 +101,16 @@ public partial class MainWindow : FluentWindow
             menu.PlacementTarget = button;
             menu.IsOpen = true;
         }
+    }
+
+    /// <summary>アプリ全体の設定（12.9）。今は「停止とみなす時間」だけ。保存するとすぐ効く。</summary>
+    private void OnSettingsClick(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var dialog = new Views.AppSettingsDialog(_viewModel.RunningTimeoutMinutes) { Owner = this };
+        if (dialog.ShowDialog() != true)
+            return;
+        _settings.SaveRunningTimeoutMinutes(dialog.RunningTimeoutMinutes);
+        _viewModel.SetRunningTimeout(dialog.RunningTimeoutMinutes);
     }
 
     private void OnDocumentSettingsClick(object sender, System.Windows.RoutedEventArgs e)
