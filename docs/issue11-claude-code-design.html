@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #11 Claude Code 対応 設計イメージ</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>Issue #11 Claude Code 対応 設計イメージ</h1>
+<p><b>状態：確定</b>（Q1〜Q8・N1〜N4 に回答済み。12 章）。要件定義に反映済み。</p>
+<p>ゴール：このプロジェクトを進めている Claude Code（CLI と Code タブ）のセッションを、Cursor と<b>同じ一覧</b>で見られるようにする。まず「成果（コミット・テスト実行）がどう見えるか」を確かめられることが目的。<br>
+データは<b>会話ログを読むだけ</b>（フックなし）。根拠は Step 0 の結果（<a href="https://github.com/po-oq/Miharikun/issues/11#issuecomment-5975198169">Issue #11 のコメント</a>）。</p>
+
+<h2>1. 画面イメージ</h2>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<rect x="0" y="0" width="330" height="330" fill="#fff" stroke="#999"/>
+<text x="10" y="20" font-weight="bold">左：セッション一覧（Cursor と Claude が混ざる）</text>
+<rect x="10" y="30" width="310" height="24" fill="#eee" stroke="#aaa"/><text x="16" y="47" fill="#666">🔍 プロンプト・概要・メモ・変更ファイルを検索</text>
+<text x="10" y="76">エージェント：</text>
+<rect x="88" y="62" width="40" height="20" rx="10" fill="#cfe3ff" stroke="#08c"/><text x="97" y="77">全て</text>
+<rect x="134" y="62" width="62" height="20" rx="10" fill="#fff" stroke="#999"/><text x="142" y="77">Cursor</text>
+<rect x="202" y="62" width="62" height="20" rx="10" fill="#fff" stroke="#999"/><text x="210" y="77">Claude</text>
+<text x="272" y="77" font-size="11" fill="#c05000">← 新規</text>
+<rect x="10" y="92" width="310" height="104" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2" rx="6"/>
+<circle cx="24" cy="109" r="5" fill="#0969da"/><text x="34" y="113" font-size="11">実行中</text>
+<rect x="74" y="99" width="50" height="16" rx="8" fill="#b4531f"/><text x="82" y="111" font-size="11" fill="#fff">Claude</text>
+<text x="132" y="113" font-weight="bold">ドキュメント機能の実装</text>
+<text x="20" y="132" font-size="11" fill="#666">12 依頼 ・ 2 分前 ・ claude-sonnet-5-5 ・ main</text>
+<text x="20" y="150" font-size="11">📝 Phase 17 をコミットして push して</text>
+<text x="20" y="165" font-size="11">🔧 Shell: git push（実行中 3 秒）</text>
+<text x="20" y="180" font-size="11">💬 Phase 17 をコミットして、main に push しました…</text>
+<rect x="10" y="204" width="310" height="70" fill="#fff" stroke="#9a9aa6" rx="6"/>
+<circle cx="24" cy="221" r="5" fill="#1a7f37"/><text x="34" y="225" font-size="11">ボスの番</text>
+<rect x="84" y="211" width="50" height="16" rx="8" fill="#555"/><text x="90" y="223" font-size="11" fill="#fff">Cursor</text>
+<text x="142" y="225" font-weight="bold">テストタブの追加</text>
+<text x="20" y="244" font-size="11" fill="#666">6 依頼 ・ 1 時間前 ・ gpt-… ・ feature/x</text>
+<text x="20" y="262" font-size="11">📝 6〜8 まで進めて</text>
+<!-- detail -->
+<rect x="340" y="0" width="620" height="330" fill="#fff" stroke="#999"/>
+<text x="350" y="20" font-weight="bold">中央：詳細（成果の部分。Claude のセッションの例）</text>
+<rect x="350" y="30" width="600" height="86" fill="#f7f7f7" stroke="#bbb" rx="4"/>
+<text x="360" y="50" font-weight="bold">完了チェック</text>
+<text x="360" y="70">✓ ターン終了（最後が end_turn）　✓ 裏の作業なし（サブエージェント 0）　✓ コミット済み（未コミット 0）</text>
+<text x="360" y="92" font-size="11" fill="#666">コミットの判定は、これまでどおり Miharikun 自身が git を実行して調べる（会話ログには頼らない）</text>
+<rect x="350" y="124" width="600" height="110" fill="#f7f7f7" stroke="#bbb" rx="4"/>
+<text x="360" y="144" font-weight="bold">テスト実行</text>
+<text x="360" y="164">1) dotnet test　exit 0　2.3 秒　<tspan fill="#2a7a2a">✓ 通過</tspan></text>
+<text x="360" y="184">2) dotnet test　exit 1　5.1 秒　<tspan fill="#b33">✗ 失敗</tspan>　（出力の末尾を表示）</text>
+<text x="360" y="206" font-size="11" fill="#666">Shell ツール（Bash / PowerShell）の実行のうち、コマンドがテスト用のパターンに当たったもの</text>
+<text x="360" y="224" font-size="11" fill="#c05000">※ 失敗の終了コードは、結果の文字（Exit code N）から取る。成功は 0</text>
+<rect x="350" y="242" width="600" height="78" fill="#f7f7f7" stroke="#bbb" rx="4"/>
+<text x="360" y="262" font-weight="bold">変更ファイル（Edit / Write から）　3 件</text>
+<text x="360" y="282" font-size="12">src/Miharikun/ViewModels/DocumentsViewModel.cs</text>
+<text x="360" y="298" font-size="12">docs/miharikun-requirements.md</text>
+<text x="360" y="314" font-size="12">scripts/publish.ps1</text>
+</svg>
+<p>変わる所：①カードと詳細ヘッダーに<b>エージェントのバッジ</b>（Cursor / Claude）②左ペインに<b>エージェントの絞り込み</b>（全て / Cursor / Claude）。それ以外の画面（詳細・タイムライン・メモ・ステータス・ドキュメントタブ）は、共通イベントだけを見ているので、そのまま使える。<br>
+取れない項目は出さない（Claude に無い「閉じた」状態、など。<code>Capabilities</code> で切り替える）。</p>
+
+<h2>2. データの流れ（概念図）</h2>
+<p><b>ご指摘のとおり、ProjectEventStore と ClaudeSessionStore は同じ役割</b>（プロジェクトのセッションのイベントを保持し、追記を取り込み、変わったセッションを知らせる）。違うのは<b>「どこから・どんな形式で読むか」だけ</b>。<br>
+そこで、<b>保持・要約のキャッシュ・変更通知は 1 つの汎用 <code>ProjectEventStore</code> に集め</b>、読み込みの部分だけをエージェントごとの <code>ISessionSource</code>（<code>CursorSessionSource</code> / <code>ClaudeSessionSource</code>）に切り出す。別のエージェントを足すときは、Source を 1 つ足すだけになる。</p>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="10" width="190" height="56" fill="#ffe9c8" stroke="#a70"/><text x="18" y="30" font-weight="bold">Cursor の Hook</text><text x="18" y="48" font-size="12">events\cursor\*.jsonl</text>
+<rect x="10" y="76" width="190" height="56" fill="#ffe9c8" stroke="#a70"/><text x="18" y="96" font-weight="bold">Cursor の transcript</text><text x="18" y="114" font-size="12">導入前の過去セッション</text>
+<rect x="10" y="190" width="190" height="56" fill="#ffe9c8" stroke="#a70"/><text x="18" y="210" font-weight="bold">Claude Code の会話ログ</text><text x="18" y="228" font-size="12">~/.claude/projects/*/*.jsonl</text>
+<rect x="250" y="30" width="230" height="86" fill="#dff" stroke="#08a"/><text x="260" y="52" font-weight="bold">CursorSessionSource</text><text x="260" y="70" font-size="12">（いまの ProjectEventStore の</text><text x="260" y="86" font-size="12">読み込み部分＋ Importer を移す）</text><text x="260" y="104" font-size="12">Hook 優先、無ければ transcript</text>
+<rect x="250" y="190" width="230" height="86" fill="#dfd" stroke="#383"/><text x="260" y="212" font-weight="bold">ClaudeSessionSource（新規）</text><text x="260" y="230" font-size="12">探索・cwd で照合・追記だけ読む</text><text x="260" y="248" font-size="12">ClaudeNormalizer → AgentEvent</text>
+<line x1="200" y1="38" x2="250" y2="62" stroke="#333" marker-end="url(#a)"/><line x1="200" y1="104" x2="250" y2="90" stroke="#333" marker-end="url(#a)"/><line x1="200" y1="218" x2="250" y2="228" stroke="#333" marker-end="url(#a)"/>
+<rect x="540" y="90" width="210" height="130" fill="#fef" stroke="#a3a"/><text x="550" y="112" font-weight="bold">ProjectEventStore（汎用）</text><text x="550" y="132" font-size="12">・セッションごとのイベント保持</text><text x="550" y="148" font-size="12">・要約（SessionSummary）の</text><text x="550" y="164" font-size="12">　キャッシュ</text><text x="550" y="180" font-size="12">・変わったセッションを通知</text><text x="550" y="200" font-size="11" fill="#666">エージェントのことは知らない</text>
+<line x1="480" y1="72" x2="540" y2="120" stroke="#333" marker-end="url(#a)"/><line x1="480" y1="232" x2="540" y2="190" stroke="#333" marker-end="url(#a)"/>
+<text x="490" y="40" font-size="11" fill="#555">SessionDelta</text><text x="490" y="258" font-size="11" fill="#555">SessionDelta</text>
+<rect x="790" y="90" width="160" height="60" fill="#efe" stroke="#383"/><text x="800" y="112" font-weight="bold">SessionMonitor</text><text x="800" y="130" font-size="12">各 Source の監視先を監視</text>
+<line x1="750" y1="120" x2="790" y2="120" stroke="#333" marker-end="url(#a)"/>
+<rect x="790" y="180" width="160" height="50" fill="#efe" stroke="#383"/><text x="800" y="202" font-weight="bold">画面</text><text x="800" y="220" font-size="12">AgentEvent だけを見る</text>
+<line x1="870" y1="150" x2="870" y2="180" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="302" font-size="12" fill="#c05000">Source が返すのは「差分（SessionDelta）」：追記 / 作り直し / 消えた、のどれか＋ AgentEvent の列。プロジェクトの照合（workspace_roots / cwd）は Source の中で行う。</text>
+</svg>
+<p><b>この形にする利点</b>：①汎用 Store は 1 つで、テストも 1 回で済む ②SessionMonitor は Store を 1 つ持つだけで、複数エージェントの合成（composite）が要らない ③Cursor の「Hook があれば transcript より優先」のような<b>エージェント固有の事情が Source の中に閉じる</b> ④今後 Codex などを足すときも、Source を 1 つ書くだけ。<br>
+あなたの案（<code>CursorSessionStore</code> と <code>ClaudeSessionStore</code> を並べ、<code>ProjectEventStore</code> を抽象にする）との違いは、<b>Store をエージェントごとに作らず、Source だけを分ける</b>点。保持・キャッシュの処理を 2 か所に書かずに済むため。名前は「Cursor / Claude の SessionSource」にした。</p>
+
+<h2>3. 会話ログ → 共通イベント（<code>AgentEvent</code>）の対応</h2>
+<table>
+<tr><th>Claude Code の記録</th><th>AgentEventKind</th><th>備考</th></tr>
+<tr><td>ファイルの最初の記録</td><td>SessionStarted</td><td>時刻は最初の <code>timestamp</code>。ブランチは <code>gitBranch</code>（先頭の hash は無し。コミット判定は App が git で行う）</td></tr>
+<tr><td><code>user</code>（人の入力。<code>origin.kind=human</code>、<code>isMeta</code> でない）</td><td>PromptSubmitted</td><td>Text＝<code>message.content</code>。スラッシュコマンドや <code>&lt;local-command…&gt;</code> は、そのまま文字で出す（要確認）</td></tr>
+<tr><td><code>assistant</code> の <code>text</code></td><td>AssistantMessage</td><td>Model＝<code>message.model</code></td></tr>
+<tr><td><code>assistant</code> の <code>thinking</code></td><td>AssistantThought</td><td></td></tr>
+<tr><td><code>tool_use</code></td><td>ToolStarted</td><td>ToolUseId＝<code>id</code>。<b>ToolName は共通名に直す</b>：<code>Bash</code> と <code>PowerShell</code> → <code>Shell</code>（Cursor と同じ名前。App のテスト判定が <code>Shell</code> を見ているため）。ほかは元の名前（Read、Edit、Write、Grep、mcp__…）。Command＝<code>input.command</code></td></tr>
+<tr><td><code>tool_result</code>（成功、<code>is_error=false</code>）</td><td>ToolSucceeded</td><td>Shell の ExitCode＝0。Output＝内容。Duration＝結果の時刻−呼び出しの時刻</td></tr>
+<tr><td><code>tool_result</code>（<code>Exit code N</code> で始まる）</td><td><b>ToolSucceeded</b>（ExitCode＝N）</td><td>コマンド自体は実行できて、終了コードが 0 でなかった。<b>失敗したテストを記録するため</b>、ToolFailed にはしない（下の「確認したいこと」）</td></tr>
+<tr><td><code>tool_result</code>（その他の <code>is_error</code>。拒否・中断など）</td><td>ToolFailed</td><td>Output＝内容</td></tr>
+<tr><td><code>Edit</code> / <code>Write</code> の成功</td><td>FileEdited</td><td>FilePath＝<code>input.file_path</code></td></tr>
+<tr><td><code>Agent</code> の <code>tool_use</code> / その結果（<code>agentId</code> つき）</td><td>SubagentStarted / SubagentStopped</td><td>SubagentId（結果の <code>agentId</code>）・説明・種類を保持して、「動いている／動いていた」を出す。別ファイルの中身は読まない（7 章）</td></tr>
+<tr><td><code>assistant</code> の <code>stop_reason=end_turn</code></td><td>TurnEnded（Completed）</td><td><code>stop_hook_summary</code> / <code>turn_duration</code> は使わない（重複するため）</td></tr>
+<tr><td><code>[Request interrupted…]</code></td><td>TurnEnded（Aborted）</td><td></td></tr>
+<tr><td><code>isApiErrorMessage</code> の返答</td><td>TurnEnded（Error）</td><td><code>system</code> の <code>api_error</code> は再試行されることがあるので、最初は使わない（実機確認）</td></tr>
+<tr><td><code>AskUserQuestion</code> の <code>tool_use</code></td><td>TurnEnded（Completed）</td><td>ユーザーの返事待ち＝「ボスの番」。結果（回答）が来たら PromptSubmitted（回答）にして、実行中に戻す</td></tr>
+<tr><td>圧縮（コンパクト）</td><td>（未対応）</td><td>27 本に実物が無い。出たら追加（Compacted）</td></tr>
+<tr><td><code>custom-title</code> / <code>ai-title</code></td><td>（新規）TitleSet</td><td>セッションのタイトル候補。最初の依頼の先頭 40 文字より優先して使う（後回しでよい）</td></tr>
+<tr><td>上記以外（<code>attachment</code> 約 17%、<code>queue-operation</code>、<code>file-history-*</code> など）</td><td>読み飛ばす</td><td>知らない種類・壊れた行も、止まらずに飛ばす（ログ形式は公開仕様でないため）</td></tr>
+</table>
+
+<h2>4. 状態の判定（Claude 固有の扱い）</h2>
+<table>
+<tr><th>状態</th><th>Cursor（既存）</th><th>Claude Code</th></tr>
+<tr><td>🔵 実行中</td><td>依頼の後〜 stop まで</td><td>同じ（依頼の後〜 end_turn / 質問 / 中断まで）</td></tr>
+<tr><td>🟢 ボスの番</td><td>stop（完了）</td><td>end_turn、または <code>AskUserQuestion</code> の待ち</td></tr>
+<tr><td>🟡 停止</td><td>stop（中断）</td><td><code>[Request interrupted…]</code>。<b>さらに、実行中のまま一定時間（既定 10 分。設定で変更可）新しい記録が無いものも「停止」にする</b>（プロセスが落ちた・閉じた場合。Claude には終了の記録が無いため）</td></tr>
+<tr><td>🔴 エラー</td><td>stop（エラー）</td><td>API エラーの返答</td></tr>
+<tr><td>⚪ 閉じた</td><td>sessionEnd</td><td><b>無し</b>（終了の記録が無い）。ボスの番のまま残る。古いものは「最近閉じたセッション」ではなく、通常の一覧のまま最終動きの降順で下がっていく</td></tr>
+</table>
+<p>※ コミット済みの判定は、これまでどおり Miharikun 自身が git を実行して調べる。テスト実行の判定も、これまでどおりコマンド文字のパターン（<code>dotnet test</code> ほか）。</p>
+
+<h2>5. プロジェクトとの対応づけ</h2>
+<ul>
+<li>会話ログを探す場所：<code>%USERPROFILE%\.claude\projects\</code> の下で、フォルダ名が「対象フォルダの Claude 式の名前」（<code>C:\zDev\repo\Miharikun</code> → <code>C--zDev-repo-Miharikun</code>）と同じ、または、それに <code>--claude-worktrees-</code> が続くもの。</li>
+<li>見つけたフォルダの中でも、各ファイルの最初の記録の <code>cwd</code> を既存の <code>ProjectPath</code> で照合する（フォルダ名の規則の違い・日本語や記号の違いに頼らない）。作業ツリーは、<code>cwd</code> が「対象フォルダ\.claude\worktrees\名前」のものを同じプロジェクトとして扱う。</li>
+<li>検証用の環境変数 <code>MIHARIKUN_CLAUDE_DIR</code>（既定は <code>%USERPROFILE%\.claude</code>）を足す（<code>MIHARIKUN_CURSOR_DIR</code> と同じ流儀）。</li>
+<li>初回は全ファイルを読む（最大 20MB。背景で）。以後は追記分だけ（既存の <code>JsonlTail</code>）。このとき、いま書き込み中の最終行（不完全な行）は次回に回す（既存と同じ）。</li>
+</ul>
+
+<h2>6. 既存の「Cursor 専用」の作りの見直し（この機会に直すもの）</h2>
+<p>コードを調べて、Cursor 前提になっている所を洗い出した。Phase 18 で、<b>挙動を変えずに</b>形だけ共通化する（既存のテストが全部そのまま通ることが条件）。</p>
+<table>
+<tr><th>#</th><th>場所</th><th>いま（Cursor 前提）</th><th>変更</th></tr>
+<tr><td>1</td><td><code>ProjectEventStore</code></td><td>Hook の生イベント（<code>events\cursor\*.jsonl</code>）の読み込み・<code>CursorAgent.Normalize</code>・<code>workspace_roots</code> での照合・transcript 取り込みまで 1 クラスに入っている（約 220 行）</td><td>汎用の保持・キャッシュ・通知だけを残し、読み込みは <code>ISessionSource</code> に切り出す。<code>CursorSessionSource</code>（旧 ProjectEventStore の読み込み部分＋ <code>CursorTranscriptImporter</code>）と、<code>ClaudeSessionSource</code></td></tr>
+<tr><td>2</td><td><code>IAgent</code></td><td>Hook 側（<code>GetEventName</code> <code>GetSessionId</code> <code>NeedsGitSnapshot</code> <code>RespondToHook</code>）と App 側（<code>GetWorkspaceRoots</code> <code>Normalize</code>）が 1 つに混在。Claude は Hook を使わないので、Hook 側を実装できない</td><td><code>IAgentInfo</code>（Id・表示名・Capabilities。全エージェント）と <code>IHookAgent</code>（Hook 側。Hook exe が使う。Cursor だけ）に分ける。<code>AgentRegistry</code> は Hook exe 用に <code>IHookAgent</code> を返す</td></tr>
+<tr><td>3</td><td><code>SessionMonitor</code></td><td>events フォルダ 1 つだけを監視</td><td>各 Source が「監視するフォルダ」を答え、まとめて監視する（ポーリングはそのまま）</td></tr>
+<tr><td>4</td><td><code>SessionAnalyzer</code></td><td>テスト判定が <code>ToolName == "Shell"</code>（Cursor の名前）。モデル名の <code>"default"</code> を無視する処理（Cursor の癖）が入っている</td><td>共通のツール名 <code>CommonTools.Shell</code> を定義し、各エージェントの正規化が共通名に直す（Claude の Bash / PowerShell → Shell）。<code>"default"</code> の無視は <code>CursorAgent.Normalize</code> の中へ移す（Analyzer は Cursor を知らない状態にする）</td></tr>
+<tr><td>5</td><td><code>MetaStore</code> / <code>SessionMetaService</code></td><td>エージェント ID を 1 つ固定で持つ</td><td>セッションのキー（<code>SessionKey.AgentId</code>）で保存先を切り替える（<code>meta\{agent}\{session}.json</code> のまま）</td></tr>
+<tr><td>6</td><td><code>App.xaml.cs</code></td><td><code>CursorAgent</code> を直接作って 1 つだけ組み立てる</td><td>Source のリストを組み立てる（Claude は、保存先フォルダがあれば追加）</td></tr>
+<tr><td>7</td><td><code>HookInstaller</code> / <code>HookSetup</code></td><td>名前が汎用に見えるが、中身は Cursor の <code>hooks.json</code> 専用</td><td><b>名前は変えない</b>。クラスのコメントに「Cursor 専用」と明記する。別のエージェントが Hook を使うことになったら、そのときに抽象化する。「Claude Code は導入不要」と README に明記</td></tr>
+<tr><td>8</td><td><code>SessionState.Imported</code> / <code>AgentEvent.Imported</code></td><td>「transcript だけから作った過去セッション（時刻が推定）」の意味で、Cursor の事情</td><td>コメントで意味を明記（時刻が推定のもの）。Claude のイベントは <code>Imported=false</code></td></tr>
+<tr><td>9</td><td>要件定義 5.1</td><td>「<code>IAgent</code> を 1 つ実装する」前提</td><td>上の構成（<code>IAgentInfo</code> / <code>IHookAgent</code> / <code>ISessionSource</code> / 汎用 <code>ProjectEventStore</code>）に書き換える</td></tr>
+</table>
+<p><b>変えないもの</b>：Hook exe、<code>RawEventReader</code> / <code>RawEventRecord</code>（Cursor の Hook 用の形式）、<code>AppPaths.EventsDir</code>（Hook の保存先）、画面の大部分。</p>
+
+<h2>7. サブエージェントの作り（今は「動いている/動いていた」まで。詳細は将来）</h2>
+<table>
+<tr><th></th><th>今回やること</th><th>将来（詳細を読むとき）</th></tr>
+<tr><td>本体のログから分かること</td><td><code>Agent</code> ツールの呼び出し → <b>SubagentStarted</b>（説明・種類・ID を保持）。結果（<code>agentId</code> つき）→ <b>SubagentStopped</b>。<br>→ 要約に「動いている（説明つき）」と「動いていた（履歴：説明・種類・開始・終了・経過）」を持たせる。Cursor の subagentStart / Stop も同じ形に載せる</td><td></td></tr>
+<tr><td>画面</td><td>稼働状態に「サブエージェント 動いている 1（説明）／ 動いた 5」。完了チェックの「裏の作業なし」も、これで判定（これまでどおり）</td><td>一覧の中の子として展開、中身をタイムラインで見る</td></tr>
+<tr><td>別ファイルの中身</td><td><b>読まない</b></td><td><code>&lt;セッション&gt;\subagents\agent-&lt;id&gt;.jsonl</code>（本体と同じ形式。<code>isSidechain=true</code>、<code>agentId</code> つき）と <code>agent-&lt;id&gt;.meta.json</code>（<code>agentType</code> <code>description</code> <code>toolUseId</code>。本体の <code>Agent</code> の呼び出しと対応）</td></tr>
+<tr><td>そのための作り（今回入れておく）</td><td>
+<ul style="margin:0;padding-left:18px">
+<li><code>AgentEvent</code> に <code>SubagentId</code> を追加</li>
+<li><code>ClaudeTranscriptNormalizer</code> を「1 つのログを読む部品」にして、本体にも<b>サブエージェントのログにもそのまま使える</b>形にする</li>
+<li><code>ISessionSource</code> に <code>GetSubagentEvents(SessionKey, subagentId)</code> を用意（今は空を返す）</li>
+<li><code>SessionKey</code> は変えない（サブエージェントは親セッションの子として扱う）</li>
+</ul></td><td>上の部品をつなぐだけ（新しい形式の調査は不要）</td></tr>
+</table>
+
+<h2>8. ファイル構成（案・更新）</h2>
+<pre>src/Miharikun.Core/
+├─ Agents/
+│  ├─ IAgent.cs → IAgentInfo / IHookAgent             18  分割（Id・表示名・Capabilities ／ Hook 側）
+│  ├─ CommonTools.cs                                 18  共通のツール名（Shell ほか）
+│  ├─ CursorAgent*.cs                                18  IHookAgent も実装。"default" モデルの無視をここへ
+│  ├─ ClaudeCodeAgent.cs                             19  IAgentInfo（Id="claude"、Capabilities）
+│  ├─ ClaudeTranscriptNormalizer.cs                  19  1 行 → AgentEvent[]（本体・サブエージェントのログ共用）
+│  └─ AgentRegistry.cs                               18  Hook exe 用に IHookAgent を返す
+├─ Sessions/
+│  ├─ ISessionSource.cs / SessionDelta.cs            18  新規：差分を返す口
+│  ├─ CursorSessionSource.cs                         18  旧 ProjectEventStore の読み込み部分＋ CursorTranscriptImporter
+│  ├─ ClaudeSessionSource.cs                         20  探索・cwd 照合・worktree・追記読み
+│  ├─ ProjectEventStore.cs                           18  汎用に（保持・キャッシュ・通知）
+│  ├─ SessionMonitor.cs                              18  各 Source の監視先を監視
+│  ├─ SessionAnalyzer.cs                             18/19  共通ツール名、Subagents（履歴）、TitleSet は後回し
+│  └─ StalledRule.cs                                 19  「実行中のまま N 分動きなし → 停止」（時刻が要るので画面側の 1 秒ごとの更新で使う）
+├─ Meta/MetaStore.cs, SessionMetaService.cs          18  エージェントごとに切り替え
+├─ Settings/AppSettings.cs                           21  runningTimeoutMinutes（既定 10。0 で無効）
+└─ Install/HookInstaller.cs                          18  コメントに「Cursor 専用」と明記のみ
+
+src/Miharikun/
+├─ App.xaml.cs                                       21  Source のリストを組み立て
+├─ HookSetup.cs                                      18  コメントに「Cursor 専用」と明記のみ
+├─ ViewModels/MainViewModel.cs, SessionCardViewModel.cs  21  バッジ、エージェント絞り込み、停止の表示
+└─ MainWindow.xaml                                   21  バッジ、絞り込みチップ
+
+tests/Miharikun.Tests/Core/
+├─ （既存のテスト）                                  18  挙動を変えない確認。移したクラスに合わせて直すだけ
+├─ ProjectEventStoreTests.cs                         18  汎用 Store を、ダミーの Source で
+├─ ClaudeNormalizerTests.cs                          19  対応表の行ごと。フィクスチャは実ログの構造を真似て手書き
+├─ StalledRuleTests.cs                               19
+└─ ClaudeSessionSourceTests.cs                       20  探索・cwd・worktree・追記読み・不完全な行</pre>
+
+<h2>9. 実装の分け方（Phase 18〜22）</h2>
+<table>
+<tr><th>Phase</th><th>内容</th><th>完了条件</th></tr>
+<tr><td>18 Core：共通化（挙動は変えない）</td><td>上の 1〜5・7・8 の見直し。<code>ISessionSource</code> / <code>SessionDelta</code>、<code>CursorSessionSource</code> の切り出し、汎用 <code>ProjectEventStore</code>、<code>IAgent</code> の分割、メタのエージェント切り替え、共通ツール名</td><td><b>既存のテストが全部通る（移したクラスに合わせた修正のみ）</b>。Cursor の画面は変わらない。AOT 互換（警告 0）。Hook exe の挙動も変わらない</td></tr>
+<tr><td>19 Core：Claude の正規化</td><td><code>ClaudeCodeAgent</code>、<code>ClaudeTranscriptNormalizer</code>、<code>SessionAnalyzer</code> の調整（Subagents、失敗テスト）、<code>StalledRule</code></td><td>対応表の全行にテスト（テスト先行）</td></tr>
+<tr><td>20 Core：Claude の読み込み</td><td><code>ClaudeSessionSource</code>（探索・cwd 照合・worktree・追記読み・不完全な行）、<code>MIHARIKUN_CLAUDE_DIR</code></td><td>隔離フォルダのダミー会話ログで、探索・追記・worktree がテストで通る</td></tr>
+<tr><td>21 App：画面</td><td>Source の組み立て、バッジ、エージェント絞り込み、停止の表示、<code>runningTimeoutMinutes</code>、サブエージェントの表示</td><td>隔離環境で、Cursor と Claude が一覧に混ざって出る。ライト/ダーク両方</td></tr>
+<tr><td>22 実機確認・仕上げ</td><td><b>このプロジェクトの本物の Claude セッションを表示</b>して、成果（コミット・テスト）の見え方を確認。圧縮などの未確認項目の追加確認。要件定義・README の更新</td><td>目視確認 OK。未確認項目が「確認済み」または「保留」に整理されている</td></tr>
+</table>
+
+<h2>10. 要件定義の更新箇所</h2>
+<ul>
+<li>3 章：「対象は Cursor IDE のチャットのみ」→「Cursor と Claude Code（CLI・Code タブ）」。cursor-agent CLI を対象外とする点はそのまま。</li>
+<li>2・4・5・5.1（<b>書き換え</b>：<code>IAgentInfo</code> / <code>IHookAgent</code> / <code>ISessionSource</code> / 汎用 <code>ProjectEventStore</code>）・6・9・10・11・12 章：エージェントの複数対応、Claude のデータの取り方（会話ログ）、状態判定の差、バッジ、環境変数、停止時間の設定。</li>
+<li>14 章：Claude の Step 0（確認済みと未確認）を、Cursor と同じ形で追記。</li>
+<li>15 章：Phase 18〜21 を追加。</li>
+</ul>
+
+<h2>11. リスク</h2>
+<table>
+<tr><th>リスク</th><th>対策</th></tr>
+<tr><td>会話ログの形式は公開仕様でなく、バージョンで変わる</td><td>知らない行・壊れた行は飛ばす。<code>version</code> を記録。ログに警告を残す。変わったらテストで気づけるよう、フィクスチャを実ログの構造に合わせる</td></tr>
+<tr><td>実行中のまま止まったセッションが「実行中」に見え続ける</td><td>停止判定（既定 10 分、<code>settings.json</code> で変更可）</td></tr>
+<tr><td>20MB の会話ログの初回読み込みが重い</td><td>背景で読む（既存の起動の流儀）。実測して、遅ければ新しい順に読む・古いものは遅延読み込み</td></tr>
+<tr><td>Phase 18 の共通化で、既存の Cursor の挙動が変わってしまう</td><td>Phase 18 は単独で先に完了させ、既存のテスト（約 480 件）が全部そのまま通ることを条件にする。画面の確認（隔離環境）も行う</td></tr>
+<tr><td>圧縮・再開・承認待ちの記録が未確認</td><td>Phase 22 で実機に出たものを確認し、出なければ「保留」</td></tr>
+<tr><td>会話ログに会話の全文・機密が入っている</td><td>Miharikun はローカルで読むだけ。外に出さない。テストのフィクスチャは実ログのコピーを使わず、手書きにする</td></tr>
+</table>
+
+<h2>12. 決定事項と確認したいこと</h2>
+<h3>決定（回答の反映）</h3>
+<table>
+<tr><td>Q1</td><td>失敗したテスト（終了コードが 0 でない）は、<b>成功扱い + 終了コード</b>（ToolSucceeded + ExitCode N）にする</td></tr>
+<tr><td>Q2</td><td>質問（AskUserQuestion）の待ちは、ボスの番にする</td></tr>
+<tr><td>Q3</td><td>「実行中のまま 10 分動きなし → 停止」。<b>時間は設定できる</b>（既定 10 分、0 で無効）</td></tr>
+<tr><td>Q4</td><td>「閉じた」状態は Claude には無くてよい</td></tr>
+<tr><td>Q5</td><td>エージェント絞り込み（全て / Cursor / Claude）を足す</td></tr>
+<tr><td>Q6</td><td>サブエージェントの詳細（別ファイル）は今回読まない。ただし「動いている／動いていた」は出し、<b>将来、詳細を読める作りにしておく</b>（7 章）</td></tr>
+<tr><td>Q7</td><td>セッションのタイトル取り込みは後回し</td></tr>
+<tr><td>Q8</td><td>古いセッションは、まず全部読み、遅ければ「直近 N 日」の設定を足す</td></tr>
+</table>
+<h3>構成についての決定</h3>
+<table>
+<tr><td>N1</td><td><b>汎用 <code>ProjectEventStore</code> を 1 つ ＋ エージェントごとの <code>ISessionSource</code></b>（<code>CursorSessionSource</code> / <code>ClaudeSessionSource</code>）。Store をエージェントごとに分けない</td></tr>
+<tr><td>N2</td><td>6 章の見直し（1〜9）を、<b>Phase 18 で挙動を変えずにまとめてやる</b>（既存のテストが全部通ることを条件に、単独で先に完了させる）</td></tr>
+<tr><td>N3</td><td><b>名前は変えない</b>（<code>HookInstaller</code> / <code>HookSetup</code>）。クラスのコメントに「Cursor 専用」と明記し、別のエージェントが Hook を使うことになったら、そのときに抽象化する</td></tr>
+<tr><td>N4</td><td>停止時間の設定は、まず <code>settings.json</code> の <code>runningTimeoutMinutes</code> だけ（設定画面は、将来テストコマンドのパターンなどと一緒に作る）</td></tr>
+</table>
+<div class="sync"><b>反映先</b>：要件定義 <code>miharikun-requirements.md</code> の 3・4・5・5.1（書き換え）・6（settings.json）・9.1・10.1・11.1・12.8・14.2・Phase 18〜22・16・17 に反映済み。<b>決定事項はすべて確定</b>。次は Phase 18（Core の共通化）から、実装計画（md と HTML の対）を作って進める。</div>
+<style>.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}</style>
+</body></html>
