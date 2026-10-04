@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue #11 計画レビュー</title>
+<style>
+:root { --bg:#fff; --fg:#222; --mut:#666; --line:#ddd; --box:#f6f7f9; --red:#c62828; --yel:#b26a00; --grn:#2e7d32; --blu:#1565c0; }
+@media (prefers-color-scheme: dark) { :root { --bg:#1b1c1f; --fg:#e6e6e6; --mut:#9aa; --line:#3a3d44; --box:#25272c; --red:#ef6c6c; --yel:#e0a43a; --grn:#6cc070; --blu:#6aa8ef; } }
+body { background:var(--bg); color:var(--fg); font:15px/1.7 "Yu Gothic UI","Meiryo",sans-serif; max-width:1000px; margin:0 auto; padding:16px; }
+h1 { font-size:22px; } h2 { border-bottom:2px solid var(--line); padding-bottom:4px; margin-top:36px; } h3 { margin-top:26px; }
+pre { background:var(--box); border:1px solid var(--line); padding:10px 12px; overflow-x:auto; font:13px/1.5 Consolas,"BIZ UDGothic",monospace; }
+code { background:var(--box); padding:0 4px; border-radius:3px; font-size:13px; }
+table { border-collapse:collapse; width:100%; font-size:14px; } th,td { border:1px solid var(--line); padding:4px 8px; vertical-align:top; text-align:left; }
+th { background:var(--box); }
+.r { color:var(--red); font-weight:bold; } .y { color:var(--yel); font-weight:bold; } .g { color:var(--grn); font-weight:bold; } .b { color:var(--blu); font-weight:bold; }
+.card { border:1px solid var(--line); border-left:5px solid var(--red); padding:4px 14px 10px; margin:14px 0; }
+.card.y { border-left-color:var(--yel); } .card.g { border-left-color:var(--grn); }
+.mut { color:var(--mut); font-size:13px; }
+</style>
+</head>
+<body>
+
+<h1>Issue #11 Claude Code 対応：実装計画のレビュー</h1>
+<p class="mut">対象：<code>docs/issue11-claude-code-plan.md</code>（計画）、要件定義 5.1・9.1・10.1・11.1・12.8・14.2、既存コード（<code>main</code> = <code>dff21f0</code>）。根拠は実コードの行番号つき。会話ログは、利用者の了承を得て<b>構造だけ</b>を数えた（28 本・18,787 行。進行中のセッションは除く。本文は出していない）。結果は 5 章。</p>
+
+<h2>0. 結論</h2>
+<ul>
+<li><span class="g">構成（汎用 Store ＋ Source ごとの差分）は妥当</span>。<code>IAgent</code> の分割も影響は小さい（Hook exe が使うのは 4 メソッドだけ）。</li>
+<li>ただし、<span class="r">このまま実装すると困る所が 7 つ</span>（A1〜A7）。とくに <b>A1：Claude のセッションに「コミット」が出ない</b>。Phase 22-1 の目的（成果の見え方の確認）に直結する。</li>
+<li><span class="y">計画に書き足したい穴が 11 個</span>（B1〜B11）、<span class="y">品質ゲートの補強が 4 つ</span>（C1〜C4）。</li>
+<li>計画の変更案：コミットを 3 つ足す（<b>18-0 特性テスト</b>、<b>19-5 ブランチと時刻からの HEAD</b>、<b>20-2 に監視先の再評価</b>を明記）。17 → 19 コミット。A5 の決定で <b>21-4 設定画面</b>も足すので、計 20 コミット（計画には 21-4 だけ反映済み。18-0・19-5 は未反映）。</li>
+</ul>
+
+<table>
+<tr><th>見てほしい点（依頼）</th><th>判定</th><th>関係する指摘</th></tr>
+<tr><td>18-2 の移し方で挙動が変わらないか</td><td class="y">条件つきで OK</td><td>A2（差分の変換規則）、C1（テストが無い経路）、C2（A/B 比較）</td></tr>
+<tr><td><code>SessionDelta</code> と「Hook が transcript より優先」の再現</td><td class="r">規則の定義が足りない</td><td>A2</td></tr>
+<tr><td><code>IAgent</code> 分割の Hook exe・既存テストへの影響</td><td class="g">小さい</td><td>B9（App 側で表示名・Capabilities を引く口が要る）</td></tr>
+<tr><td>Claude の対応表の穴（質問待ち・終了コード・停止）</td><td class="r">穴あり</td><td>A3・A4、B1〜B5・B11</td></tr>
+<tr><td>品質ゲート 4 点で足りるか</td><td class="y">足りない</td><td>C1〜C4</td></tr>
+</table>
+
+<h2>1. 全体の流れ（Phase 18 後）と、指摘の場所</h2>
+<div style="background:#fff;border:1px solid var(--line);padding:6px;overflow-x:auto">
+<svg viewBox="0 0 960 320" width="960" font-size="13" font-family="sans-serif" fill="#222">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<!-- 入力 -->
+<rect x="10" y="60" width="160" height="56" fill="#ffe9c8" stroke="#a70"/><text x="18" y="80">Cursor Hook</text><text x="18" y="96" font-size="11">events\cursor\*.jsonl</text><text x="18" y="110" font-size="11">＋ transcript（初回 1 回）</text>
+<rect x="10" y="190" width="160" height="56" fill="#ffe9c8" stroke="#a70"/><text x="18" y="210">Claude の会話ログ</text><text x="18" y="226" font-size="11">.claude\projects\&lt;名前&gt;</text><text x="18" y="240" font-size="11">[--claude-worktrees-*]</text>
+<!-- Source -->
+<rect x="210" y="60" width="200" height="56" fill="#dff" stroke="#08a"/><text x="218" y="80" font-weight="bold">CursorSessionSource</text><text x="218" y="96" font-size="11">読み込み・workspace_roots 照合</text><text x="218" y="110" font-size="11">Importer の優先（Hook ＞ transcript）</text>
+<rect x="210" y="190" width="200" height="56" fill="#dfd" stroke="#383"/><text x="218" y="210" font-weight="bold">ClaudeSessionSource</text><text x="218" y="226" font-size="11">探索・cwd 照合・追記読み</text><text x="218" y="240" font-size="11">＋ ClaudeTranscriptNormalizer</text>
+<!-- Store / Monitor / 画面 -->
+<rect x="460" y="125" width="170" height="60" fill="#fef" stroke="#a3a"/><text x="468" y="147" font-weight="bold">ProjectEventStore</text><text x="468" y="164" font-size="11">汎用：保持・要約・通知</text>
+<rect x="670" y="125" width="130" height="60" fill="#efe" stroke="#383"/><text x="678" y="147" font-weight="bold">SessionMonitor</text><text x="678" y="164" font-size="11">各 WatchPaths を監視</text>
+<rect x="840" y="125" width="110" height="60" fill="#efe" stroke="#383"/><text x="848" y="152" font-weight="bold">画面</text><text x="848" y="168" font-size="11">一覧・詳細</text>
+<!-- 周辺 -->
+<rect x="820" y="20" width="130" height="44" fill="#eee" stroke="#888"/><text x="828" y="38" font-size="12">settings.json</text><text x="828" y="54" font-size="11">テーマ・設定画面</text>
+<rect x="820" y="250" width="130" height="44" fill="#eee" stroke="#888"/><text x="828" y="268" font-size="12">git</text><text x="828" y="284" font-size="11">status・log・rev-list</text>
+<!-- 矢印 -->
+<line x1="170" y1="88" x2="210" y2="88" stroke="#333" marker-end="url(#a)"/><line x1="170" y1="218" x2="210" y2="218" stroke="#333" marker-end="url(#a)"/>
+<line x1="410" y1="88" x2="460" y2="142" stroke="#333" marker-end="url(#a)"/><line x1="410" y1="218" x2="460" y2="168" stroke="#333" marker-end="url(#a)"/>
+<text x="470" y="119" font-size="11" fill="#555">SessionDelta</text>
+<line x1="630" y1="155" x2="670" y2="155" stroke="#333" marker-end="url(#a)"/><line x1="800" y1="155" x2="840" y2="155" stroke="#333" marker-end="url(#a)"/>
+<line x1="935" y1="64" x2="935" y2="125" stroke="#333" marker-end="url(#a)"/><line x1="935" y1="250" x2="935" y2="185" stroke="#333" marker-end="url(#a)"/>
+<!-- 指摘のタグ -->
+<g font-size="11" font-weight="bold" fill="#fff">
+<rect x="210" y="34" width="120" height="20" rx="4" fill="#c62828"/><text x="216" y="48">A2 差分の規則</text>
+<rect x="10" y="252" width="120" height="20" rx="4" fill="#b26a00"/><text x="16" y="266">B6 候補の絞り込み</text>
+<rect x="210" y="252" width="200" height="20" rx="4" fill="#c62828"/><text x="216" y="266">A3・B1〜B5・B8・B10・B11 対応表</text>
+<rect x="460" y="191" width="120" height="20" rx="4" fill="#c62828"/><text x="466" y="205">A6 例外の隔離</text>
+<rect x="670" y="191" width="110" height="20" rx="4" fill="#c62828"/><text x="676" y="205">A7 監視先</text>
+<rect x="680" y="30" width="130" height="20" rx="4" fill="#c62828"/><text x="686" y="44">A5 他のキーを消す</text>
+<rect x="680" y="258" width="130" height="20" rx="4" fill="#c62828"/><text x="686" y="272">A1 HEAD を求める</text>
+<rect x="840" y="191" width="110" height="20" rx="4" fill="#c62828"/><text x="846" y="205">A4 停止の表示</text>
+<rect x="840" y="96" width="88" height="20" rx="4" fill="#b26a00"/><text x="846" y="110">B7・B8・B9</text>
+</g>
+<text x="10" y="20" font-size="12" fill="#555">赤＝A（計画の変更が必要）、橙＝B（書き足す穴）。C（品質ゲート）は Phase 18 全体にかかる</text>
+</svg>
+</div>
+
+<h2>2. A：このままだと困る（計画の変更が必要）</h2>
+
+<div class="card">
+<h3>A1. Claude のセッションに「コミット」が出ない <span class="r">（重大）</span></h3>
+<p><b>問題</b>：詳細のコミット一覧は、Hook が記録した HEAD の範囲で <code>git log</code> している。</p>
+<pre>
+MainViewModel.LoadCommits(s)  →  _git.GetCommits(s.StartHead, s.LatestHead)
+GitClient.GetCommits:  if (fromHead is null || toHead is null ...) return null;   // GitClient.cs:70-73 → 画面は「—」
+</pre>
+<p>Claude の会話ログには <code>gitBranch</code> しか無く、HEAD（hash）が無い（要件 5.1 の表にも「hash は無し」）。<b>なので、Claude のセッションは常にコミット「—」</b>。要件 5.1 には「コミット判定は App が git で行う」とあるが、<b>その方法が計画のどこにも無い</b>。Phase 22-1 の目的「成果（コミット・テスト実行）の見え方を確認」が果たせない。</p>
+<p><b>解決（実ログで確かめた結果、案を変えた）</b>：ログにある「ブランチ（<code>gitBranch</code>）と時刻」から、App が git で開始・最新の HEAD を求める。<b>求めた HEAD を既存の <code>GetCommits</code> にそのまま渡せる</b>ので、画面とコミット一覧の処理は変えずに済む。</p>
+<pre>
+ Claude の要約：StartedAt（最初の timestamp）, LastActivityAt, Branch（gitBranch）
+        │
+        ▼  GitClient に 1 つ足す（Core。テストは一時リポジトリで。GitClientTests と同じ流儀）
+ StartHead  = git rev-list -1 --before=&lt;StartedAt&gt;      &lt;branch&gt;   … 開始の直前のコミット
+ LatestHead = git rev-list -1 --before=&lt;LastActivityAt&gt; &lt;branch&gt;   … 最後の動きの時点のコミット
+        │
+        ▼
+ 既存の GetCommits(StartHead, LatestHead)  →  git log StartHead..LatestHead（Cursor と同じ）
+</pre>
+<ul>
+<li><b>最初の案（<code>git commit</code> の出力から SHA を拾う）は捨てた</b>。実ログでは、<code>git commit</code> を含むコマンド 105 件のうち、出力に <code>[main 1a2b3c4] …</code> の行があったのは <b>30 件だけ</b>だった。<code>-q</code> を付けたもの、<code>git log --oneline -1</code> や push の出力だけが残るもの、などがあるため。</li>
+<li>reflog（<code>HEAD@{時刻}</code>）を使う案も捨てた。このリポジトリの reflog は 10/3 からしか残っていない（clone し直したため）。それより古い時刻を指定すると、警告を出して一番古い記録を返すので、古いセッションで誤る。<code>rev-list --before</code> はコミットの日時で探すので、reflog に頼らない。</li>
+<li>同じブランチで並行して動いた別のセッションのコミットも混ざる。ただし、Cursor の今の方式（開始 HEAD..最新 HEAD）も同じなので、挙動はそろう。</li>
+<li>ブランチ名は、オプションとして解釈されないよう検証する（先頭が <code>-</code> なら使わない。<code>git check-ref-format --branch</code> で確かめる）。<code>HEAD</code>（detached）や、取れないときは null で、画面は「—」（今と同じ）。</li>
+<li>作業ツリーのセッションも、ブランチは本体のリポジトリから見えるので、同じ方法で求められる。</li>
+<li>時刻は、ターンの途中を含めないように「最後の動き」を使う。git の呼び出しは選択中のセッションだけで、範囲が変わったときだけ（今の <code>_commitRange</code> の仕組み）。</li>
+<li><b>計画</b>：<code>19-5 ブランチと時刻からの HEAD</code>（GitClient。テスト先行）を追加し、21-3 の <code>LoadCommits</code> で、HEAD が無いセッションに使う。</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>A2. <code>SessionDelta</code> への変換規則が決まっていない（18-2 で挙動が変わる所）</h3>
+<p><b>問題</b>：旧 Store は「イベントの入れ物を直接いじる」ので、差分の種類を意識しなくてよかった。分けると、<b>Source が Append / Replace / Remove を正しく選ばないと、挙動が変わる</b>。とくに次の 4 つ（すべて旧コードの実際の動き）。</p>
+<pre>
+ 旧の動き（ProjectEventStore.cs）                                 新で Source が出すべき差分
+ ─────────────────────────────────────────────────────────────  ────────────────────────────────────
+ ① transcript で取り込み済み → 同じ ID の Hook ファイルが現れた    Replace（Hook のイベントで丸ごと置き換え）
+    _imported.Remove(id) ＋ Hook 側の Events を表示 (80-89行)       ※ Append にすると、取り込み分と Hook 分が混ざり、
+                                                                     Imported 判定（全部 Imported か）が壊れる
+ ② ① の Hook ファイルが「別のプロジェクト」だった                 Remove
+    _imported から消え、Matched でないので一覧からも消える           （ProjectEventStoreImportTests の
+                                                                     Imported_session_is_dropped_when_hook_events_
+                                                                     for_it_belong_to_another_project）
+ ③ ファイルが作り直された（truncated）＋ 新しい行が一致した       Replace（1 回の Refresh で 1 つにまとめる）
+    Events.Clear() → 新しい行を Add (151-190行)                     ※ Remove + Append に分けると、通知の間に一瞬消える
+ ④ 作り直された ＋ まだ一致しない／行が無い                        Remove（前にイベントがあったときだけ）
+    changed = Events.Count > 0 (152行)                              前に無ければ何も出さない
+</pre>
+<p><b>解決</b>：計画 18-2 に「差分の規則表」として上の 4 行を書き、Store 側の規則も決める：</p>
+<ul>
+<li><code>Replace</code> で空の列 ＝ <code>Remove</code> と同じ。<code>Append</code> で空の列は無視（セッションを作らない。旧の <code>Events.Count &gt; 0</code> のときだけ見せる、と同じ）。</li>
+<li>1 回の <code>ReadNew</code> で同じキーに複数の差分が来てよい（順に適用）。<code>Refresh</code> が返す「変わったキー」は重複を除く（旧 86 行の <code>!changed.Contains</code> と同じ）。</li>
+<li>「照合前に捨てた行の読み直し」（<code>DroppedLines</code>）は Source の中で完結し、Store には最初の一致時に <code>Append</code>（空から）で出す。</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>A3. 裏で動かす（<code>run_in_background</code>）の Agent と Bash を誤判定する</h3>
+<p><b>問題</b>：Claude Code は、サブエージェントやコマンドを<b>裏で動かせる</b>（このプロジェクトの作業でも使う）。この場合、<code>tool_result</code> は<b>すぐ返る</b>（「起動しました」の内容）。対応表どおりに変換すると：</p>
+<pre>
+ Agent(run_in_background)  tool_use ──▶ SubagentStarted
+                           tool_result（すぐ。agentId つき）──▶ SubagentStopped   ← まだ動いているのに「動いていた」
+                                                                     → 完了チェック「✓ 裏の作業なし」が嘘になる
+ Bash(run_in_background)   tool_result（すぐ。"…running in background…"）
+                           is_error=false ──▶ ToolSucceeded, ExitCode=0        ← dotnet test なら「テスト成功」と出る（嘘）
+</pre>
+<p><b>実ログで確かめた結果</b>：</p>
+<ul>
+<li><b>Bash は実際に起きている</b>（1 件）。結果は <code>is_error=false</code> で、内容は「Command running in background with ID: …」。<code>toolUseResult</code> に <code>backgroundTaskId</code> がある。→ このまま変換すると「ExitCode 0 ＝ 成功」になる。</li>
+<li><b>Agent は 84 件すべて同期</b>。結果の <code>toolUseResult.status</code> は全部 <code>completed</code> で、<code>run_in_background</code> の指定は 0 件。<code>status</code> の欄があるので、<code>completed</code> 以外なら「まだ動いている」と判定できる。</li>
+<li>裏の作業の終わりは、<code>origin.kind = "task-notification"</code> の <code>user</code> 行（27 件）で届く。中身はタグつき（<code>&lt;tool-use-id&gt;</code>・<code>&lt;status&gt;</code> completed／failed・<code>&lt;summary&gt;</code>）。今回の 27 件は、すべて <code>SendMessage</code> のもの。<b>人の入力ではないので、PromptSubmitted にしない</b>（B11）。</li>
+</ul>
+<p><b>解決</b>：</p>
+<ul>
+<li>Bash：<code>input.run_in_background == true</code> か、結果に <code>backgroundTaskId</code> があれば、<code>ToolSucceeded</code> にするが <b>ExitCode = null</b>（不明）。テスト実行は「結果不明」で出す（成功にしない）。</li>
+<li>Agent：結果の <code>toolUseResult.status</code> が <code>completed</code> のときだけ SubagentStopped を出す。それ以外は「動いている」のまま。<code>task-notification</code> の <code>&lt;tool-use-id&gt;</code> が、その Agent の id と一致したら SubagentStopped を出す。実例が無いので、テストは手書きで作り、Phase 22 で実物が出たら確かめる。</li>
+<li>計画 19-1 / 19-3 のテストに「裏で動かす Bash」「status が completed でない Agent」「task-notification」を足す。</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>A4. 「停止」（StalledRule）の誤判定と、画面の食い違い</h3>
+<p><b>問題 1（誤判定）</b>：本体のログに 10 分以上なにも書かれないが、止まっていない場面がある。</p>
+<pre>
+ ・サブエージェント実行中   … 中身は subagents\agent-&lt;id&gt;.jsonl に書かれ、本体は Agent の結果まで無音（数十分あり得る）
+ ・長いコマンド             … dotnet test / publish.ps1 の結果待ち
+ ・承認待ち（許可の確認）   … ログに記録が無い（14.2）。ボスの番なのに「停止」と出る
+</pre>
+<p><b>問題 2（食い違い）</b>：計画 21-3 は「<code>Tick</code> で丸と文字だけ停止にする」。しかし画面の他の所は <code>card.State</code> を見ている。</p>
+<pre>
+ MainViewModel.Visible:   if (RunningOnly &amp;&amp; c.State != SessionState.Running)   ← 「実行中のみ」に停止のカードが残る
+ MainViewModel.UpdateCounts: Count(SessionState.Running) ...                    ← 件数「実行中 N」に停止が入る
+ SessionDetailViewModel:  s.TurnInProgress ? "✗ ターン実行中"                    ← 詳細は実行中のまま
+ SessionCardViewModel:    s.State == Running ? "💬 （応答待ち）"
+</pre>
+<p><b>解決</b>：</p>
+<ul>
+<li>Core に <code>StalledRule.DisplayState(summary, now, timeout)</code> を置き、<b>表示用の状態を 1 か所で決める</b>。カードに <code>DisplayState</code> を持たせ、丸・文字・絞り込み・件数・詳細ヘッダーは全部これを見る。<code>Tick</code> で変わったカードがあれば <code>CardsView.Refresh()</code> と <code>UpdateCounts()</code>。</li>
+<li>動いているサブエージェントか、結果待ちのツール（<code>RunningTools</code>）があるときは、<b>停止にしない</b>（または、しきい値を長くする）。表示は「🔵 実行中（N 分動きなし）」。</li>
+<li>結果待ちのツールが無く、動きなしのときだけ「🟡 停止（N 分動きなし）」。文字に「動きなし」を添えて、ボスが押した停止と区別する（承認待ちの可能性があるため）。</li>
+<li>StalledRule のテストに「サブエージェント実行中」「ツール結果待ち」の 2 ケースを足す。</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>A5. テーマを切り替えると <code>runningTimeoutMinutes</code> が消える</h3>
+<p><b>問題</b>：<code>AppSettingsStore.SaveTheme</code> は <code>{"theme": …}</code> だけの新しい JSON で<b>ファイルを丸ごと上書き</b>している（<code>AppSettings.cs:45-47</code>）。手で書いた <code>runningTimeoutMinutes</code> が、テーマの切り替えで消える。設定画面を作らない（ファイルを手で書く）方針なので、気づきにくい。</p>
+<p><b>解決</b>：保存は「読む → そのキーだけ変える → 書く」（知らないキーも残す）。19-4 に含め、テスト「テーマを保存しても他のキーが残る」を足す。</p>
+<p class="g">決定（利用者）：⚙ メニューに「設定…」を足し、アプリ全体の設定画面を作る。今は「停止とみなす時間（分）」だけで、今後の設定もこの画面に足す。保存するとすぐ効く。テーマは ⚙ メニューに残す。</p>
+<pre>
+ ⚙ ─┬─ Hook を導入 / 削除
+    ├─ テーマ ▸ OS / ライト / ダーク ──┐
+    ├─ ドキュメントの設定…（プロジェクトごと）│ どちらも settings.json に書く
+    └─ 設定…（新。アプリ全体）─────────┘ → 「全体を読む → キーを変える → 全体を書く」で、互いに消さない
+</pre>
+<p>反映先：要件 6 章（settings.json）・12.9（新）・Phase 19 / 21・17 章（保留から外す）。計画 19-4（保存の直し）・21-4（新。設定画面）。</p>
+</div>
+
+<div class="card">
+<h3>A6. Source の例外で、アプリごと落ちる</h3>
+<p><b>問題</b>：<code>SessionMonitor</code> は <code>System.Threading.Timer</code> のコールバックで <code>Refresh</code> する。ここで処理されない例外が出ると、<b>プロセスが終了する</b>。旧 Store が捕まえているのは <code>IOException</code> だけ。Claude のログは形式が非公開で変わり得る。たとえば <code>node["x"].GetValue&lt;string&gt;()</code> は、値が文字列でないと <code>InvalidOperationException</code> を投げる（<code>CursorTranscriptImporter</code> がこの書き方をしている）。</p>
+<p><b>解決</b>：</p>
+<ul>
+<li>Store：Source ごとに <code>ReadNew</code> を <code>try/catch (Exception)</code> ＋ログ。<b>Claude 側が壊れても Cursor の表示は続く</b>。</li>
+<li>Normalizer：1 行ごとに <code>try/catch</code>（その行を「壊れた行」として飛ばす）。値の取り出しは <code>TryGetValue</code> だけを使う。</li>
+<li>テスト：「型の違う値（数値の <code>content</code> など）でも止まらない」「片方の Source が投げても、もう片方の差分は届く」。</li>
+</ul>
+<p><b>あわせて（利用者の質問「形式が変わったとき、ログに例外を出す設計か」への答え）</b>：いまは<b>出ない</b>。知らない種類の記録は黙って飛ばし、欄の型が変わると落ち、捕まえていない例外の受け皿も無い（<code>src</code> を検索して 0 件）。次を足す：</p>
+<ul>
+<li>読めない行：ファイル名・行番号・種類・<code>version</code>・例外の種類とメッセージを <code>app.log</code> に。同じ種類のエラーは 1 ファイル 1 回＋最後に件数。<b>行の中身は書かない</b>（会話の本文が入るため）。</li>
+<li>知らない種類の記録・初めて見る <code>version</code>：起動ごとに 1 回、件数つき（形式が変わったことに気づくため）。</li>
+<li>捕まえられなかった例外（UI スレッド・背景スレッド・Task）：<code>ex.ToString()</code> を <code>app.log</code> に（18-5）。</li>
+</ul>
+<p class="g">決定（利用者）：画面に印は出さず、ログだけ。</p>
+<p>反映先：要件 11.1・13 章・Phase 18 / 19。計画 18-2（Source ごとの隔離）・18-5（受け皿）・19-1（行ごとの例外とログ）。</p>
+</div>
+
+<div class="card">
+<h3>A7. 監視先（WatchPaths）は固定ではない ＋ <code>.claude</code> にフォルダを作ってはいけない</h3>
+<p><b>問題</b>：</p>
+<ul>
+<li>今の <code>SessionMonitor.StartWatcher</code> は <code>Directory.CreateDirectory(_eventsDir)</code> する。同じ処理を Claude の監視先にかけると、<b><code>.claude\projects\</code> にフォルダを作る</b>（読み取りだけの約束に反する）。</li>
+<li>Claude の監視先は<b>あとから増える</b>。このプロジェクトで初めて Claude を使った時点や、作業ツリーを作った時点で、<code>…--claude-worktrees-&lt;名前&gt;</code> ができる。起動時に一度だけ <code>WatchPaths</code> を読むと、監視されない（3 秒のポーリングで拾えるが、Watcher は張られない）。</li>
+</ul>
+<p><b>解決</b>：</p>
+<ul>
+<li>監視先を作るかどうかは Source が決める。Cursor の events は従来どおり作る（挙動不変）。Cursor の Source の初期化で作るか、<code>WatchPath(Path, CreateIfMissing)</code> にする。Claude は作らない。</li>
+<li>Monitor は、ポーリングのたびに Store から <code>WatchPaths</code> を取り直し、増えた分だけ Watcher を張る（無いフォルダは張らずに、次回また試す）。</li>
+<li>Claude の Watcher は <code>IncludeSubdirectories = false</code>（<code>subagents\</code> の頻繁な書き込みで、毎回読み直さないため）。</li>
+</ul>
+</div>
+
+<h2>3. B：計画・要件に書き足したい穴</h2>
+<table>
+<tr><th>#</th><th>穴</th><th>何が起きるか</th><th>解決</th></tr>
+<tr><td>B1</td><td><code>end_turn</code> の重複 <span class="r">（実ログで確定）</span></td><td><code>end_turn</code> の付いた返答 449 件のうち <b>172 件は 2 行</b>に付いている（思考の行と本文の行の両方）。行ごとに TurnEnded にすると、ターン数が 4 割ほど多くなる</td><td>TurnEnded は、<code>end_turn</code> の行のうち<b>本文（<code>text</code>）を含む行</b>で出す（449 件すべてに本文の行が 1 つあった）。念のため、同じ <code>message.id</code> では 1 回だけにする</td></tr>
+<tr><td>B2</td><td>ボスの番になるのは <code>AskUserQuestion</code> だけではない</td><td><code>ExitPlanMode</code>（計画の承認待ち）でも止まる → 実行中のまま → 10 分で「停止」。実ログには 0 件（このプロジェクトでは計画モードを使っていない）</td><td>対応表に <code>ExitPlanMode</code> の <code>tool_use</code> → TurnEnded を足す。結果（承認・却下）→ PromptSubmitted。実例が無いので、優先度は低い。手書きのテストだけ</td></tr>
+<tr><td>B3</td><td>質問への回答を PromptSubmitted にした影響</td><td>依頼数・ターン数・「最近の入力」・検索に、回答（選んだ選択肢）が入る</td><td>それでよいなら、要件 10.1 に「回答も依頼として数える」と明記。Text は「（回答）…」と分かる形にする</td></tr>
+<tr><td>B4</td><td>Output を丸ごと保持する</td><td><code>Read</code> の結果（ファイル全文）なども保持 → 会話ログ数十 MB で、メモリが数百 MB。Output を使うのはテスト実行の末尾 2000 字だけ（<code>SessionAnalyzer.Tail</code>）</td><td>Normalizer で、Shell は末尾 2000 字、ほかは null（画面で使っていない）</td></tr>
+<tr><td>B5</td><td>モデル名 <code>&lt;synthetic&gt;</code> <span class="r">（実ログで確定）</span></td><td>実ログに 5 件あった（合成の返答）。<code>"default"</code> の無視を Cursor へ移したあとは、これがモデル表示を上書きする</td><td>Claude の Normalizer で <code>&lt;synthetic&gt;</code> を null にする（Cursor の <code>"default"</code> と同じ扱い）</td></tr>
+<tr><td>B6</td><td>フォルダ名の規則への依存</td><td>日本語・記号を含むパスで Claude 式の名前が想定と違うと、候補が 0 件 → 何も出ない（照合は <code>cwd</code> でも、その前の絞り込みが規則に頼る）</td><td>候補が 0 件のときだけ、全フォルダの各ファイルの<b>先頭行の <code>cwd</code> だけ</b>を見る（読み取りのみ）。ログに「規則が違った」と残す</td></tr>
+<tr><td>B7</td><td>作業ツリーのセッションの「コミット済み」</td><td>変更ファイルは <code>…\.claude\worktrees\x\…</code>。<code>git status</code> は本体のフォルダ → 一致しない → 「✓ コミット済み」と<b>誤表示</b></td><td>対象フォルダの外のファイルは、未コミット判定を na（「作業ツリーのため不明」）</td></tr>
+<tr><td>B8</td><td>1 行 → 複数イベントで Seq が重なる</td><td>並列のツール結果や「結果 ＋ FileEdited」が同じ Seq になる。<code>TimelineViewModel.JumpTo</code> は Seq だけで探す（211 行。kind を見ない）→ 違う行に飛ぶ</td><td>JumpTo を「Seq と種類の一致」を優先にする（21-3）。Seq＝行番号の規則（12.6）は変えない</td></tr>
+<tr><td>B9</td><td>App が表示名・Capabilities を引く口が無い</td><td><code>AgentRegistry</code> は Hook 用（<code>IHookAgent?</code>）。<code>SessionKey</code> には AgentId しか無い → バッジの表示名や Capabilities をどこから取るか未定</td><td>Core に <code>AgentCatalog</code>（AgentId → <code>IAgentInfo</code>。固定の switch で AOT 互換）。18-1 で追加</td></tr>
+<tr><td>B10</td><td>ファイル編集の種類</td><td><code>Edit</code> / <code>Write</code> だけでは <code>MultiEdit</code>・<code>NotebookEdit</code> が漏れる。失敗した編集も FileEdited になり得る</td><td>対象の名前を一覧（定数）にする。<code>is_error</code> のときは FileEdited を出さない</td></tr>
+<tr><td>B11</td><td>「人の入力」の見分け方 <span class="r">（実ログで判明）</span></td><td>要件 5.1 は「<code>origin.kind=human</code>」で見分ける。しかし<b>古い版（2.1.156）のログには <code>origin</code> 欄そのものが無く</b>、人の入力 16 件を取りこぼす。逆に <code>origin.kind</code> には <code>task-notification</code>（27 件）もある。中断の <code>[Request interrupted…]</code>（11 件）も <code>origin</code> が無い</td><td>人の入力 ＝ <code>user</code> の文字の行で、次をすべて満たすもの：<code>isMeta</code> でない／ <code>tool_result</code> でない／ <code>origin</code> が無いか <code>human</code> ／ <code>[Request interrupted</code> で始まらない（それは Aborted）。手書きのテストに「origin の無い古い形式」と「task-notification」を足す</td></tr>
+</table>
+
+<h2>4. C：品質ゲート（Phase 18 を守る条件）の補強</h2>
+<p>今の 4 点（全テスト・AOT 警告 0・<code>publish.ps1</code>・隔離環境の目視）は必要だが、<b>「既存テストが通る」は「既存テストが見ている所が変わらない」しか保証しない</b>。旧 Store には、テストの無い経路がある。</p>
+
+<div class="card y">
+<h3>C1. 移す前に「特性テスト」を足す（新コミット 18-0）</h3>
+<p>旧コードのまま、いまの挙動を固定するテストを先に足す（失敗しないテスト）。テストが無い経路：</p>
+<ul>
+<li>作り直されたファイルが、作り直し後は別プロジェクト／空になる → 一覧から消える（A2 ④）</li>
+<li>1 回の Refresh で「取り込み済み → Hook に切り替え」と「Hook の追記」が同時に来る</li>
+<li>読み込み中の <code>IOException</code>（ロック）→ ログに出し、次回に読み直す</li>
+<li>取り込み済みの ID と、Hook ファイル名の大文字小文字の違い（<code>_imported</code> は大文字小文字を無視、<code>Find</code> は区別する）</li>
+</ul>
+</div>
+
+<div class="card y">
+<h3>C2. 同じデータで、旧と新の要約を比べる（A/B）</h3>
+<pre>
+ 本物の events\cursor と transcript を一時フォルダにコピー（本物は触らない。リポジトリに入れない）
+        │
+        ├─ 旧コード（18-0 の時点）で、全セッションの SessionSummary を JSON にダンプ ─▶ before.json
+        └─ 新コード（18-5 の時点）で同じダンプ                                      ─▶ after.json
+                                                     diff が 0 件なら「挙動不変」
+</pre>
+<p>環境変数があるときだけ動くテスト（<code>PerfFact</code> と同じ流儀。例：<code>MIHARIKUN_GOLDEN_DIR</code>）にすれば、コミットしても普段は動かない。</p>
+</div>
+
+<div class="card y">
+<h3>C3. 「構築部分だけ直した」を機械的に確かめる</h3>
+<ul>
+<li>テスト件数が減っていない（482 ＋ 新規。スキップ 1 のまま）。</li>
+<li><code>git diff</code> で、既存のテストファイルの変更が、<code>new ProjectEventStore(…)</code> / <code>new SessionMonitor(…)</code> / <code>new MetaStore(…)</code> の行だけであること（<code>Assert</code> の行に差分が無い）。</li>
+</ul>
+</div>
+
+<div class="card y">
+<h3>C4. 隔離環境の目視は「データ入り」で</h3>
+<p>今の手順（一時フォルダ＋<code>hooks.json</code> のコピー）だと、events が空なので<b>一覧に何も出ず、比べられない</b>。C2 のコピーを <code>MIHARIKUN_DATA_DIR</code> に使い、旧 exe と新 exe を並べて、一覧・詳細・タイムライン・メモ・ステータス・取り込み分を目視で比べる。</p>
+</div>
+
+<h2>5. 実ログで確かめた結果（構造だけ）</h2>
+<p class="mut">対象：<code>%USERPROFILE%\.claude\projects\</code> の会話ログ 28 本・18,787 行（他のプロジェクトを含む。このセッションは除く）。数えたのは種類・欄の有無・件数だけ。出力の形は、英字以外を記号に置き換えて見た。数えるスクリプトはスクラッチ（リポジトリの外）に置いた。</p>
+<table>
+<tr><th>確かめたこと</th><th>結果</th><th>結論</th></tr>
+<tr><td><code>end_turn</code> の重複（B1）</td><td>返答 449 件のうち 172 件は、思考の行と本文の行の 2 行に付く。本文の行は 449 件すべてに 1 つ</td><td class="r">重複あり。本文の行で TurnEnded にする</td></tr>
+<tr><td>モデル名（B5）</td><td><code>&lt;synthetic&gt;</code> が 5 件</td><td class="r">あり。null にする</td></tr>
+<tr><td>裏で動かす（A3）</td><td>Bash 1 件（結果は <code>is_error=false</code>、<code>backgroundTaskId</code> あり）。Agent は 84 件すべて <code>status=completed</code></td><td class="y">Bash は対策が必須。Agent は <code>status</code> で守る</td></tr>
+<tr><td>裏の作業の終わりの通知</td><td><code>origin.kind=task-notification</code> が 27 件（すべて SendMessage）。タグ：<code>tool-use-id</code>・<code>status</code>・<code>summary</code>・<code>output-file</code></td><td class="y">人の入力にしない（B11）</td></tr>
+<tr><td>人の入力（B11）</td><td><code>origin.kind=human</code> は 417 件。<code>origin</code> の欄が無い、古い版の人の入力が 16 件。<code>[Request interrupted…]</code> は 11 件で、<code>origin</code> が無い</td><td class="r">要件 5.1 の見分け方を直す</td></tr>
+<tr><td>終了コード</td><td>内容が <code>Exit code N</code> で始まる <code>is_error</code>：PowerShell 48 件、Bash 20 件</td><td class="g">対応表どおりで OK</td></tr>
+<tr><td>コミットの拾い方（A1）</td><td><code>git commit</code> を含むコマンド 105 件のうち、成功が 102 件。出力に <code>[branch sha]</code> の行があるのは 30 件だけ</td><td class="r">出力から拾う案は不可。ブランチと時刻で求める</td></tr>
+<tr><td>reflog（A1 の別の案）</td><td>このリポジトリの reflog は 10/3 からしかない。それより前の時刻を指定すると、警告を出して一番古い記録を返す</td><td class="r">使わない</td></tr>
+<tr><td><code>ExitPlanMode</code>（B2）</td><td>0 件</td><td class="y">実例なし。手書きのテストだけ</td></tr>
+<tr><td>サブエージェントの <code>.meta.json</code></td><td>欄は <code>agentType</code>・<code>description</code>・<code>toolUseId</code>（＋版により <code>spawnDepth</code> など）</td><td class="g">要件 11.1 どおり</td></tr>
+</table>
+
+<h2>6. 問題なしと判断した所</h2>
+<ul>
+<li>Hook exe（<code>HookRunner.cs</code>）が使うのは <code>GetEventName</code>・<code>GetSessionId</code>・<code>NeedsGitSnapshot</code>・<code>RespondToHook</code>・<code>Id</code> だけ → <code>IHookAgent</code> に入れれば型の変更だけ。リフレクションは増えない。</li>
+<li>既存テストは <code>new CursorAgent().Normalize(...)</code> を具体クラスで呼んでいる（<code>CursorNormalizeTests</code>・<code>TestData</code>・<code>GitClientTests</code>・<code>RecentActivityTests</code>）→ <code>Normalize</code> をインターフェースから外しても、そのまま通る。</li>
+<li><code>"default"</code> の無視を移すことについて、<code>SessionAnalyzer</code> に直接 <code>"default"</code> を入れるテストは無い → 期待値は変わらない。<code>CursorNormalizeTests</code> にテストを 1 つ足せばよい。</li>
+<li><code>MetaStore</code> は元から <code>agentId</code> を受け取る作り → 切り替えは <code>SessionMetaService</code> の小さな変更で済む（<code>MetaTests</code> の構築部分だけ直す）。</li>
+<li><code>SessionSummary</code> を <code>new</code> しているのは <code>SessionAnalyzer</code> だけ → 19-3 で項目を足してもテストへの波及は無い。</li>
+</ul>
+
+<h2>7. 計画の直し方（まとめ）</h2>
+<table>
+<tr><th>コミット</th><th>変更</th><th>指摘</th></tr>
+<tr><td><b>18-0（新）</b></td><td>特性テスト（旧コードのまま）＋ A/B ダンプのテスト（環境変数があるときだけ）</td><td>C1・C2</td></tr>
+<tr><td>18-1</td><td>＋ <code>AgentCatalog</code></td><td>B9</td></tr>
+<tr><td>18-2</td><td>＋ 差分の規則表（A2 の 4 行）、Store で Source ごとの例外の隔離</td><td>A2・A6</td></tr>
+<tr><td>18-3</td><td>＋ 監視先の再評価、Source ごとの「作るかどうか」、Claude はサブフォルダを見ない</td><td>A7</td></tr>
+<tr><td>18-5</td><td>品質ゲートに C3・C4 を追加</td><td>C3・C4</td></tr>
+<tr><td>19-1</td><td>＋ 行ごとの例外、<code>TryGetValue</code> だけ、Output の切り詰め、<code>&lt;synthetic&gt;</code>、編集ツールの一覧、裏で動かす Bash、人の入力の見分け方</td><td>A6・B4・B5・B10・A3・B11</td></tr>
+<tr><td>19-2</td><td>＋ <code>end_turn</code> の重複除去、<code>ExitPlanMode</code>、回答の扱いの明記</td><td>B1・B2・B3</td></tr>
+<tr><td>19-3</td><td>＋ status が completed でない Agent、task-notification での終わり</td><td>A3</td></tr>
+<tr><td>19-4</td><td>＋ <code>SaveTheme</code> で他のキーを残す、<code>DisplayState</code>（サブエージェント・結果待ちは除外）</td><td>A5・A4</td></tr>
+<tr><td><b>19-5（新）</b></td><td>ブランチと時刻から開始・最新の HEAD を求める（<code>GitClient</code>。<code>git rev-list -1 --before</code>）</td><td>A1</td></tr>
+<tr><td>20-1</td><td>＋ 候補 0 件のときの先頭行の <code>cwd</code> による探索</td><td>B6</td></tr>
+<tr><td>18-5</td><td>＋ 捕まえられなかった例外の受け皿（<code>app.log</code>）</td><td>A6</td></tr>
+<tr><td>21-3</td><td>＋ 表示状態を絞り込み・件数・詳細で共通に、JumpTo を種類つきに、コミット表示の切り替え、作業ツリーの未コミットは na</td><td>A4・B8・A1・B7</td></tr>
+<tr><td><b>21-4（新）</b></td><td>設定画面（⚙ の「設定…」。停止とみなす時間）</td><td>A5</td></tr>
+<tr><td>22-1</td><td>＋ 実機で確かめる：裏で動かした Agent の結果と終わりの記録（実例がまだ無い）、ExitPlanMode</td><td>A3・B2</td></tr>
+</table>
+<p class="mut">要件定義も合わせて直す所：5.1 の対応表（B1・B2・B5・B10・B11・A3）、14.2（7 章の結果）、10.1（A4 の表示、B3 の回答の数え方、A1 のコミットの出し方）、settings.json（A5 の「起動時に読む」）。</p>
+
+</body>
+</html>

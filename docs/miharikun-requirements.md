@@ -95,11 +95,12 @@ Cursor と Claude Code に対応し、将来 Codex / GitHub Copilot にも対応
 ### ルール
 1. **`IAgentInfo`**（Id・表示名・Capabilities）は全エージェントが実装する。**`IHookAgent : IAgentInfo`**（Hook 側の処理）は、Hook を使うエージェント（Cursor）だけが実装する。Claude Code は `IAgentInfo` だけ
 2. **読み込みは `ISessionSource` をエージェントごとに 1 つ**（`CursorSessionSource`、`ClaudeSessionSource`）。返すのは**差分（`SessionDelta`）**：追記 / 作り直し / 消えた のどれかと、`AgentEvent` の列。**プロジェクトとの照合（Cursor は `workspace_roots`、Claude Code は `cwd`）は Source の中で行う**。「Hook があれば transcript より優先」のような、エージェント固有の事情も Source の中に閉じる
-3. **保持・要約（`SessionSummary`）のキャッシュ・変更通知は、汎用の `ProjectEventStore` 1 つ**が行う。エージェントのことは知らない。`SessionMonitor` は Store を 1 つ持ち、各 Source の監視先（`WatchPaths`）をまとめて監視する
+3. **保持・要約（`SessionSummary`）のキャッシュ・変更通知は、汎用の `ProjectEventStore` 1 つ**が行う。エージェントのことは知らない。`SessionMonitor` は Store を 1 つ持ち、各 Source の監視先（`WatchTargets`）をまとめて監視する。Store は Source ごとに例外を捕まえ、他の Source は動き続ける（13 章）。差分の出し方の細かい規則（Cursor の「作り直し」「取り込み済み → Hook」など）は実装計画 `issue11-claude-code-plan.md` 8.1
 4. **App（状態判定・画面・検索）は共通イベント `AgentEvent` だけを扱う**。生 JSON のフィールド（Cursor の `stop.status`・`workspace_roots`、Claude Code の `stop_reason`・`cwd` 等）を App 側で直接参照してはならない。ツール名も共通名に直す（`CommonTools.Shell` ほか。Claude Code の `Bash` / `PowerShell` → `Shell`）
 5. **Hook exe は生データを保存するだけ**（Cursor 用）。正規化（生 JSON → 共通イベント）は App が読み込み時に行う（正規化を修正すれば過去データにも反映される）
 6. **能力差は `Capabilities` フラグで表現**し、UI はフラグを見て表示の有無を決める
 7. **共通の抽象基底クラスは作らない**。`ISessionSource` と汎用 `ProjectEventStore` 以外は、実際に重複した処理だけを切り出す
+8. **表示名・Capabilities は `AgentCatalog`（AgentId → `IAgentInfo`。固定の switch）から引く**（App 用）。`AgentRegistry` は Hook exe 用で `IHookAgent` だけを返す
 
 ### interface（目安。実装時に調整してよい）
 ```csharp
@@ -122,13 +123,14 @@ public interface IHookAgent : IAgentInfo
 public interface ISessionSource
 {
     string AgentId { get; }
-    IReadOnlyList<string> WatchPaths { get; }                         // SessionMonitor が監視するフォルダ
+    IReadOnlyList<WatchTarget> WatchTargets { get; }                  // SessionMonitor が監視するフォルダ。毎回取り直す（あとから増える）
     IReadOnlyList<SessionDelta> ReadNew();                            // 追記分だけ読む。呼び出しは Store の所有スレッド
     IReadOnlyList<AgentEvent> GetSubagentEvents(SessionKey key, string subagentId);   // 今は空。将来、サブエージェントの詳細用
 }
 
 public sealed record SessionDelta(SessionKey Key, SessionDeltaKind Kind, IReadOnlyList<AgentEvent> Events);
-public enum SessionDeltaKind { Append, Replace, Remove }
+public enum SessionDeltaKind { Append, Replace, Remove }   // 空の Replace は Remove と同じ。空の Append は無視
+public sealed record WatchTarget(string Path, bool CreateIfMissing);   // Cursor の events は作る。Claude（.claude 配下）は作らない
 
 [Flags]
 public enum AgentCapabilities
@@ -187,24 +189,24 @@ Cursor は、ツール系などのイベントで `model` に `"default"` を入
 
 | Claude Code の記録 | AgentEventKind | 備考 |
 |---|---|---|
-| ファイルの最初の記録 | SessionStarted | 時刻は最初の `timestamp`。ブランチは `gitBranch`（hash は無し。コミット判定は App が git で行う） |
-| `user`（人の入力：`origin.kind=human`、`isMeta` でない） | PromptSubmitted | Text = `message.content`。スラッシュコマンドや `<local-command…>` はそのまま文字で出す（実機で確認） |
-| `assistant` の `text` | AssistantMessage | Model = `message.model` |
+| ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻は最初の `timestamp`。ブランチは `gitBranch`（hash は無し。コミットは App が git で、ブランチと時刻から求める。10.1） |
+| `user` の人の入力：文字の行で、`isMeta` でない・`tool_result` でない・**`origin` が無いか `origin.kind=human`**・`[Request interrupted` で始まらない | PromptSubmitted | Text = `message.content`。古い版（2.1.156）は `origin` 欄が無い。`origin.kind=task-notification`（裏の作業の終わりの通知）は入力にしない。スラッシュコマンドや `<local-command…>` はそのまま文字で出す（実機で確認） |
+| `assistant` の `text` | AssistantMessage | Model = `message.model`。**`<synthetic>`（合成の返答）は null**（Cursor の `"default"` と同じ扱い） |
 | `assistant` の `thinking` | AssistantThought | |
 | `tool_use` | ToolStarted | ToolUseId = `id`。**ToolName は共通名に直す**：`Bash` と `PowerShell` → `Shell`、ほかは元の名前（Read・Edit・Write・Grep・`mcp__…`）。Command = `input.command` |
-| `tool_result`（`is_error=false`） | ToolSucceeded | Shell の ExitCode = 0。Output = 内容。Duration = 結果の時刻 − 呼び出しの時刻 |
+| `tool_result`（`is_error=false`） | ToolSucceeded | Shell の ExitCode = 0。**ただし裏で動かした Bash（`input.run_in_background`、または結果に `backgroundTaskId`）は ExitCode = null**（すぐ返るため、結果は不明）。Output = **Shell だけ内容の末尾 2000 字**（ほかは持たない。メモリのため）。Duration = 結果の時刻 − 呼び出しの時刻 |
 | `tool_result`（内容が `Exit code N` で始まる） | **ToolSucceeded**（ExitCode = N） | コマンドは実行できて、終了コードが 0 でなかった。**失敗したテストを成果に出すため、ToolFailed にしない**（テスト判定は ToolSucceeded のとき記録する） |
-| `tool_result`（その他の `is_error`：拒否・中断など） | ToolFailed | Output = 内容 |
-| `Edit` / `Write` の成功 | FileEdited | FilePath = `input.file_path` |
+| `tool_result`（その他の `is_error`：拒否・中断など） | ToolFailed | |
+| 編集の成功（`Edit`・`Write`・`MultiEdit`・`NotebookEdit`） | FileEdited | FilePath = `input.file_path`（`NotebookEdit` は `notebook_path`）。`is_error` のときは出さない |
 | `Agent` の `tool_use` | SubagentStarted | ToolUseId = `id`。Text = 説明（`description`）、ToolName = 種類（`subagent_type`） |
-| `Agent` の結果（`agentId` つき） | SubagentStopped | SubagentId = `agentId`。ToolUseId で Started と対応 |
-| `assistant` の `stop_reason = end_turn` | TurnEnded（Completed） | `stop_hook_summary` / `turn_duration` は使わない（重複） |
-| `[Request interrupted…]` | TurnEnded（Aborted） | |
+| `Agent` の結果（**`toolUseResult.status = completed`** のとき） | SubagentStopped | SubagentId = `agentId`。ToolUseId で Started と対応。`completed` 以外（裏で動かした）は動いているまま、`task-notification` の `<tool-use-id>` が一致したら SubagentStopped |
+| `assistant` の `stop_reason = end_turn` | TurnEnded（Completed） | **本文（`text`）を含む行で 1 回だけ**（思考の行と本文の行の両方に付くことがある。同じ `message.id` では 1 回）。`stop_hook_summary` / `turn_duration` は使わない（重複） |
+| `[Request interrupted…]` | TurnEnded（Aborted） | `origin` は無い |
 | `isApiErrorMessage` の返答 | TurnEnded（Error） | `system` の `api_error` は再試行されることがあるので、最初は使わない（実機で確認） |
-| `AskUserQuestion` の `tool_use` | TurnEnded（Completed） | ユーザーの返事待ち＝ボスの番。その結果（回答）が来たら PromptSubmitted（回答）にして、実行中に戻す |
+| `AskUserQuestion`・`ExitPlanMode` の `tool_use` | TurnEnded（Completed） | ユーザーの返事待ち＝ボスの番。その結果（回答・承認）が来たら PromptSubmitted（Text は「（回答）」＋内容）にして、実行中に戻す。**回答も依頼数・ターン数・最近の入力に数える** |
 | 圧縮（コンパクト） | （未対応） | 実物が無く未確認。出たら Compacted を追加 |
 | `custom-title` / `ai-title` | （後回し） | セッションのタイトル候補。最初は「最初の依頼の先頭 40 文字」のまま |
-| 上記以外（`attachment`・`queue-operation`・`file-history-*` など） | 読み飛ばす | 知らない種類・壊れた行も、止まらずに飛ばす |
+| 上記以外（`attachment`・`queue-operation`・`file-history-*` など） | 読み飛ばす | 知らない種類・壊れた行も、止まらずに飛ばす（ログは 11.1） |
 
 Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagents | FileEdits | TurnStatus | Transcript`（`RealtimeHooks`・`SessionEnd`・`Compaction` はなし。`Compaction` は実機で確認できたら追加。`TokenUsage` は扱わない）
 
@@ -274,7 +276,8 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 { "theme": "system", "runningTimeoutMinutes": 10 }
 ```
 - `theme`：`"system"`（OS のライト/ダークに追従。既定）/ `"light"` / `"dark"`。ファイルなし・壊れている・知らない値は `system`
-- `runningTimeoutMinutes`：「実行中」のまま新しい記録が来ない時間（分）。超えると「停止」と表示する（10.1）。既定 `10`。`0` 以下で無効。整数以外・壊れている・欠けているときは既定値。設定の画面は作らず、このファイルを書き換える（将来、テストコマンドのパターンなどと一緒に設定画面を作る）
+- `runningTimeoutMinutes`：「実行中」のまま新しい記録が来ない時間（分）。超えると「停止」と表示する（10.1）。既定 `10`。`0` 以下で無効。整数以外・壊れている・欠けているときは既定値。⚙ メニューの「設定…」の画面で変える（12.9）。保存するとすぐ効く
+- 書き込みは、**ファイル全体を読み、変えるキーだけを書き換えて保存する**（知らないキーも残す）。テーマ（⚙ メニュー）と設定画面が同じファイルに書くため、片方の保存で他方の値を消さない
 
 ## 7. Hook exe 仕様
 
@@ -333,9 +336,10 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 - 初回起動時は全ファイルを読み、`workspace_roots` が一致するものだけをメモリに保持
 
 ### 9.1 Claude Code の探索と照合（Issue #11）
-- 探索先：`%USERPROFILE%\.claude\projects\`（`MIHARIKUN_CLAUDE_DIR` で `.claude` の場所を上書きできる。検証用）。フォルダ名が「対象フォルダの Claude 式の名前」と同じ、または、それに `--claude-worktrees-` が続くものだけを開く。Claude 式の名前は、`C:\zDev\repo\Miharikun` → `C--zDev-repo-Miharikun`（`:` と `\` と `.` など英数字以外が、それぞれ `-`。Cursor の slug と違い、連なりを 1 つにまとめない）
+- 探索先：`%USERPROFILE%\.claude\projects\`（`MIHARIKUN_CLAUDE_DIR` で `.claude` の場所を上書きできる。検証用）。フォルダ名が「対象フォルダの Claude 式の名前」と同じ、または、それに `--claude-worktrees-` が続くものだけを開く。Claude 式の名前は、`C:\zDev\repo\Miharikun` → `C--zDev-repo-Miharikun`（`:` と `\` と `.` など英数字以外が、それぞれ `-`。Cursor の slug と違い、連なりを 1 つにまとめない）。名前の比較は大文字小文字を無視。**候補が 0 件のときだけ**、起動ごとに 1 回、全フォルダの各ファイルの先頭の `cwd` だけを読んで探す（日本語・記号を含むパスで規則が違った場合の保険。見つかったらログに残す）
 - 照合：各ファイルの最初の `cwd` を `ProjectPath`（上の一致判定）で比べる。フォルダ名の規則の違いに頼らない。**作業ツリー**は、`cwd` が「対象フォルダ\.claude\worktrees\<名前>」のものを同じプロジェクトとして扱う
-- 監視：`FileSystemWatcher`（300ms デバウンス）と 3 秒ごとのポーリング。ファイルごとに読み取り済みオフセットを保持し、追記分だけ読む（末尾の不完全な行は次回に回す。`JsonlTail`）
+- 監視：`FileSystemWatcher`（300ms デバウンス）と 3 秒ごとのポーリング。ファイルごとに読み取り済みオフセットを保持し、追記分だけ読む（末尾の不完全な行は次回に回す。`JsonlTail`）。監視先は**ポーリングのたびに取り直す**（作業ツリーのフォルダはあとからできる）。フォルダの直下だけを見る（`subagents\` は見ない）
+- **`.claude` には何も書かない**（フォルダも作らない。監視先が無ければ、次のポーリングでまた試す）
 - 初回は全ファイルを読む（最大 20MB 程度。起動は背景）。遅ければ、「直近 N 日」の設定を足す（17章）
 
 ## 10. 状態判定ルール（Core）
@@ -376,7 +380,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 | 継続時間 | 開始〜最後の動き（`sessionEnd.duration_ms` があればそれ） |
 | 変更ファイル | `afterFileEdit.file_path` の重複除去 |
 | テスト実行 | `postToolUse` で `tool_name == "Shell"` かつ command が設定のパターンに一致。成否は `tool_output` の `exitCode == 0` |
-| コミット | App が `git log --oneline {開始時head}..{最新stop時head}` を実行（Hook ではやらない） |
+| コミット | App が `git log --oneline {開始時head}..{最新stop時head}` を実行（Hook ではやらない）。head が無いセッション（Claude Code）は、ブランチと時刻から求める（10.1） |
 | 未コミット | App が `git status --porcelain` を実行し、変更ファイルと突合（シェル経由の変更は対象外と画面に注記） |
 
 テストコマンドの既定パターン（settings.json で変更可）：
@@ -393,8 +397,15 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 | 🔴 エラー | API エラーの返答（`isApiErrorMessage`） |
 | ⚪ 閉じた | **無い**（終了の記録が無い）。ボスの番のまま残り、一覧では最後の動きの降順で下がっていく |
 
-- 「実行中のまま動きなし → 停止」は、**時刻（いま）が要る**ので、要約の計算には入れず、画面側の 1 秒ごとの更新で適用する（`StalledRule`：実行中かつ「いま − 最後の動き」がしきい値を超えたら、停止として表示する）。Cursor のセッションにも同じ設定が効く
-- テスト実行は、`Shell` ツールのコマンドが設定のパターンに一致したもの。成否は `ExitCode == 0`（Claude Code は、失敗のときだけ内容の `Exit code N` から取る。成功は 0）
+- 「実行中のまま動きなし → 停止」は、**時刻（いま）が要る**ので、要約の計算には入れず、画面側の 1 秒ごとの更新で適用する。`StalledRule.DisplayState`（Core）が**表示用の状態を 1 か所で決める**：
+  1. 実行中でない、またはしきい値が 0 以下 → 要約の状態のまま
+  2. 「いま − 最後の動き」がしきい値未満 → 実行中
+  3. 動いているサブエージェント、または結果待ちのツールがある → **実行中のまま**、「N 分動きなし」を添える（サブエージェントの中身は別ファイルなので本体は無音になる。長いコマンド・承認待ちもここ）
+  4. それ以外 → 🟡 停止、「N 分動きなし」を添える（ボスが押した停止と区別する）
+  - Cursor のセッションにも同じ設定が効く
+- テスト実行は、`Shell` ツールのコマンドが設定のパターンに一致したもの。成否は `ExitCode == 0`（Claude Code は、失敗のときだけ内容の `Exit code N` から取る。成功は 0。裏で動かしたコマンドは不明）
+- コミット：Claude Code のログには head（hash）が無いので、App が `git rev-list -1 --before=<時刻> <ブランチ>` で、開始時（最初の `timestamp`）と最後の動きの時点の head を求め、`git log {開始}..{最後}` を出す（Cursor と同じく、同じブランチで並行して動いた別のセッションのコミットも混ざる）。ブランチ名が `HEAD`・`-` で始まる・`git check-ref-format --branch` に通らないときは不明（—）
+- 作業ツリー（`<対象フォルダ>\.claude\worktrees\` 配下）のファイルは、本体の `git status` で個別に出ないので、未コミットの判定から外す。変更ファイルがすべて作業ツリーなら、完了チェックは「コミットの確認なし（作業ツリーの変更のため不明）」
 - サブエージェント：起動中 = `SubagentStarted` − `SubagentStopped`（`Agent` ツールの呼び出しと結果）、累計 = `SubagentStarted` 件数。要約に履歴（説明・種類・開始・終了・経過）も持たせ、画面に「動いている（説明つき）／動いていた」を出す（12.8）
 
 ## 11. 導入前の過去セッション（条件付き）
@@ -417,7 +428,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 場所・形式：`%USERPROFILE%\.claude\projects\<フォルダ名>\<セッションID>.jsonl`（1 行 1 JSON、追記される）。CLI と Code タブは同じ形式・同じ場所（`entrypoint` が `claude-desktop` / `cli`）。バージョンは 2.1 系で確認
 - 全行に `sessionId`・`cwd`・`timestamp`（UTC）・`gitBranch`・`uuid`・`parentUuid` がある（`attachment` などの一部を除く）
 - 読み飛ばすもの：`attachment`（全体の約 17%。半分以上はトークン数の通知）、`queue-operation`、`file-history-*`、`last-prompt`、`agent-name`、`mode`、`permission-mode`、`cost-state`、`pr-link`、`relocated`、`worktree-state` など
-- **形式は公開された仕様ではなく、バージョンで変わり得る**：知らない種類・壊れた行は飛ばし（壊れた行はログに残す）、`version` を記録する。テストのフィクスチャは、実ログのコピーを使わず、構造を真似て手書きする（会話の全文が入っているため）
+- **形式は公開された仕様ではなく、バージョンで変わり得る**：知らない種類・壊れた行は飛ばし（壊れた行はログに残す）、`version` を記録する。形式が変わったことに気づけるよう、`app.log` に次を書く（**行の中身は書かない**。会話の本文が入るため）
+  - 読めない行（JSON として壊れている、欄の型が違うなど）：ファイル名・行番号・記録の種類・`version`・例外の種類とメッセージ。同じ種類のエラーは 1 ファイルにつき最初の 1 回だけ書き、最後に件数をまとめる（ログが膨れないように）
+  - 知らない種類の記録と、初めて見る `version`：起動ごとに 1 回ずつ、件数つきで
+  - 画面には出さない（ログだけ）テストのフィクスチャは、実ログのコピーを使わず、構造を真似て手書きする（会話の全文が入っているため）
 - サブエージェントの詳細は別ファイル `<セッションID>\subagents\agent-<id>.jsonl`（本体と同じ形式。`isSidechain = true`、`agentId` つき）と `agent-<id>.meta.json`（`agentType`・`description`・`toolUseId`）。**今回は読まない**（本体の `Agent` の呼び出しと結果だけで、「動いている／動いていた」を出す）
 - 確認結果と未確認の項目は 14.2
 
@@ -512,7 +526,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 **走査**
 - 背景スレッドで再帰列挙し、除外フォルダは中に入らない（枝刈り）。拡張子 `.md` `.html` `.htm`（大文字小文字無視）のみ拾い、中身は読まない。見つかった分から順にツリーへ出す（画面を固めない）
 - 変更検知は `FileSystemWatcher`：ファイルの追加/削除/更新/名前変更だけ差分で反映し、フォルダの作成/削除/名前変更・バッファあふれは「読み直し」と同じ全再走査を自動で行う。除外は親フォルダまでさかのぼって判定する。取りこぼし用に「読み直し」がある。索引のキャッシュ保存はしない（遅ければ後で足す）
-- 目標：1万ファイル超のフォルダでも、操作がもたつかず、ツリーが数秒以内に出る。走査にかかった時間は、上段の件数の横に「（走査 N 秒）」と出し、`logsapp.log` にも残す（実環境での実測に使う）
+- 目標：1万ファイル超のフォルダでも、操作がもたつかず、ツリーが数秒以内に出る。走査にかかった時間は、上段の件数の横に「（走査 N 秒）」と出し、`logs\app.log` にも残す（実環境での実測に使う）
 - 検索はファイル名のみ（本文検索はしない）
 
 **プレビュー**
@@ -530,16 +544,24 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 一覧のカードと詳細のヘッダーに、エージェントの**バッジ**（Cursor / Claude）を出す（表示名は `IAgentInfo.DisplayName`）
 - 左ペインに**エージェントの絞り込み**（全て / Cursor / Claude。1 つだけ選ぶ。既定は「全て」）。ステータスの絞り込み・検索・チップとは AND。件数は他のフィルタの前の全カードから数える（ステータスのタブと同じ流儀）
 - `Capabilities` に無い項目は出さない（Claude Code の「閉じた」状態、最近閉じたセッションへの出現、など）
-- 「停止」の表示：10.1 の `StalledRule` を、画面の 1 秒ごとの更新で適用する（状態の丸と文字を「停止」にする。要約は変えない）
+- 「停止」の表示：10.1 の `StalledRule.DisplayState` を、画面の 1 秒ごとの更新で適用する。**状態の丸・文字・「実行中のみ」の絞り込み・状態ごとの件数・詳細ヘッダー・拡大時のタイトルは、すべてこの表示用の状態で出す**（食い違わないように）。「N 分動きなし」を添える。要約は変えない
+- タイムラインへのジャンプ（3 行サマリー・最近の入力）は、Seq と種類が両方一致する行を優先する（Claude Code は 1 行から複数のイベントが出て、同じ Seq になることがある）
 - サブエージェント：詳細の稼働状態に「動いている N（説明）／ 動いた M」。完了チェックの「裏の作業なし」も、これで判定（これまでどおり）
 - ドキュメントタブ・メモ・ステータスは、エージェントに関係なくそのまま使える（メタは `meta\{agentId}\{sessionId}.json`）
+
+### 12.9 設定画面（Issue #11）
+- ⚙ メニューに「設定…」を足し、アプリ全体の設定のダイアログを開く（プロジェクトごとの「ドキュメントの設定…」とは別）
+- 項目は「実行中のまま動きなし → 停止とみなす時間（分）」（`runningTimeoutMinutes`。0 で無効）だけから始める。今後のアプリ全体の設定（テストコマンドのパターンなど）は、この画面に足す
+- 保存は `settings.json`（6 章。他のキーを残す）。保存するとすぐ効く（再起動は要らない）。数字以外・負の数は、保存できないようにする
+- テーマは、これまでどおり ⚙ メニューの「テーマ」で選ぶ（設定画面には移さない）
 
 ## 13. 非機能要件
 
 - 1プロジェクト100セッション・1セッション5,000イベントで、起動3秒以内・操作がもたつかないこと
 - Hook の処理が Cursor の操作感を損なわないこと（7章の性能要件）
 - 文字コードはすべて UTF-8（BOM なし）
-- 例外で落ちないこと：壊れた行はスキップしてログに残す
+- 例外で落ちないこと：壊れた行はスキップしてログに残す。読み込み元（`ISessionSource`）ごとに例外を捕まえ、スタックつきでログに残して、他の読み込み元は動き続ける（Claude Code の読み込みが壊れても Cursor の表示は止めない）
+- それでも捕まえられなかった例外（UI スレッド・背景スレッド・Task）は、`app.log` にスタックつきで残す（落ちた原因を調べられるように）
 - イベントファイルの自動削除は MVP ではしない
 
 ## 14. Step 0：実機検証
@@ -597,7 +619,17 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - [x] 中断：`[Request interrupted…]`（10 件）。エラー：`system` の `api_error`（8 件）・`isApiErrorMessage`（3 件）・`error`（11 件）
 - [x] ユーザーの返事待ち：`AskUserQuestion`（26 件）
 - [x] ターンの終わり：`stop_reason: end_turn`（563 件）。`stop_hook_summary`（368 件）・`turn_duration`（20 件）は補助
+- [x] **実装計画のレビューで追加確認**（28 本・18,787 行。構造だけ。進行中のセッションは除く）：
+  - `end_turn` は、返答 449 件のうち 172 件で、思考の行と本文の行の両方に付く。本文の行は全件に 1 つ → 本文の行で TurnEnded を 1 回（5.1）
+  - モデル名 `<synthetic>`（合成の返答）が 5 件
+  - 人の入力：`origin.kind=human` 417 件。古い版（2.1.156）は `origin` 欄が無い（人の入力 16 件）。`origin.kind=task-notification` が 27 件（`<tool-use-id>`・`<status>`・`<summary>` のタグつき。今回はすべて SendMessage のもの）。`[Request interrupted…]` は `origin` 無し
+  - `Exit code N` の `is_error`：PowerShell 48 件・Bash 20 件
+  - 裏で動かした Bash 1 件（`is_error=false`、内容「Command running in background…」、`toolUseResult.backgroundTaskId` あり）。Agent の結果は 84 件すべて `toolUseResult.status=completed`（裏で動かした Agent は 0 件）
+  - `git commit` を含むコマンド 105 件のうち、出力に `[ブランチ sha]` の行があるのは 30 件だけ（`-q` など）→ コミットは出力から拾わず、ブランチと時刻から求める（10.1）
+  - `ExitPlanMode` は 0 件
 - [ ] **会話の圧縮（コンパクト）の記録**：27 本のどれにも無かった。実機で出たら確認（Phase 22）
+- [ ] 裏で動かした Agent の結果（`status`）と、終わりの通知（`task-notification`）の形：実例なし（Phase 22）
+- [ ] `ExitPlanMode` の結果の形：実例なし（Phase 22）
 - [ ] セッションの再開（`relocated` 51 件の意味）：未確認
 - [ ] 承認待ち：記録が見当たらなかった（もともと対象外）
 - [ ] `system` の `api_error` と再試行の関係（エラーの判定に使えるか）
@@ -691,24 +723,25 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 状況：Release の発行（`scripts/publish.ps1`。Hook は NativeAOT、zip 58.5MB）を確認済み：展開した zip の Miharikun.exe（単一ファイル、133.8MB）で、隔離環境のドキュメントタブに md が表示された（チェックボックス・mermaid・色付け）。zip の README.txt と `docs/release.md` のチェックに、ドキュメントタブ（WebView2 Runtime）を追記した。走査時間を画面と `app.log` に出すようにした。**1万ファイル超の実フォルダでの実測は、利用者が会社の PC で行う**（結果待ち。5万ファイルの合成測定は行わない）。目安：ツリーが数秒以内に出ること。遅ければ、索引のキャッシュを別 Issue にする
 
 ## [ ] Phase 18: Claude Code 対応 ① 共通化（Issue #11。挙動は変えない）
-- 5.1 の構成に直す：`ISessionSource` / `SessionDelta`、`CursorSessionSource`（旧 `ProjectEventStore` の読み込み部分＋ `CursorTranscriptImporter`）、汎用 `ProjectEventStore`、`SessionMonitor`（各 Source の `WatchPaths`）、`IAgent` → `IAgentInfo` / `IHookAgent`、共通ツール名 `CommonTools`、モデル名 `"default"` の無視を `CursorAgent.Normalize` へ、`MetaStore` / `SessionMetaService` をエージェントごとに切り替え、`HookInstaller` / `HookSetup` のクラスのコメントに「Cursor 専用」と明記（名前は変えない。別のエージェントが Hook を使うときに抽象化する）
-- 完了条件：**既存のテストが全部通る（移したクラスに合わせた修正のみ）**。Cursor の画面・Hook exe の挙動が変わらない。Core は AOT 互換（警告 0）。隔離環境で、Cursor のセッションが従来どおり表示される
-- 進め方：テストを先に直さず、既存のテストを正として、1 つずつ移す。`ProjectEventStore` は、ダミーの Source で新しいテストを書く
+- 5.1 の構成に直す：`ISessionSource` / `SessionDelta`、`CursorSessionSource`（旧 `ProjectEventStore` の読み込み部分＋ `CursorTranscriptImporter`）、汎用 `ProjectEventStore`、`SessionMonitor`（各 Source の `WatchPaths`）、`IAgent` → `IAgentInfo` / `IHookAgent`、共通ツール名 `CommonTools`、モデル名 `"default"` の無視を `CursorAgent.Normalize` へ、`MetaStore` / `SessionMetaService` をエージェントごとに切り替え、`HookInstaller` / `HookSetup` のクラスのコメントに「Cursor 専用」と明記（名前は変えない。別のエージェントが Hook を使うときに抽象化する）、読み込み元ごとの例外の隔離と、捕まえられなかった例外のログ（13 章。画面の挙動は変えない）
+- 完了条件：**既存のテストが全部通る（移したクラスに合わせた修正のみ。件数を減らさない）**。Cursor の画面・Hook exe の挙動が変わらない。Core は AOT 互換（警告 0）。`publish.ps1` が通る。**本物の Cursor のデータのコピー（利用者の了承を得てから）で、移す前と後の全セッションの要約が一致する**。同じコピーを使った隔離環境で、Cursor のセッションが従来どおり表示される
+- 進め方：最初に、旧コードのまま特性テスト（テストの無い経路）と要約のダンプを足す。テストを先に直さず、既存のテストを正として、1 つずつ移す。`ProjectEventStore` は、ダミーの Source で新しいテストを書く。詳細は実装計画 `issue11-claude-code-plan.md`（1 章の品質ゲート・8.1）
 
 ## [ ] Phase 19: Claude Code 対応 ② Core の正規化（Issue #11）
-- `ClaudeCodeAgent`（`IAgentInfo`）、`ClaudeTranscriptNormalizer`（5.1 の対応表。状態を持つ。サブエージェントのログにも使える形）、`AgentEvent.SubagentId`、`SessionAnalyzer` の調整（サブエージェントの履歴・失敗したテスト）、`StalledRule`、`settings.json` の `runningTimeoutMinutes`
+- `ClaudeCodeAgent`（`IAgentInfo`）、`ClaudeTranscriptNormalizer`（5.1 の対応表。状態を持つ。サブエージェントのログにも使える形）、`AgentEvent.SubagentId`、`SessionAnalyzer` の調整（サブエージェントの履歴・失敗したテスト）、`StalledRule`（表示用の状態）、`settings.json` の `runningTimeoutMinutes`（全体を読んで書く形に直す）、形式の変化のログ（11.1）、ブランチと時刻からの head（10.1）、作業ツリーのファイルを未コミットの判定から外す（10.1）
 - 完了条件：対応表の全行にテスト（テスト先行。フィクスチャは実ログの構造を真似て手書き）。Core は AOT 互換
 
 ## [ ] Phase 20: Claude Code 対応 ③ Core の読み込み（Issue #11）
-- `ClaudeSessionSource`（9.1：探索・`cwd` 照合・作業ツリー・追記読み・不完全な行・壊れた行）、`MIHARIKUN_CLAUDE_DIR`
+- `ClaudeSessionSource`（9.1：探索・`cwd` 照合・作業ツリー・候補 0 件のときの探索・追記読み・不完全な行・壊れた行・監視先の取り直し・`.claude` に書かない）、`MIHARIKUN_CLAUDE_DIR`
 - 完了条件：隔離フォルダのダミー会話ログで、探索・追記・作業ツリーがテストで通る。大きなファイル（数 MB）の初回読み込みを実測して記録する
 
 ## [ ] Phase 21: Claude Code 対応 ④ App の画面（Issue #11）
-- 12.8：Source の組み立て（`App.xaml.cs`）、バッジ、エージェント絞り込み、「停止」の表示、サブエージェントの表示
-- 完了条件：隔離環境で、Cursor と Claude が一覧に混ざって出る。絞り込みが効く。ライト/ダークの両方で表示を確認する
+- 12.8：Source の組み立て（`App.xaml.cs`）、バッジ、エージェント絞り込み、「停止」の表示（表示用の状態で、絞り込み・件数も）、サブエージェントの表示、Claude のコミット一覧、タイムラインへのジャンプ（種類も見る）
+- 12.9：設定画面（⚙ の「設定…」。停止とみなす時間）
+- 完了条件：隔離環境で、Cursor と Claude が一覧に混ざって出る。絞り込みが効く。設定画面で変えた時間がすぐ効き、テーマを切り替えても消えない。ライト/ダークの両方で表示を確認する
 
 ## [ ] Phase 22: Claude Code 対応 ⑤ 実機確認・仕上げ（Issue #11）
-- **このプロジェクトの本物の Claude Code セッションを表示**して、成果（コミット・テスト実行）の見え方を確認する。14.2 の未確認項目（圧縮ほか）を、実機に出たものから確認する。README・`docs/release.md` を更新する
+- **このプロジェクトの本物の Claude Code セッションを表示**して、成果（コミット・テスト実行）の見え方を確認する。14.2 の未確認項目（圧縮・再開・裏で動かした Agent・`ExitPlanMode` ほか）を、実機に出たものから確認する。README・`docs/release.md` を更新する
 - 完了条件：目視確認 OK。未確認項目が「確認済み」または「保留」に整理されている
 
 ## 16. テスト方針
@@ -731,4 +764,4 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 承認待ち状態の判定
 - メモタブ
 - ドキュメントタブ：本文検索、md の編集、ボード表示、索引のキャッシュ
-- Claude Code：セッションのタイトル（`custom-title` / `ai-title`）の取り込み、サブエージェントの詳細表示（`GetSubagentEvents`）、古いセッションの「直近 N 日」の設定（初回の読み込みが遅いとき）、設定画面（`runningTimeoutMinutes` など）
+- Claude Code：セッションのタイトル（`custom-title` / `ai-title`）の取り込み、サブエージェントの詳細表示（`GetSubagentEvents`）、古いセッションの「直近 N 日」の設定（初回の読み込みが遅いとき）
