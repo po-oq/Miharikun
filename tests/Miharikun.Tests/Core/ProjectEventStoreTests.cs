@@ -187,6 +187,7 @@ public sealed class ProjectEventStoreTests : IDisposable
 
         Assert.Equal(100, _store.Sessions.Count());
         Assert.Equal(4998, _store.GetSummary(Key("s0"))!.ToolCallCount);
-        Console.WriteLine($"scale: {sw.Elapsed}");   // 参考値\n        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(3), $"{sw.Elapsed}");
+        Console.WriteLine($"scale: {sw.Elapsed}");   // 参考値
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(3), $"{sw.Elapsed}");
     }
 }
