@@ -15,7 +15,7 @@ public sealed class ProjectEventStoreTests : IDisposable
     public ProjectEventStoreTests()
     {
         _paths = new AppPaths(_dir);
-        _store = new ProjectEventStore(new CursorAgent(), _paths, Root, log: _logs.Add);
+        _store = new ProjectEventStore([new CursorSessionSource(new CursorAgent(), _paths, Root, log: _logs.Add)], log: _logs.Add);
     }
 
     public void Dispose()

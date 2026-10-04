@@ -3,7 +3,10 @@ using Miharikun.Core.Install;
 
 namespace Miharikun;
 
-/// <summary>Cursor の hook の導入・削除をユーザーに確認しながら行う（要件 8章）。</summary>
+/// <summary>
+/// Cursor の hook の導入・削除をユーザーに確認しながら行う（要件 8章）。
+/// Cursor 専用（Claude Code は会話ログだけで読むので hook を使わない。別のエージェントが hook を使うようになったら、抽象化する）。
+/// </summary>
 public sealed class HookSetup(HookInstaller installer)
 {
     private const string Title = "Miharikun - Hook の導入";

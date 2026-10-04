@@ -24,6 +24,7 @@ public sealed record HookInstallResult(bool Success, string Message, string? Bac
 
 /// <summary>
 /// Cursor の hooks.json への導入・削除（要件 8章）。既存の設定は壊さずにマージし、自分のエントリだけを足す／外す。
+/// Cursor 専用（別のエージェントが hook を使うようになったら、抽象化する）。
 /// 変更するときは必ず hooks.json.bak-{日時} にバックアップしてから、アトミックに書き込む。
 /// </summary>
 public sealed class HookInstaller

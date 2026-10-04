@@ -266,7 +266,7 @@ public sealed class SessionMetaServiceTests : IDisposable
     }
 
     private SessionMetaService Create(List<string>? logs = null) =>
-        new(new MetaStore(new AppPaths(_dir), "cursor"), () => Fixed, logs is null ? null : logs.Add);
+        new(agentId => new MetaStore(new AppPaths(_dir), agentId), () => Fixed, logs is null ? null : logs.Add);
 
     [Fact]
     public void Update_saves_notifies_and_survives_a_restart()

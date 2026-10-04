@@ -18,7 +18,7 @@ public sealed record CompactionInfo(string? Trigger, int? ContextUsagePercent);
 
 /// <summary>
 /// 全エージェント共通のイベント。App は生 JSON を見ず、これだけを扱う。
-/// Imported は transcript から取り込んだ過去セッションのイベント（時刻はファイルの更新日時で、実際の発生時刻ではない）。
+/// Imported は「時刻が推定のもの」（Cursor の transcript から取り込んだ導入前のセッション。時刻はファイルの更新日時で、実際の発生時刻ではない）。
 /// Output / Duration / Reason / ModelParams / TranscriptPath は 5.1 の目安に追加した項目
 /// （成果のテスト実行詳細、継続時間、閉じた理由、モデル表示、transcript サイズに必要）。
 /// </summary>

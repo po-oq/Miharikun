@@ -123,6 +123,15 @@ public sealed class CursorNormalizeTests
     }
 
     [Fact]
+    public void Model_default_is_normalized_to_null()
+    {
+        // Cursor はツール系などのイベントで model に "default" を入れてくる（実機で確認）。モデル名ではないので共通イベントには載せない。
+        Assert.Null(One(Raw("postToolUse", "\"model\":\"default\",\"tool_name\":\"Read\"")).Model);
+        Assert.Null(One(Raw("stop", "\"model_id\":\"default\"")).Model);
+        Assert.Equal("auto", One(Raw("stop", "\"model\":\"auto\"")).Model);
+    }
+
+    [Fact]
     public void Transcript_path_is_kept()
     {
         Assert.Equal(@"C:\t\a.jsonl", One(Raw("stop", "\"transcript_path\":\"C:\\\\t\\\\a.jsonl\"")).TranscriptPath);

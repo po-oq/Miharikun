@@ -1,219 +1,112 @@
 using Miharikun.Core.Agents;
-using Miharikun.Core.Projects;
-using Miharikun.Core.Storage;
 
 namespace Miharikun.Core.Sessions;
 
 /// <summary>
-/// events\{agent}\*.jsonl を追記分だけ読み、対象プロジェクトに一致するセッションの共通イベントを保持する（要件 9章）。
+/// 各 ISessionSource が返す差分を適用し、プロジェクトのセッションの共通イベントと要約を保持する（要件 9章）。
+/// 何をどう読むかは Source の仕事で、ここは保持・要約のキャッシュ・変更通知だけを行う。差分の規則は計画 8.1。
 /// スレッドセーフではない。Refresh と読み出しは同じスレッド（または呼び出し側の排他）で行うこと。
 /// </summary>
 public sealed class ProjectEventStore
 {
-    private sealed class FileState(string sessionId)
+    private sealed class Entry(SessionKey key)
     {
-        public string SessionId { get; } = sessionId;
-        public JsonlTail Tail { get; } = new();
-        /// <summary>workspace_roots が対象プロジェクトに一致したか。false の間はイベントを保持しない。</summary>
-        public bool Matched { get; set; }
-        /// <summary>一致前に読んだ行を捨てたことがあるか。ある場合は一致した時点で先頭から読み直す。</summary>
-        public bool DroppedLines { get; set; }
+        public SessionKey Key { get; } = key;
         public List<AgentEvent> Events { get; } = [];
         public SessionSummary? Summary { get; set; }
     }
 
-    private readonly IAgent _agent;
-    private readonly AppPaths _paths;
+    private readonly IReadOnlyList<ISessionSource> _sources;
     private readonly AnalyzerSettings _settings;
     private readonly Action<string>? _log;
-    private readonly CursorTranscriptImporter? _importer;
-    private readonly Dictionary<string, FileState> _files = new(StringComparer.OrdinalIgnoreCase);
-    /// <summary>transcript から取り込んだ導入前のセッション（hook のイベントがあるものは持たない）。</summary>
-    private readonly Dictionary<string, (ImportedSession Session, SessionSummary Summary)> _imported = new(StringComparer.OrdinalIgnoreCase);
-    private bool _importScanned;
+    private readonly Dictionary<SessionKey, Entry> _sessions = [];
 
-    public string ProjectFolder { get; }
-
-    public ProjectEventStore(IAgent agent, AppPaths paths, string projectPath, AnalyzerSettings? settings = null, Action<string>? log = null,
-        CursorTranscriptImporter? importer = null)
+    public ProjectEventStore(IReadOnlyList<ISessionSource> sources, AnalyzerSettings? settings = null, Action<string>? log = null)
     {
-        _agent = agent;
-        _paths = paths;
-        ProjectFolder = projectPath;
+        _sources = sources;
         _settings = settings ?? new AnalyzerSettings();
         _log = log;
-        _importer = importer;
     }
 
-    public IEnumerable<SessionKey> Sessions =>
-        _files.Values.Where(f => f.Matched && f.Events.Count > 0).Select(f => new SessionKey(_agent.Id, f.SessionId))
-            .Concat(_imported.Values.Select(i => i.Session.Key));
+    /// <summary>いま監視してほしいフォルダ（全 Source 分）。</summary>
+    public IReadOnlyList<WatchTarget> WatchTargets => [.. _sources.SelectMany(s => s.WatchTargets)];
+
+    public IEnumerable<SessionKey> Sessions => _sessions.Values.Where(s => s.Events.Count > 0).Select(s => s.Key);
 
     public IReadOnlyList<AgentEvent> GetEvents(SessionKey key) =>
-        Find(key)?.Events ?? (FindImported(key) is { } imported ? imported.Session.Events : []);
+        _sessions.TryGetValue(key, out var state) ? state.Events : [];
 
-    public SessionSummary? GetSummary(SessionKey key)
-    {
-        var state = Find(key);
-        if (state is not null && state.Events.Count > 0)
-            return state.Summary ??= SessionAnalyzer.Analyze(key, state.Events, _settings);
-        return FindImported(key)?.Summary;
-    }
+    public SessionSummary? GetSummary(SessionKey key) =>
+        _sessions.TryGetValue(key, out var state) && state.Events.Count > 0
+            ? state.Summary ??= SessionAnalyzer.Analyze(key, state.Events, _settings)
+            : null;
 
     /// <summary>
-    /// 新しく追記された行を取り込み、内容が変わったセッションを返す。
-    /// 導入前の過去セッション（transcript）は最初の1回だけ読み込む。あとで hook のイベントが現れたセッションは、そちらに切り替える。
+    /// 各 Source の新しい差分を取り込み、内容が変わったセッションを返す（重複なし）。
+    /// Source が例外を投げても、その内容をログに残して、ほかの Source は続ける。
     /// </summary>
     public IReadOnlyCollection<SessionKey> Refresh()
     {
-        var changed = new List<SessionKey>(RefreshHookEvents());
-        ImportTranscripts(changed);
-        return changed;
-    }
-
-    private void ImportTranscripts(List<SessionKey> changed)
-    {
-        if (_importer is null)
-            return;
-
-        // hook のイベントがあるセッション（別プロジェクトのものも含む）は、transcript から取り込まない。
-        foreach (var id in _imported.Keys.ToList())
-        {
-            if (_files.Values.Any(f => f.SessionId.Equals(id, StringComparison.OrdinalIgnoreCase)))
-            {
-                var key = _imported[id].Session.Key;
-                _imported.Remove(id);
-                if (!changed.Contains(key))
-                    changed.Add(key);
-            }
-        }
-
-        if (_importScanned)
-            return;
-        _importScanned = true;
-
-        foreach (var session in _importer.Scan(ProjectFolder, id => File.Exists(_paths.EventFile(_agent.Id, id))))
-        {
-            if (_files.Values.Any(f => f.SessionId == session.Key.SessionId))
-                continue;
-            var summary = SessionAnalyzer.Analyze(session.Key, session.Events, _settings);
-            _imported[session.Key.SessionId] = (session, summary);
-            changed.Add(session.Key);
-        }
-    }
-
-    private List<SessionKey> RefreshHookEvents()
-    {
         var changed = new List<SessionKey>();
-        var dir = _paths.EventsDir(_agent.Id);
-        if (!Directory.Exists(dir))
-            return changed;
-
-        string[] paths;
-        try
+        foreach (var source in _sources)
         {
-            paths = Directory.GetFiles(dir, "*.jsonl");
-        }
-        catch (IOException ex)
-        {
-            _log?.Invoke($"events 一覧の取得に失敗: {ex.Message}");
-            return changed;
-        }
-
-        foreach (var path in paths)
-        {
-            var sessionId = Path.GetFileNameWithoutExtension(path);
-            if (sessionId == AppPaths.AppSessionId)
-                continue;
-
-            if (!_files.TryGetValue(path, out var state))
-                _files[path] = state = new FileState(sessionId);
-
+            IReadOnlyList<SessionDelta> deltas;
             try
             {
-                if (ReadFile(path, state))
-                    changed.Add(new SessionKey(_agent.Id, sessionId));
+                deltas = source.ReadNew();
             }
-            catch (IOException ex)
+            catch (Exception ex)
             {
-                _log?.Invoke($"{path} の読み込みに失敗: {ex.Message}");
+                _log?.Invoke($"{source.AgentId} の読み込みに失敗: {ex}");
+                continue;
+            }
+
+            foreach (var delta in deltas)
+            {
+                if (Apply(delta) && !changed.Contains(delta.Key))
+                    changed.Add(delta.Key);
             }
         }
         return changed;
     }
 
-    private bool ReadFile(string path, FileState state)
+    /// <summary>差分を適用する。何も変わらなければ false。</summary>
+    private bool Apply(SessionDelta delta)
     {
-        var lines = state.Tail.ReadNewLines(path, out var truncated);
-        var changed = false;
-        if (truncated)
-        {
-            // 作り直されたファイル。保持していた内容は捨てて、見えなくなったことも変更として伝える。
-            changed = state.Events.Count > 0;
-            state.Events.Clear();
-            state.Summary = null;
-            state.Matched = false;
-            state.DroppedLines = false;
-        }
-        if (lines.Count == 0)
-            return changed;
+        var kind = delta.Kind;
+        if (kind == SessionDeltaKind.Replace && delta.Events.Count == 0)
+            kind = SessionDeltaKind.Remove;
 
-        var (records, errors) = Parse(state, lines);
+        switch (kind)
+        {
+            case SessionDeltaKind.Append:
+                if (delta.Events.Count == 0)
+                    return false;
+                GetOrAdd(delta.Key).Events.AddRange(delta.Events);
+                break;
 
-        if (!state.Matched && records.Any(MatchesProject))
-        {
-            state.Matched = true;
-            if (state.DroppedLines)
-            {
-                // 一致するまでに捨てた行も必要なので、先頭から読み直す。
-                state.Tail.Reset();
-                (records, errors) = Parse(state, state.Tail.ReadNewLines(path, out _));
-            }
-            // 何も捨てていない（初回読み込み）なら、パース済みの行をそのまま使う。
-        }
-        if (!state.Matched)
-        {
-            // 他プロジェクトのセッションなので、壊れた行もログに出さない。
-            state.DroppedLines = true;
-            return changed;
+            case SessionDeltaKind.Replace:
+                var state = GetOrAdd(delta.Key);
+                state.Events.Clear();
+                state.Events.AddRange(delta.Events);
+                break;
+
+            default:   // Remove
+                if (!_sessions.TryGetValue(delta.Key, out var existing))
+                    return false;
+                var had = existing.Events.Count > 0;
+                _sessions.Remove(delta.Key);
+                return had;
         }
 
-        foreach (var (lineNumber, error) in errors)
-            _log?.Invoke($"{path}:{lineNumber} をスキップ: {error}");
-        if (records.Count == 0)
-            return changed;   // 壊れた行だけが追記された
-
-        foreach (var raw in records)
-            state.Events.AddRange(_agent.Normalize(raw));
-
-        state.Summary = null;
+        _sessions[delta.Key].Summary = null;
         return true;
     }
 
-    private (List<RawEventRecord> Records, List<(long LineNumber, string Error)> Errors) Parse(
-        FileState state, IReadOnlyList<(long LineNumber, string Text)> lines)
+    private Entry GetOrAdd(SessionKey key)
     {
-        var records = new List<RawEventRecord>(lines.Count);
-        var errors = new List<(long, string)>();
-        foreach (var (lineNumber, text) in lines)
-        {
-            var raw = RawEventReader.TryParse(_agent.Id, state.SessionId, lineNumber, text, out var error);
-            if (raw is null)
-                errors.Add((lineNumber, error ?? "不明なエラー"));
-            else
-                records.Add(raw);
-        }
-        return (records, errors);
+        if (!_sessions.TryGetValue(key, out var state))
+            _sessions[key] = state = new Entry(key);
+        return state;
     }
-
-    private bool MatchesProject(RawEventRecord raw) =>
-        ProjectPath.Matches(ProjectFolder, _agent.GetWorkspaceRoots(raw));
-
-    private (ImportedSession Session, SessionSummary Summary)? FindImported(SessionKey key) =>
-        key.AgentId == _agent.Id && _imported.TryGetValue(key.SessionId, out var imported) ? imported : null;
-
-    private FileState? Find(SessionKey key) =>
-        key.AgentId == _agent.Id
-            ? _files.Values.FirstOrDefault(f => f.SessionId == key.SessionId)
-            : null;
 }

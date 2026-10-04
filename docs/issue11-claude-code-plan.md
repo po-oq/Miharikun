@@ -162,8 +162,8 @@ tests/Miharikun.Tests/Core/
 | 照合前に捨てた行があり、今回初めて一致した（先頭から読み直す） | `Append`（先頭からの全イベント。Store は空なので結果は同じ） |
 | ファイルが作り直された（truncated）＋ 新しい行が一致した | `Replace`（新しいイベントだけ。1 回にまとめる） |
 | ファイルが作り直された ＋ まだ一致しない／行が無い | 前にイベントがあったときだけ `Remove`。無ければ何も出さない |
-| transcript から取り込み済み → 同じ ID の Hook ファイルが現れ、一致した | `Replace`（Hook のイベント）。**`Append` にしない**（取り込み分と混ざり、Imported の判定が壊れる） |
-| 取り込み済み → 同じ ID の Hook ファイルが現れたが、別のプロジェクト | `Remove` |
+| transcript から取り込み済み → 同じ ID の Hook ファイルが現れ、一致した | **取り込み分の `Remove` を先に出し**、Hook のファイルはふつうの差分（初めて一致した時点で先頭からの全部の `Append`）。`Remove` が要る理由：Source 内の辞書は大文字小文字を区別せず、Store のキー（`SessionKey`）は区別するので、ID が大文字小文字だけ違うと、Hook の差分だけでは取り込み分が別のキーとして残る（レビュー B1）。**今回読んだ分だけで `Replace` しない**（Store に前の分があると消える） |
+| 取り込み済み → 同じ ID の Hook ファイルが現れたが、別のプロジェクト | `Remove`（上と同じ、先に出す取り込み分の `Remove` だけ） |
 | 初回の transcript の取り込み（Hook のファイルが無いもの） | `Replace`（取り込んだイベント。`Imported = true`） |
 
 **Claude の Source**：新しいファイル・追記は `Append`、作り直されたら（Normalizer の状態も作り直して）`Replace`、ファイルが消えたら `Remove`。

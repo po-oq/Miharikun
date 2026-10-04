@@ -43,8 +43,7 @@ public static class SessionAnalyzer
 
         foreach (var e in events)
         {
-            // Cursor はツール系などのイベントで model に "default" を入れてくる（実機で確認）。実名を上書きしない。
-            if (e.Model is not null && e.Model != "default") model = e.Model;
+            if (e.Model is not null) model = e.Model;   // 実名のないイベント（Model が null）は上書きしない
             if (e.ModelParams is not null) modelParams = e.ModelParams;
             if (e.TranscriptPath is not null) transcript = e.TranscriptPath;
             if (e.Git is { } g)
@@ -147,7 +146,7 @@ public static class SessionAnalyzer
 
         var last = events[^1];
         var closed = last.Kind == AgentEventKind.SessionEnded;
-        var imported = events.All(e => e.Imported);   // transcript だけから作った過去セッション
+        var imported = events.All(e => e.Imported);   // 時刻が推定の過去セッション（transcript だけから作ったもの。Cursor の導入前のセッション）
         var startedAt = sessionStartAt ?? events[0].At;
 
         if (turns.Count > 0 && turns[^1].Status == TurnStatus.Running && (closed || imported))
@@ -178,7 +177,7 @@ public static class SessionAnalyzer
 
     private static bool IsTestRun(AgentEvent e, AnalyzerSettings settings)
     {
-        if (e.ToolName != "Shell" || string.IsNullOrEmpty(e.Command))
+        if (e.ToolName != CommonTools.Shell || string.IsNullOrEmpty(e.Command))
             return false;
 
         foreach (var pattern in settings.TestCommandPatterns)

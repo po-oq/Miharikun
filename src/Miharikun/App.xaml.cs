@@ -24,14 +24,19 @@ public partial class App : Application
 
         var paths = AppPaths.Default();
         AppLog.Init(paths);
+        LogUnhandledExceptions();
 
         var theme = new ThemeService(new AppSettingsStore(paths, AppLog.Write));
 
-        var agent = new CursorAgent();
-        var store = new ProjectEventStore(agent, paths, folder, log: AppLog.Write,
-            importer: new CursorTranscriptImporter(HookInstaller.ResolveCursorDir(), AppLog.Write));
-        _monitor = new SessionMonitor(store, paths.EventsDir(agent.Id));
-        var meta = new SessionMetaService(new MetaStore(paths, agent.Id, AppLog.Write), log: AppLog.Write);
+        // 読み込みの元（Source）のリスト。エージェントが増えたら、ここに足す。
+        List<ISessionSource> sources =
+        [
+            new CursorSessionSource(new CursorAgent(), paths, folder, log: AppLog.Write,
+                importer: new CursorTranscriptImporter(HookInstaller.ResolveCursorDir(), AppLog.Write)),
+        ];
+        var store = new ProjectEventStore(sources, log: AppLog.Write);
+        _monitor = new SessionMonitor(store);
+        var meta = new SessionMetaService(agentId => new MetaStore(paths, agentId, AppLog.Write), log: AppLog.Write);
         _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, new GitClient(folder));
 
         // 同梱の Hook exe は Miharikun.exe と同じフォルダ（単一ファイル発行でも実行ファイルの場所を使う）
@@ -46,6 +51,20 @@ public partial class App : Application
         window.Show();
         _monitor.Start();
         _viewModel.RefreshGit();
+    }
+
+    /// <summary>
+    /// 捕まえられなかった例外（UI スレッド・背景スレッド・Task）を app.log にスタックつきで残す。
+    /// ログだけで、握りつぶさない（これまでと同じく、UI スレッドと背景スレッドの例外はアプリを落とす）。
+    /// </summary>
+    private void LogUnhandledExceptions()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            AppLog.Write($"未処理の例外（背景スレッド。終了中={args.IsTerminating}）: {args.ExceptionObject}");
+        DispatcherUnhandledException += (_, args) =>
+            AppLog.Write($"未処理の例外（UI スレッド）: {args.Exception}");
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+            AppLog.Write($"未処理の例外（Task）: {args.Exception}");
     }
 
     private void OnExit(object sender, ExitEventArgs e)
