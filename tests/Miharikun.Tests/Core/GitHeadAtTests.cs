@@ -278,6 +278,33 @@ public sealed class GitHeadAtTests : IDisposable
     }
 
     [Fact]
+    public void A_session_started_before_the_first_commit_gets_every_commit_up_to_its_last_activity()
+    {
+        // 実ログで見つけた形：セッションの途中で、リポジトリの最初のコミットができた（開始より前のコミットが無い）
+        Git(null, "init", "-b", "main");
+        CommitAt(D3, "c.txt", "three");   // 10/3 10:00Z（セッション：開始 06:00Z・最後 14:00Z の間）
+        CommitAt(D3.AddHours(2), "d.txt", "three-b");
+        CommitAt(D4, "e.txt", "after the session");   // セッションのあと
+        var s = ClaudeSession(stepSeconds: 4 * 3600);
+
+        var git = new GitClient(_dir);
+        Assert.Null(git.GetHeadAt("main", s.StartedAt));   // 開始より前のコミットは無い
+        Assert.Equal(["three-b", "three"], SessionCommits.Load(s, git)!.Select(c => c.Subject));
+    }
+
+    [Fact]
+    public void Commits_up_to_a_head_are_all_of_them_newest_first_and_unknown_for_a_bad_head()
+    {
+        var (_, _, c3) = ThreeCommits();
+        var git = new GitClient(_dir);
+
+        Assert.Equal(["three", "two", "one"], git.GetCommitsUpTo(c3)!.Select(c => c.Subject));
+        Assert.Null(git.GetCommitsUpTo(null));
+        Assert.Null(git.GetCommitsUpTo("--all"));
+        Assert.Null(git.GetCommitsUpTo("deadbeef"));   // 存在しない
+    }
+
+    [Fact]
     public void Without_heads_and_without_a_branch_the_commits_are_unknown()
     {
         ThreeCommits();

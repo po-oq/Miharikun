@@ -189,7 +189,7 @@ Cursor は、ツール系などのイベントで `model` に `"default"` を入
 
 | Claude Code の記録 | AgentEventKind | 備考 |
 |---|---|---|
-| ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻は最初の `timestamp`。ブランチは `gitBranch`（hash は無し。コミットは App が git で、ブランチと時刻から求める。10.1） |
+| ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻は最初の `timestamp`。ブランチは `gitBranch`（hash は無し。コミットは App が git で、ブランチと時刻から求める。10.1）。**実ログ（2.1.286）の最初の記録は `queue-operation` で、`cwd` も `gitBranch` も無い**ので、ブランチは「最初に `gitBranch` を持つ行」の最初のイベントの Git に載せ、変わったときにも載せる（セッションの途中の切り替えを追える） |
 | `user` の人の入力：文字の行で、`isMeta` でない・`tool_result` でない・**`origin` が無いか `origin.kind=human`**・`[Request interrupted` で始まらない | PromptSubmitted | Text = `message.content`。古い版（2.1.156）は `origin` 欄が無い。`origin.kind=task-notification`（裏の作業の終わりの通知）は入力にしない。スラッシュコマンドや `<local-command…>` はそのまま文字で出す（実機で確認） |
 | `assistant` の `text` | AssistantMessage | Model = `message.model`。**`<synthetic>`（合成の返答）は null**（Cursor の `"default"` と同じ扱い） |
 | `assistant` の `thinking` | AssistantThought | |
@@ -627,13 +627,26 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - 裏で動かした Bash 1 件（`is_error=false`、内容「Command running in background…」、`toolUseResult.backgroundTaskId` あり）。Agent の結果は 84 件すべて `toolUseResult.status=completed`（裏で動かした Agent は 0 件）
   - `git commit` を含むコマンド 105 件のうち、出力に `[ブランチ sha]` の行があるのは 30 件だけ（`-q` など）→ コミットは出力から拾わず、ブランチと時刻から求める（10.1）
   - `ExitPlanMode` は 0 件
-- [ ] **会話の圧縮（コンパクト）の記録**：27 本のどれにも無かった。実機で出たら確認（Phase 22）
-- [ ] 裏で動かした Agent の結果（`status`）と、終わりの通知（`task-notification`）の形：実例なし（Phase 22）
-- [ ] `ExitPlanMode` の結果の形：実例なし（Phase 22）
-- [ ] セッションの再開（`relocated` 51 件の意味）：未確認
+- [ ] **会話の圧縮（コンパクト）の記録**：27 本のどれにも、Phase 22 の 9 本（2.1.286）にも無かった。**保留**（出たら確認。出ても読み飛ばして止まらない）
+- [ ] 裏で動かした Agent の結果（`status`）と、終わりの通知（`task-notification`）の形：Phase 22 の 9 本には `Agent` の呼び出し自体が 0 件。**保留**（手書きのテストで、`completed` 以外は動いているまま・通知で終わり・`is_error` も終わり、を確認済み）
+- [ ] `ExitPlanMode` の結果の形：Phase 22 の 9 本にも 0 件。**保留**（手書きのテストだけ。`AskUserQuestion` の結果は実物で確認：`toolUseResult` に `questions` と `answers`）
+- [ ] セッションの再開（`relocated` 51 件の意味）：Phase 22 の 9 本には 0 件。**保留**
 - [ ] 承認待ち：記録が見当たらなかった（もともと対象外）
-- [ ] `system` の `api_error` と再試行の関係（エラーの判定に使えるか）
-- [ ] スラッシュコマンド（`<command-name>`）・`<local-command…>` を依頼としてどう表示するか
+- [ ] `system` の `api_error` と再試行の関係（エラーの判定に使えるか）：Phase 22 の 9 本には `api_error` も `isApiErrorMessage` も 0 件。**保留**
+- [ ] スラッシュコマンド（`<command-name>`）・`<local-command…>` を依頼としてどう表示するか：Phase 22 の 9 本には 0 件。**保留**（`isMeta` の行は出さず、それ以外は文字のまま出す）
+
+- [x] **Phase 22-1 の実機確認（Claude Code 2.1.286。このプロジェクトの完了済みセッション 9 本・7,651 行・47.9MB。構造だけ数えた。進行中のセッションは除く）**：
+  - **フォルダ名の規則どおり**：本体の `C--zDev-repo-Miharikun`（10 本の会話ログ）。作業ツリーのフォルダは無かった。セッションごとのサブフォルダには `tool-results`・`.json`・`.md` があり、`subagents` は無い（読まない）
+  - **最初の記録は全 9 本とも `queue-operation` で、`cwd` も `gitBranch` も無い**。`cwd` は 2 行目以降に出る → 「最初の `cwd` が見つかるまで行を取っておく」作りが実際に必要だった。ブランチの取り方は 5.1 の表の行のとおりに直した（直す前は全セッションでブランチが取れず、コミット一覧が出なかった）
+  - 新しい種類の記録 `atis-latch`（441 件。`last-prompt`・`agent-name` と同じ数）：会話の内容ではないので読み飛ばす（既知の種類に加えた）。`file-history-delta` は `file-history-*` として読み飛ばす
+  - 人の入力：`origin.kind = human` が 156 件（人の入力の行だけに付く。ツールの結果には `origin` が無い）。`isMeta` が 13 件、割り込みが 5 件（`[Request interrupted…]` 4 件と `…for tool use` 1 件）。`array:image+text`（画像つきの入力）が 9 件 → 本文だけ読む。`origin` が無い・`tool_result` でもない・`isMeta` でもない文字の行は 0 件（古い版の形は、この 9 本には無い）
+  - **`end_turn`**：返答 151 件に、本文つきの `end_turn` の行がちょうど 1 つずつ。ほかに思考だけの `end_turn` の行が 38 件。人の入力 156 件 = `end_turn` 151 件 + 割り込み 5 件（5.1 の「本文の行で 1 回」の規則どおり）
+  - `AskUserQuestion` 3 件：結果は `is_error` でなく、`toolUseResult` に `questions` と `answers`（回答は依頼として数える）。裏で動かした Bash の結果（`backgroundTaskId`）が 1 件
+  - ツールの結果に終了コードの欄は無い（`Exit code N` で判定する方式のまま）。`Bash` 394・`PowerShell` 273・`Edit` 171・`Read` 130・`Write` 112 ほか、`mcp__…` のツール
+  - 表示（隔離環境・本物のコピー）：9 本とも「ボスの番」。人の入力 156 件 + 回答 3 件 = 依頼数 159 件と一致。イベント 3,916 件。テスト実行は最多のセッションで 44 回（成功 31 / 失敗 13）。コミット一覧は 0〜9 件、**開始より前にコミットが無いセッション（途中で最初のコミットができた）は「—」になっていた** → その場合は最後までの全部のコミットを出す（`GetCommitsUpTo`）ように直した
+  - **初回の読み込み：9 本・47.9MB で 189〜316ms、変化なしのポーリング 0.7ms**（「直近 N 日」の設定は要らない）。`app.log` に出たのは、初めて見る version（2.1.286）の 1 行だけ。読めない行は 0
+  - 手書きのダミーで確かめた形（実物と食い違いは無かった）：`message.content` の文字／配列、`tool_result`（文字／text の配列）、`is_error`、`stop_reason`、`message.id`、`toolUseResult`
+  - 出なかったもの（上の 14.2 の未確認項目を **保留**）：圧縮、`relocated`、`api_error`・`isApiErrorMessage`、`Agent` の呼び出し・`task-notification`、`ExitPlanMode`、スラッシュコマンド（`<command-name>`）
 
 ## 15. 実装フェーズ
 
@@ -749,6 +762,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## [ ] Phase 22: Claude Code 対応 ⑤ 実機確認・仕上げ（Issue #11）
 - **このプロジェクトの本物の Claude Code セッションを表示**して、成果（コミット・テスト実行）の見え方を確認する。14.2 の未確認項目（圧縮・再開・裏で動かした Agent・`ExitPlanMode` ほか）を、実機に出たものから確認する。README・`docs/release.md` を更新する
 - 完了条件：目視確認 OK。未確認項目が「確認済み」または「保留」に整理されている
+- 状況：**22-1 は実施済み**（14.2 の「Phase 22-1 の実機確認」に結果。会話ログは構造だけを数えた）。実物で見つけた 2 件を直した：①最初の記録（`queue-operation`）に `gitBranch` が無く、ブランチ・コミット一覧が出なかった ②開始より前にコミットが無いセッションのコミット一覧が「—」だった。未確認項目は、実物に出なかったので「保留」に整理した。**22-2（README・release.md・CLAUDE.md・要件定義の仕上げ）は未実施**
 
 ## 16. テスト方針
 

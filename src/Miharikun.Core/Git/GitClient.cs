@@ -76,11 +76,26 @@ public sealed partial class GitClient
             return [];
 
         var result = Run("log", "--format=%h%x09%s", $"--max-count={MaxCommits}", $"{fromHead}..{toHead}");
-        if (result is not { ExitCode: 0 } r)
+        return result is { ExitCode: 0 } r ? ParseCommits(r.Output) : null;
+    }
+
+    /// <summary>
+    /// toHead までの全部のコミット（新しい順。上限は同じ）。開始より前のコミットが無いとき
+    /// （セッションの途中で最初のコミットができたなど）に、そのセッションの間のコミットとして使う。toHead が不明・失敗のときは null。
+    /// </summary>
+    public IReadOnlyList<GitCommit>? GetCommitsUpTo(string? toHead)
+    {
+        if (toHead is null || !Sha().IsMatch(toHead))
             return null;
 
+        var result = Run("log", "--format=%h%x09%s", $"--max-count={MaxCommits}", toHead);
+        return result is { ExitCode: 0 } r ? ParseCommits(r.Output) : null;
+    }
+
+    private static List<GitCommit> ParseCommits(string output)
+    {
         var commits = new List<GitCommit>();
-        foreach (var line in r.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             var text = line.TrimEnd('\r');
             var tab = text.IndexOf('\t');

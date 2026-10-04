@@ -11,6 +11,8 @@ public sealed class ClaudeFormatLog(Action<string>? log)
     {
         "attachment", "queue-operation", "last-prompt", "agent-name", "mode", "permission-mode", "cost-state",
         "pr-link", "relocated", "worktree-state", "system", "custom-title", "ai-title",
+        // 実ログ（2.1.286）で見つけた、会話の内容ではない記録（last-prompt・agent-name と同じ数だけ並ぶ）
+        "atis-latch",
     };
 
     private readonly HashSet<string> _versions = new(StringComparer.Ordinal);

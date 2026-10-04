@@ -173,7 +173,7 @@ tests/Miharikun.Tests/Core/
 
 | 記録 | 変換 | 決めごと |
 |---|---|---|
-| ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻＝最初の `timestamp`。`Git = new GitSnapshot(gitBranch, null)` |
+| ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻＝最初の `timestamp`。`Git = new GitSnapshot(gitBranch, null)`。**最初の記録に `gitBranch` が無いとき（実ログ 2.1.286 の `queue-operation`）は、最初に `gitBranch` を持つ行の最初のイベントの Git に載せる。以後は変わったときだけ**（Phase 22-1 で追加） |
 | **人の入力**：`type=user` の文字の行で、`isMeta` でない・`tool_result` でない・`origin` が無いか `origin.kind == "human"`・`[Request interrupted` で始まらない | PromptSubmitted | 古い版（2.1.156）は `origin` 欄そのものが無い（16 件）。`origin.kind = "task-notification"`（27 件）は入力にしない（B11）。スラッシュコマンドや `<local-command…>` はそのまま文字で |
 | `[Request interrupted…]`（`origin` 無し） | TurnEnded（Aborted） | |
 | `assistant` の `text` | AssistantMessage | `Model = message.model`。**`<synthetic>` は null**（5 件。B5） |

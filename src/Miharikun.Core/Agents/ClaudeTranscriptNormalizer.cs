@@ -40,6 +40,8 @@ public sealed class ClaudeTranscriptNormalizer
     private readonly HashSet<string> _loggedErrors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _suppressedErrors = new(StringComparer.Ordinal);
     private bool _started;
+    /// <summary>最後に Git として伝えたブランチ。変わったときだけ、その行の最初のイベントに載せる。</summary>
+    private string? _lastBranch;
 
     /// <param name="sessionId">セッション ID（SessionKey の元）。</param>
     /// <param name="fileName">ログに書くファイル名（行の中身ではなく、場所の手がかり）。</param>
@@ -74,6 +76,7 @@ public sealed class ClaudeTranscriptNormalizer
             var events = new List<AgentEvent>();
             Convert(root, type, lineNumber, events);
             _started |= events.Count > 0 && events[0].Kind == AgentEventKind.SessionStarted;
+            AttachBranch(root, events);
             return events;
         }
         catch (JsonException)
@@ -141,6 +144,20 @@ public sealed class ClaudeTranscriptNormalizer
             ConvertUser(root, at.Value, seq, events);
         else
             ConvertAssistant(root, at.Value, seq, events);
+    }
+
+    /// <summary>
+    /// ブランチ（<c>gitBranch</c>）が、最後に伝えたものと違うとき、その行の最初のイベントに載せる。
+    /// 最初の記録（実ログでは queue-operation）には <c>gitBranch</c> が無いことがあり、SessionStarted だけでは取れないため。
+    /// ブランチを切り替えたセッションは、変わった行で伝わる。イベントの出ない行（読み飛ばす記録）は、次の行に回す。
+    /// </summary>
+    private void AttachBranch(JsonObject root, List<AgentEvent> events)
+    {
+        if (events.Count == 0 || Str(root, "gitBranch") is not { Length: > 0 } branch || branch == _lastBranch)
+            return;
+        _lastBranch = branch;
+        if (events[0].Git?.Branch is null)
+            events[0] = events[0] with { Git = new GitSnapshot(branch, events[0].Git?.Head) };
     }
 
     private void AddStarted(JsonObject root, DateTimeOffset? at, long seq, List<AgentEvent> events)

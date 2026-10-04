@@ -13,6 +13,9 @@ public static class SessionCommits
     public static IReadOnlyList<GitCommit>? Load(SessionSummary s, GitClient git)
     {
         var (from, to) = Range(s, git);
+        // head を持たないセッションで、開始より前のコミットが無いとき（途中で最初のコミットができた）は、最後までの全部がこのセッションの間のもの。
+        if (from is null && to is not null && s.StartHead is null && s.LatestHead is null)
+            return git.GetCommitsUpTo(to);
         return git.GetCommits(from, to);
     }
 

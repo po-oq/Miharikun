@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Miharikun.Core.Agents;
+using Miharikun.Core.Sessions;
 using static Miharikun.Tests.Core.ClaudeLogBuilder;
 
 namespace Miharikun.Tests.Core;
@@ -74,6 +75,45 @@ public sealed class ClaudeNormalizerTests
 
         Assert.Equal(AgentEventKind.SessionStarted, events[0].Kind);
         Assert.Equal(2, events[0].Seq);
+    }
+
+    // ---- ブランチ：最初の記録に gitBranch が無いとき（実ログ 2.1.286 の最初の記録は queue-operation で、cwd も gitBranch も無い） ----
+
+    private const string QueueOperationWithoutBranch =
+        """{"type":"queue-operation","operation":"enqueue","timestamp":"2026-10-03T02:00:00.000Z","sessionId":"sess-1"}""";
+
+    [Fact]
+    public void The_branch_comes_from_the_first_line_that_has_one_when_the_first_record_has_none()
+    {
+        var events = Run(QueueOperationWithoutBranch, _b.User("はじめ"));
+
+        Assert.Equal(AgentEventKind.SessionStarted, events[0].Kind);
+        Assert.Null(events[0].Git?.Branch);                     // 最初の記録には無い
+        var prompt = events.Single(e => e.Kind == AgentEventKind.PromptSubmitted);
+        Assert.Equal("main", prompt.Git?.Branch);               // 最初に branch のある行のイベントに載せる
+
+        var summary = SessionAnalyzer.Analyze(new SessionKey("claude", "sess-1"), events);
+        Assert.Equal(("main", "main"), (summary.Branch, summary.StartBranch));
+    }
+
+    [Fact]
+    public void The_branch_is_sent_again_only_when_it_changes()
+    {
+        var other = new ClaudeLogBuilder("sess-1", @"C:\work\proj", "feature/x");
+        var events = Run(_b.User("a"), _b.User("b"), other.User("c"), other.User("d"));
+
+        var withGit = events.Where(e => e.Git is not null).ToList();
+        Assert.Equal(["main", "feature/x"], withGit.Select(e => e.Git!.Branch));   // 変わった行に 1 回ずつ
+        var summary = SessionAnalyzer.Analyze(new SessionKey("claude", "sess-1"), events);
+        Assert.Equal(("feature/x", "main"), (summary.Branch, summary.StartBranch));
+    }
+
+    [Fact]
+    public void Lines_that_produce_no_events_do_not_use_up_the_branch()
+    {
+        var events = Run(QueueOperationWithoutBranch, _b.Other("attachment"), _b.User("あとで"));
+
+        Assert.Equal("main", events.Single(e => e.Kind == AgentEventKind.PromptSubmitted).Git?.Branch);
     }
 
     // ---- 人の入力 ----
@@ -362,6 +402,9 @@ public sealed class ClaudeNormalizerTests
     [InlineData("relocated")]
     [InlineData("worktree-state")]
     [InlineData("system")]
+    [InlineData("custom-title")]
+    [InlineData("ai-title")]
+    [InlineData("atis-latch")]   // 実ログ（2.1.286）で見つけた
     public void Noise_records_are_skipped_without_logging(string type)
     {
         var events = Without(Run(_b.Other(type)), AgentEventKind.SessionStarted);
