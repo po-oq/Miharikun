@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>【機能名】 実装計画（図解）</title>
+<style>
+body{font-family:"Yu Gothic UI","Hiragino Sans","Noto Sans JP",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.6;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:30px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:10px 0} .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px} .rec{color:#c05000;font-weight:bold}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%;height:auto}
+</style></head><body>
+<!-- 内容は 【名前】-plan.md と同じにする（連動ルール）。節番号も同じ。不要な図・節は消してよい -->
+<h1>【機能名】 実装計画（図解）（Issue #【N】）</h1>
+<div class="sync"><b>連動ルール</b>：この HTML と <code>【名前】-plan.md</code> は対。<b>どちらかを直したら、もう一方も同じ内容に直す。</b><br>仕様の正は <code>【仕様の文書】</code>（【章・フェーズ】）。設計の資料は <code>【設計の資料】</code>。この計画は、実装の分け方・コミット・ファイル構成と、<b>実装で迷いやすい所の決めごと（7 章）</b>。<br>進め方：ロジック（テスト先行）→ 共通化 → 利用側 → 仕上げ。各フェーズの終わりに【確認環境】で確かめ、【仕様の進捗の欄】を更新して報告する。コミットは頼まれたときだけ（ここは区切りの目安）。途中のコミットは <code>Refs #【N】</code>、最後だけ <code>Fixes #【N】</code>。</div>
+
+<h2>1. 全体像</h2>
+<!-- フェーズの箱：幅 210・間 30。色は意味で（references/svg-parts.md の配色：ロジック=既存・処理、共通化=中核・共有部品、利用側=利用側、仕上げ=環境・補助） -->
+<svg viewBox="0 0 960 150" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="210" height="100" fill="#dff" stroke="#08a"/><text x="20" y="42" font-weight="bold">【1】 ロジック</text><text x="20" y="62" font-size="12">【主な部品】</text><text x="20" y="78" font-size="12">（テスト先行）</text><text x="20" y="102" font-size="12" fill="#555">【n】 コミット</text>
+<rect x="250" y="20" width="210" height="100" fill="#fef" stroke="#a3a"/><text x="260" y="42" font-weight="bold">【2】 共通化</text><text x="260" y="62" font-size="12">挙動は変えない</text><text x="260" y="78" font-size="12">【既存の機能】が正</text><text x="260" y="102" font-size="12" fill="#555">【n】 コミット</text>
+<rect x="490" y="20" width="210" height="100" fill="#efe" stroke="#383"/><text x="500" y="42" font-weight="bold">【3】 利用側</text><text x="500" y="62" font-size="12">【主な動作】</text><text x="500" y="78" font-size="12">【主な動作】</text><text x="500" y="102" font-size="12" fill="#555">【n】 コミット</text>
+<rect x="730" y="20" width="220" height="100" fill="#eee" stroke="#888"/><text x="740" y="42" font-weight="bold">【4】 仕上げ</text><text x="740" y="62" font-size="12">README・リリース手順</text><text x="740" y="78" font-size="12">仕様の進捗の更新</text><text x="740" y="102" font-size="12" fill="#555">1 コミット（Fixes #【N】）</text>
+<line x1="220" y1="70" x2="250" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="460" y1="70" x2="490" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="700" y1="70" x2="730" y2="70" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ul><li>新しい依存パッケージ：【無い／あるなら名前と理由】。</li><li>【守る制約（例：対応する実行環境・触らない部品）】</li><li><b>フェーズ 【2】 は挙動を変えない共通化</b>。【既存の機能】が変わらないことが完了条件（下の品質ゲート）。</li><li>いまのテスト：【件数】。<b>件数は減らさない</b>。</li></ul>
+<h3>品質ゲート（フェーズ 【2】 の完了条件）</h3>
+<ol><li>テストが全部通る（件数を減らさない）。</li><li>【ビルド・静的解析の条件】</li><li>【既存の機能で確かめる項目の一覧（以前に確かめた項目を全部）】</li><li>確かめ方：【手動・自動テスト・ブラウザの開発ツールなど。本番のデータは使わない】</li></ol>
+
+<h2>2. フェーズ 【1】：ロジック（テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>【1】-1</td><td><code>【クラス・関数】</code></td><td>【API（引数・戻り値）・無いとき・失敗のとき】</td><td>【境界・無いとき・失敗・既存を壊さない、を行ごとに】</td></tr>
+<tr><td>【1】-2</td><td><code>【状態の部品】</code></td><td>画面・外部に依存しない状態の部品（7.1）</td><td>7.1 の表の行ごと</td></tr></table>
+<p>完了条件：テストが通る。【ビルドの条件】。</p>
+
+<h2>3. フェーズ 【2】：【共通化の名前】（挙動は変えない）</h2>
+<!-- 前／後の図：前は問題の 1 か所に集まった形（問題の箇所の色）、後は共有部品（中核）＋interface（新規）＋利用側 -->
+<svg viewBox="0 0 960 270" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="20" font-weight="bold">前</text>
+<rect x="10" y="30" width="300" height="56" fill="#fde" stroke="#b33"/><text x="20" y="52" font-weight="bold">【いまの部品】</text><text x="20" y="72" font-size="12">【いま持っている役割】</text>
+<rect x="380" y="30" width="300" height="56" fill="#dff" stroke="#08a"/><text x="390" y="52" font-weight="bold">【いまの利用側】 専用</text><text x="390" y="72" font-size="12">【依存しているもの】</text>
+<line x1="310" y1="58" x2="380" y2="58" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="120" font-weight="bold">後</text>
+<rect x="10" y="130" width="300" height="70" fill="#fef" stroke="#a3a"/><text x="20" y="152" font-weight="bold">【共有の部品】</text><text x="20" y="172" font-size="12">中身はいまの【部品】と同じ</text><text x="20" y="190" font-size="12">【受け取るもの】</text>
+<rect x="10" y="215" width="300" height="45" fill="#eee" stroke="#888"/><text x="20" y="235" font-weight="bold" font-size="12">【共用する資源】</text><text x="20" y="252" font-size="12">1 つだけ作って共用</text>
+<line x1="160" y1="200" x2="160" y2="215" stroke="#333" marker-end="url(#a)"/>
+<rect x="380" y="140" width="210" height="50" fill="#dfd" stroke="#383"/><text x="390" y="160" font-weight="bold">【interface】</text><text x="390" y="178" font-size="12">【主なメンバー】</text>
+<line x1="310" y1="165" x2="380" y2="165" stroke="#333" marker-end="url(#a)"/>
+<rect x="660" y="120" width="290" height="55" fill="#dff" stroke="#08a"/><text x="670" y="142" font-weight="bold">【既存の利用側】</text><text x="670" y="162" font-size="12">（処理は変えない）</text>
+<rect x="660" y="195" width="290" height="55" fill="#efe" stroke="#383"/><text x="670" y="217" font-weight="bold">【新しい利用側】（フェーズ 【3】）</text><text x="670" y="237" font-size="12">【何を渡すか】</text>
+<line x1="660" y1="147" x2="590" y2="160" stroke="#333" marker-end="url(#a)"/><line x1="660" y1="222" x2="590" y2="178" stroke="#333" marker-end="url(#a)"/><text x="600" y="200" font-size="11" fill="#555">実装</text>
+</svg>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認</th></tr>
+<tr><td>【2】-1</td><td>【共通の部品に切り出す】</td><td>【改名・一般化・interface・既存側の差し替え】</td><td>品質ゲート 1〜4</td></tr></table>
+<p><b>注意</b>：【イベント・呼び出しの箇所と順番など、変えてはいけないこと】</p>
+
+<h2>4. フェーズ 【3】：【利用側（画面・API・CLI など）】</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認（【確認環境】）</th></tr>
+<tr><td>【3】-1</td><td>【基本の動作】</td><td>【入口・組み立て・いつ読み込むか】</td><td>【操作 → 期待する結果、を並べる】</td></tr>
+<tr><td>【3】-2</td><td>【例外的な経路】</td><td>【終了時・リンク・外の変更など】</td><td>【失敗のさせ方も書く（例：読み取り専用にして試す）】</td></tr></table>
+<p>完了条件：【仕様の章】の各動作を確かめる。【表示条件（テーマ・画面サイズ・OS など）があれば全部】。品質ゲート 3 をもう一度。</p>
+
+<h2>5. フェーズ 【4】：仕上げ</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr>
+<tr><td>【4】-1</td><td>仕上げ</td><td>【README・リリース手順・仕様の進捗の更新】。<code>Fixes #【N】</code></td></tr></table>
+
+<h2>6. ファイル構成（追加・変更）</h2>
+<pre>【ロジックのフォルダ】/
+├─ 【ファイル】            【1】-1 新規：【何を】
+└─ 【ファイル】            【1】-2 変更：【何を】
+
+【利用側のフォルダ】/
+└─ 【ファイル】            【3】-1 変更：【何を】
+
+【テストのフォルダ】/
+└─ 【テストファイル】      【1】-1 新規</pre>
+
+<h2>7. 実装の決めごと（迷いやすい所）</h2>
+<h3>7.1 【状態の部品】</h3>
+<!-- 状態遷移：左右に状態の箱、上の矢印＝入る、緑＝成功で戻る、赤＝取り消しで戻る、下の弧＝失敗で留まる -->
+<svg viewBox="0 0 960 190" width="960" font-size="13" font-family="sans-serif">
+<rect x="20" y="40" width="260" height="110" fill="#dff" stroke="#08a"/><text x="32" y="64" font-weight="bold">【状態 1】</text><text x="32" y="86" font-size="12">【この状態での表示・振る舞い】</text><text x="32" y="104" font-size="12">【外の変化への反応】</text>
+<rect x="660" y="40" width="280" height="110" fill="#e8f1fd" stroke="#0b63c5"/><text x="672" y="64" font-weight="bold">【状態 2】</text><text x="672" y="86" font-size="12">【持っている値】</text><text x="672" y="104" font-size="12">【判定の式】</text><text x="672" y="122" font-size="12">【外の変化への反応】</text>
+<line x1="280" y1="62" x2="660" y2="62" stroke="#333" marker-end="url(#a)"/><text x="320" y="56" font-size="12">【入る操作】</text>
+<line x1="660" y1="100" x2="280" y2="100" stroke="#383" stroke-width="2" marker-end="url(#a)"/><text x="320" y="94" font-size="12" fill="#383">【成功で戻る】</text>
+<line x1="660" y1="138" x2="280" y2="138" stroke="#b33" marker-end="url(#a)"/><text x="320" y="132" font-size="12" fill="#b33">【取り消しで戻る】</text>
+<path d="M800,150 C800,180 870,180 870,150" fill="none" stroke="#888" marker-end="url(#a)"/><text x="660" y="178" font-size="12" fill="#555">【失敗：何も変えない（留まる）】</text>
+</svg>
+<table><tr><th>操作</th><th>結果</th></tr>
+<tr><td>初期</td><td>【】</td></tr>
+<tr><td>【操作】</td><td>【結果。テストの 1 行になる粒度で】</td></tr></table>
+
+<h3>7.2 【分かれ道のある処理】</h3>
+<!-- フロー：入口 → 判定 → 当たらない（横へ）／当たる（下へ）→ 3 つの場合に分かれる -->
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="200" height="50" fill="#efe" stroke="#383"/><text x="20" y="42" font-weight="bold">【きっかけ】</text><text x="20" y="60" font-size="12">【利用者の操作】</text>
+<rect x="250" y="20" width="270" height="50" fill="#dff" stroke="#08a"/><text x="260" y="40" font-weight="bold" font-size="12">【判定する関数】</text><text x="260" y="58" font-size="12">【条件】</text>
+<line x1="210" y1="45" x2="250" y2="45" stroke="#333" marker-end="url(#a)"/>
+<rect x="580" y="20" width="370" height="50" fill="#eee" stroke="#888"/><text x="590" y="40" font-size="12" font-weight="bold">当たらない</text><text x="590" y="58" font-size="12">【今までどおりの処理】</text>
+<line x1="520" y1="45" x2="580" y2="45" stroke="#333" marker-end="url(#a)"/>
+<line x1="385" y1="70" x2="385" y2="100" stroke="#333" marker-end="url(#a)"/><text x="392" y="90" font-size="12">当たる</text>
+<rect x="250" y="100" width="270" height="50" fill="#dff" stroke="#08a"/><text x="260" y="120" font-weight="bold" font-size="12">【次に呼ぶもの】</text><text x="260" y="138" font-size="12">【あわせてすること】</text>
+<rect x="10" y="185" width="290" height="55" fill="#efe" stroke="#383"/><text x="20" y="205" font-weight="bold" font-size="12">【準備できている】</text><text x="20" y="223" font-size="12">【すぐ処理】</text>
+<rect x="330" y="185" width="300" height="55" fill="#e8f1fd" stroke="#0b63c5"/><text x="340" y="205" font-weight="bold" font-size="12">【まだ準備中】</text><text x="340" y="223" font-size="12">【予定として覚え、準備の後に】</text>
+<rect x="660" y="185" width="290" height="55" fill="#fde" stroke="#b33"/><text x="670" y="205" font-weight="bold" font-size="12">【準備の後も無い】</text><text x="670" y="223" font-size="12">【代わりの処理・ログ】</text>
+<line x1="330" y1="150" x2="155" y2="185" stroke="#333" marker-end="url(#a)"/><line x1="385" y1="150" x2="480" y2="185" stroke="#333" marker-end="url(#a)"/><line x1="630" y1="212" x2="660" y2="212" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ol><li>【手順ごとに、実在する関数名・条件・戻り先】</li></ol>
+
+<h3>7.3 【そのほかの決めごと】</h3>
+<ul><li>【具体的な値・API・文言・キー操作など】</li></ul>
+
+<h2>8. リスクと対策</h2>
+<table><tr><th>リスク</th><th>対策</th></tr>
+<tr><td>【共通化で既存の挙動が変わる】</td><td>【単独のフェーズ・品質ゲート・変えないことの明記】</td></tr>
+<tr><td>【入力・データを失う】</td><td>【失敗の経路での振る舞い】</td></tr></table>
+
+<h2>9. 決定事項（確認済み。設計の質問 Q1〜Q【n】）</h2>
+<ol><li>【Q1 の回答】</li></ol>
+<p>計画で決めたこと（仕様にない細部）：【仕様に無いが計画で決めた細部を並べる。利用者が後で違うと言えるように】</p>
+
+<h2>10. 実装するセッションへの注意（必ず読む）</h2>
+<h3>10.1 始める前に</h3>
+<ul><li><b>この計画・設計の資料・仕様の変更が見えることを確かめる</b>。コミットされていないことがある。別の作業ツリー（worktree）や別の環境で始まったセッションには、未追跡のファイルが無い。見つからなければ、推測で進めずに利用者に聞く。</li><li>計画と仕様に食い違いが無いか確かめる。あれば仕様が正。判断がつかなければ聞く。</li><li>【プロジェクトの決まり（CLAUDE.md・AGENTS.md・引き継ぎメモなど）のうち、特に守ること】</li></ul>
+<h3>10.2 各フェーズの終わり</h3>
+<ul><li>【確認環境】で確かめ、【仕様の進捗の欄】を更新する。</li><li>報告には、変えたこと、テスト結果（件数）、できなかった確認を書く（プロジェクトに報告の決まりがあれば従う）。<b>次のフェーズに進む前に止まって報告する</b>。</li><li>フェーズ 【2】 の後は、利用者が望めばレビューを挟む（差分と品質ゲートの結果を渡す）。</li></ul>
+<p><b>状態：レビュー待ち</b>（別セッションに、この計画のレビューを頼む）。</p>
+</body></html>
