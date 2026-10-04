@@ -199,7 +199,7 @@ Cursor は、ツール系などのイベントで `model` に `"default"` を入
 | `tool_result`（その他の `is_error`：拒否・中断など） | ToolFailed | |
 | 編集の成功（`Edit`・`Write`・`MultiEdit`・`NotebookEdit`） | FileEdited | FilePath = `input.file_path`（`NotebookEdit` は `notebook_path`）。`is_error` のときは出さない |
 | `Agent` の `tool_use` | SubagentStarted | ToolUseId = `id`。Text = 説明（`description`）、ToolName = 種類（`subagent_type`） |
-| `Agent` の結果（**`toolUseResult.status = completed`** のとき） | SubagentStopped | SubagentId = `agentId`。ToolUseId で Started と対応。`completed` 以外（裏で動かした）は動いているまま、`task-notification` の `<tool-use-id>` が一致したら SubagentStopped |
+| `Agent` の結果（**`toolUseResult.status = completed`** のとき） | SubagentStopped | SubagentId = `agentId`。ToolUseId で Started と対応。`completed` 以外（裏で動かした）は動いているまま、`task-notification` の `<tool-use-id>` が一致したら SubagentStopped。**結果が `is_error`（拒否・中断・失敗）のときも終わり**（動いていないのに「動いている」が残らないように。実ログでの確認は Phase 22） |
 | `assistant` の `stop_reason = end_turn` | TurnEnded（Completed） | **本文（`text`）を含む行で 1 回だけ**（思考の行と本文の行の両方に付くことがある。同じ `message.id` では 1 回）。`stop_hook_summary` / `turn_duration` は使わない（重複） |
 | `[Request interrupted…]` | TurnEnded（Aborted） | `origin` は無い |
 | `isApiErrorMessage` の返答 | TurnEnded（Error） | `system` の `api_error` は再試行されることがあるので、最初は使わない（実機で確認） |
@@ -728,9 +728,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 進め方：最初に、旧コードのまま特性テスト（テストの無い経路）と要約のダンプを足す。テストを先に直さず、既存のテストを正として、1 つずつ移す。`ProjectEventStore` は、ダミーの Source で新しいテストを書く。詳細は実装計画 `issue11-claude-code-plan.md`（1 章の品質ゲート・8.1）
 - 状況：実装済み（18-0〜18-5。コミットは利用者の指示を待つ）。`Sessions/CursorSessionSource.cs`・`ISessionSource.cs`、汎用 `ProjectEventStore`、`SessionMonitor`（`WatchTargets` を毎回取り直す）、`Agents/AgentCatalog.cs`・`CommonTools.cs`、`IHookAgent`、`SessionMetaService`（`Func<string, MetaStore>`）、`App.xaml.cs` の Source のリスト、未処理の例外のログ。品質ゲート 6 点を確認済み：テスト 514 件合格（スキップ 2。レビュー（`issue11-phase18-review.html`）への対応後の件数。着手前は 482 件 + スキップ 1。既存テストの変更は構築行のみで、`Assert` の差分なし）／Core の `--no-incremental` ビルドは警告 0／`scripts/publish.ps1`（Hook の NativeAOT を含む）が通り警告 0／本物の Cursor のデータのコピーで、移す前と後（18-2・18-4・18-5 の各時点）の全セッション（5 件）の要約と検索文字列のダンプが完全に一致／同じコピーの隔離環境で、一覧 5 件（導入前を含む）・詳細・タイムライン・メモ欄・ステータスが表示された（UI Automation での確認。目視のスクリーンショットは未撮影）。**Opus によるレビューを挟んでから Phase 19 に進む**（計画 12.3）
 
-## [ ] Phase 19: Claude Code 対応 ② Core の正規化（Issue #11）
+## [x] Phase 19: Claude Code 対応 ② Core の正規化（Issue #11）
 - `ClaudeCodeAgent`（`IAgentInfo`）、`ClaudeTranscriptNormalizer`（5.1 の対応表。状態を持つ。サブエージェントのログにも使える形）、`AgentEvent.SubagentId`、`SessionAnalyzer` の調整（サブエージェントの履歴・失敗したテスト）、`StalledRule`（表示用の状態）、`settings.json` の `runningTimeoutMinutes`（全体を読んで書く形に直す）、形式の変化のログ（11.1）、ブランチと時刻からの head（10.1）、作業ツリーのファイルを未コミットの判定から外す（10.1）
 - 完了条件：対応表の全行にテスト（テスト先行。フィクスチャは実ログの構造を真似て手書き）。Core は AOT 互換
+- 状況：実装済み（19-1〜19-5）。`Agents/ClaudeCodeAgent.cs`・`ClaudeTranscriptNormalizer.cs`・`ClaudeFormatLog.cs`、`AgentEvent.SubagentId`、`Sessions/StalledRule.cs`、`SessionSummary.Subagents`（履歴）、`Settings/AppSettings.cs`（`runningTimeoutMinutes`・全体を読んで書く）、`GitClient.GetHeadAt`、`Uncommitted.IsInWorktree` / `CommitCheck`（作業ツリー）。テスト 670 件合格（スキップ 2。Phase 18 の終わりは 514 件）。Core の `--no-incremental` ビルドは警告 0。フィクスチャは `ClaudeLogBuilder` で手書き（実ログのコピーなし）。**会話ログの実物との突き合わせは未実施**（JSON の形は要件の対応表と既知の形からの手書き。Phase 22-1 で確認）。実装で足した判断：Agent の結果が `is_error` のときもサブエージェントを終わりにする（5.1）／設定ファイルが一時的に読めないときは保存を取りやめる（他のキーを消さない）／Cursor の `subagent_id` を `SubagentId` に載せる（実データで未確認。無ければ古い順に照合）
 
 ## [ ] Phase 20: Claude Code 対応 ③ Core の読み込み（Issue #11）
 - `ClaudeSessionSource`（9.1：探索・`cwd` 照合・作業ツリー・候補 0 件のときの探索・追記読み・不完全な行・壊れた行・監視先の取り直し・`.claude` に書かない）、`MIHARIKUN_CLAUDE_DIR`

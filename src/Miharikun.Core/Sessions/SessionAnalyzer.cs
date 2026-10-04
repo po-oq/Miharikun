@@ -32,7 +32,8 @@ public static class SessionAnalyzer
         var testRuns = new List<TestRun>();
 
         string? autoTitle = null;
-        int prompts = 0, stops = 0, tools = 0, subStart = 0, subStop = 0, compactions = 0;
+        int prompts = 0, stops = 0, tools = 0, compactions = 0;
+        var subagents = new List<SubagentInfo>();
         string? model = null, modelParams = null, branch = null, startBranch = null, startHead = null, latestHead = null;
         string? transcript = null, closedReason = null;
         CompactionInfo? lastCompaction = null;
@@ -125,11 +126,11 @@ public static class SessionAnalyzer
                     break;
 
                 case AgentEventKind.SubagentStarted:
-                    subStart++;
+                    subagents.Add(new SubagentInfo(e.SubagentId, e.ToolUseId, e.Text, e.ToolName, e.At, null, null));
                     break;
 
                 case AgentEventKind.SubagentStopped:
-                    subStop++;
+                    StopSubagent(subagents, e);
                     break;
 
                 case AgentEventKind.FileEdited:
@@ -162,11 +163,36 @@ public static class SessionAnalyzer
             endedDuration ?? (last.At - startedAt),
             model, modelParams, branch, startBranch, startHead, latestHead,
             tools,
-            Math.Max(0, subStart - subStop), subStart,
+            subagents.Count(s => s.Running), subagents.Count, subagents,
             compactions, lastCompaction,
             transcript, closedReason, lastSessionEndAt,
             changedFiles, testRuns, [.. running.Values], turns,
             lastPrompt, lastToolResult, lastResponse);
+    }
+
+    /// <summary>
+    /// 終わったサブエージェントを、動いているものから探して閉じる。ToolUseId（Claude）→ SubagentId（Cursor）の順に照合し、
+    /// どちらも無ければ（または一致しなければ）いちばん古い動いているもの。見つからなければ（開始が無い終わり）無視する。
+    /// </summary>
+    private static void StopSubagent(List<SubagentInfo> subagents, AgentEvent e)
+    {
+        var index = -1;
+        if (e.ToolUseId is not null)
+            index = subagents.FindIndex(s => s.Running && s.ToolUseId == e.ToolUseId);
+        if (index < 0 && e.SubagentId is not null)
+            index = subagents.FindIndex(s => s.Running && s.SubagentId == e.SubagentId);
+        if (index < 0 && e.ToolUseId is null && e.SubagentId is null)
+            index = subagents.FindIndex(s => s.Running);
+        if (index < 0)
+            return;
+
+        var s = subagents[index];
+        subagents[index] = s with
+        {
+            SubagentId = s.SubagentId ?? e.SubagentId,
+            EndedAt = e.At,
+            Elapsed = e.Duration ?? (e.At >= s.StartedAt ? e.At - s.StartedAt : null),
+        };
     }
 
     private static void CloseOpenTurn(List<TurnInfo> turns, TurnStatus status)

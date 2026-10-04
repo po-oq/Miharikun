@@ -21,6 +21,7 @@ public sealed record CompactionInfo(string? Trigger, int? ContextUsagePercent);
 /// Imported は「時刻が推定のもの」（Cursor の transcript から取り込んだ導入前のセッション。時刻はファイルの更新日時で、実際の発生時刻ではない）。
 /// Output / Duration / Reason / ModelParams / TranscriptPath は 5.1 の目安に追加した項目
 /// （成果のテスト実行詳細、継続時間、閉じた理由、モデル表示、transcript サイズに必要）。
+/// SubagentId はサブエージェントの識別（Claude Code の agentId。Issue #11）。
 /// </summary>
 public sealed record AgentEvent(
     SessionKey Session, long Seq, DateTimeOffset At, AgentEventKind Kind,
@@ -30,4 +31,5 @@ public sealed record AgentEvent(
     GitSnapshot? Git = null, string? Model = null,
     string? Output = null, TimeSpan? Duration = null, string? Reason = null,
     string? ModelParams = null, string? TranscriptPath = null,
-    bool Imported = false);
+    bool Imported = false,
+    string? SubagentId = null);

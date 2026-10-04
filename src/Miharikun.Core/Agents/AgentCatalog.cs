@@ -6,6 +6,7 @@ public static class AgentCatalog
     public static IAgentInfo? Find(string? agentId) => agentId switch
     {
         CursorAgent.AgentId => new CursorAgent(),
+        ClaudeCodeAgent.AgentId => new ClaudeCodeAgent(),
         _ => null,
     };
 }

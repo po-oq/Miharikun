@@ -187,7 +187,7 @@ tests/Miharikun.Tests/Core/
 | Output | | **Shell だけ末尾 2000 字を残す。ほかは null**（Read の全文などでメモリが膨らむため。B4） |
 | 編集の成功（`Edit`・`Write`・`MultiEdit`・`NotebookEdit`） | FileEdited | `FilePath = input.file_path`（`NotebookEdit` は `notebook_path`）。`is_error` のときは出さない（B10） |
 | `Agent` の `tool_use` | SubagentStarted | Text＝`description`、ToolName＝`subagent_type`、ToolUseId |
-| `Agent` の結果 | SubagentStopped | **`toolUseResult.status == "completed"` のときだけ**（実ログは 84 件すべて completed）。SubagentId＝`agentId` |
+| `Agent` の結果 | SubagentStopped | **`toolUseResult.status == "completed"` のときだけ**（実ログは 84 件すべて completed）。SubagentId＝`agentId`。**ただし結果が `is_error` のときも終わりにする**（19-3 で追加。動いていないのに残らないように） |
 | `origin.kind = "task-notification"` の行 | （Agent なら）SubagentStopped | 内容の `<tool-use-id>` が動いている Agent の id と一致したとき。それ以外は読み飛ばす（今は SendMessage のものだけ） |
 | `AskUserQuestion` / `ExitPlanMode` の `tool_use` | TurnEnded（Completed） | ユーザーの返事待ち＝ボスの番。`ExitPlanMode` は実例 0 件（手書きのテストだけ） |
 | その結果 | PromptSubmitted | **依頼数・ターン数・最近の入力に数える**。Text は「（回答）」＋内容（B3） |

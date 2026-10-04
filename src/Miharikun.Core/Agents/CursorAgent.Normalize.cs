@@ -91,10 +91,10 @@ public sealed partial class CursorAgent
                 return b with { Kind = AgentEventKind.AssistantThought, Text = Str(p, "text"), Duration = Millis(p, "duration_ms") };
 
             case "subagentStart":
-                return b with { Kind = AgentEventKind.SubagentStarted, Text = Str(p, "task"), ToolName = Str(p, "subagent_type") };
+                return b with { Kind = AgentEventKind.SubagentStarted, Text = Str(p, "task"), ToolName = Str(p, "subagent_type"), SubagentId = Str(p, "subagent_id") };
 
             case "subagentStop":
-                return b with { Kind = AgentEventKind.SubagentStopped, Text = Str(p, "task"), ToolName = Str(p, "subagent_type"), Duration = Millis(p, "duration_ms") };
+                return b with { Kind = AgentEventKind.SubagentStopped, Text = Str(p, "task"), ToolName = Str(p, "subagent_type"), Duration = Millis(p, "duration_ms"), SubagentId = Str(p, "subagent_id") };
 
             case "afterFileEdit":
                 return b with { Kind = AgentEventKind.FileEdited, FilePath = Str(p, "file_path") };
