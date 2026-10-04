@@ -733,9 +733,11 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：対応表の全行にテスト（テスト先行。フィクスチャは実ログの構造を真似て手書き）。Core は AOT 互換
 - 状況：実装済み（19-1〜19-5）。`Agents/ClaudeCodeAgent.cs`・`ClaudeTranscriptNormalizer.cs`・`ClaudeFormatLog.cs`、`AgentEvent.SubagentId`、`Sessions/StalledRule.cs`、`SessionSummary.Subagents`（履歴）、`Settings/AppSettings.cs`（`runningTimeoutMinutes`・全体を読んで書く）、`GitClient.GetHeadAt`、`Uncommitted.IsInWorktree` / `CommitCheck`（作業ツリー）。テスト 670 件合格（スキップ 2。Phase 18 の終わりは 514 件）。Core の `--no-incremental` ビルドは警告 0。フィクスチャは `ClaudeLogBuilder` で手書き（実ログのコピーなし）。**会話ログの実物との突き合わせは未実施**（JSON の形は要件の対応表と既知の形からの手書き。Phase 22-1 で確認）。実装で足した判断：Agent の結果が `is_error` のときもサブエージェントを終わりにする（5.1）／設定ファイルが一時的に読めないときは保存を取りやめる（他のキーを消さない）／Cursor の `subagent_id` を `SubagentId` に載せる（実データで未確認。無ければ古い順に照合）
 
-## [ ] Phase 20: Claude Code 対応 ③ Core の読み込み（Issue #11）
+## [x] Phase 20: Claude Code 対応 ③ Core の読み込み（Issue #11）
 - `ClaudeSessionSource`（9.1：探索・`cwd` 照合・作業ツリー・候補 0 件のときの探索・追記読み・不完全な行・壊れた行・監視先の取り直し・`.claude` に書かない）、`MIHARIKUN_CLAUDE_DIR`
 - 完了条件：隔離フォルダのダミー会話ログで、探索・追記・作業ツリーがテストで通る。大きなファイル（数 MB）の初回読み込みを実測して記録する
+- 状況：実装済み（20-1〜20-3）。`Sessions/ClaudeLocations.cs`（`MIHARIKUN_CLAUDE_DIR`・候補フォルダ・最初の `cwd`・cwd での探索）、`ClaudeFolderName.cs`（英数字以外を 1 文字ずつ `-`。サロゲートペアは 2 つ）、`ClaudeSessionSource.cs`。照合は最初の `cwd`（作業ツリーは `<対象>\.claude\worktrees\` 配下も同じプロジェクト）。最初の `cwd` が見つかるまでの行は取っておき、見つかったらまとめて変換する（先頭 200 行に無ければあきらめる）。他のプロジェクトのファイルは開き直さない。作り直されたら変換の状態も作り直して `Replace`、消えたら（フォルダごとを含む）`Remove`（一覧が取れなかったフォルダは、消えたとは扱わない）。`WatchTargets` は候補のフォルダ＋まだ無くてもよい本体のフォルダ（すべて `CreateIfMissing=false`。`.claude` には何も作らない・書かないことをテストで確認）。cwd での探索は、候補が 0 件で `.claude\projects` が在るときだけ起動ごとに 1 回、`ReadNew` の中で行う（UI スレッドから呼ばれる監視先の取り直しでは行わない）。`GetSubagentEvents` は空を返す口だけ（`ClaudeSessionSource` のメソッド。`ISessionSource` には足していない）。テスト 738 件合格（スキップ 4 = 計測用 `PerfFact` 等。Phase 19 の終わりは 670 件）。Core の `--no-incremental` ビルドは警告 0。
+- **大きなファイルの実測（20-3。`MIHARIKUN_PERF=1`。合成ダミー）**：1 回のやりとり約 16KB（Bash の出力 3KB・Read の結果 8KB・思考 1KB・読み飛ばす attachment 1KB を含む）を並べたログ。5MB：初回 29ms／20MB：初回 144ms（確保 173MB・保持 12MB）／60MB：初回 418ms（確保 518MB・保持 35MB）。要約の計算は 5ms 以下、追記 1 回分の読み込みは約 4ms、変化なしのポーリングは 0.1ms。セッション 300 本（合計 29.6MB）：初回 452ms、変化なしのポーリング 1 回 4.7ms。**「直近 N 日」の設定は、今は要らない**（17章の保留のまま）。実ログでの初回の時間は Phase 22-1 で測る
 
 ## [ ] Phase 21: Claude Code 対応 ④ App の画面（Issue #11）
 - 12.8：Source の組み立て（`App.xaml.cs`）、バッジ、エージェント絞り込み、「停止」の表示（表示用の状態で、絞り込み・件数も）、サブエージェントの表示、Claude のコミット一覧、タイムラインへのジャンプ（種類も見る）
