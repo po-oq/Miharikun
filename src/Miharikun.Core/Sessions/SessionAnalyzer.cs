@@ -32,7 +32,8 @@ public static class SessionAnalyzer
         var testRuns = new List<TestRun>();
 
         string? autoTitle = null;
-        int prompts = 0, stops = 0, tools = 0, subStart = 0, subStop = 0, compactions = 0;
+        int prompts = 0, stops = 0, tools = 0, compactions = 0;
+        var subagents = new List<SubagentInfo>();
         string? model = null, modelParams = null, branch = null, startBranch = null, startHead = null, latestHead = null;
         string? transcript = null, closedReason = null;
         CompactionInfo? lastCompaction = null;
@@ -43,8 +44,7 @@ public static class SessionAnalyzer
 
         foreach (var e in events)
         {
-            // Cursor はツール系などのイベントで model に "default" を入れてくる（実機で確認）。実名を上書きしない。
-            if (e.Model is not null && e.Model != "default") model = e.Model;
+            if (e.Model is not null) model = e.Model;   // 実名のないイベント（Model が null）は上書きしない
             if (e.ModelParams is not null) modelParams = e.ModelParams;
             if (e.TranscriptPath is not null) transcript = e.TranscriptPath;
             if (e.Git is { } g)
@@ -126,11 +126,11 @@ public static class SessionAnalyzer
                     break;
 
                 case AgentEventKind.SubagentStarted:
-                    subStart++;
+                    subagents.Add(new SubagentInfo(e.SubagentId, e.ToolUseId, e.Text, e.ToolName, e.At, null, null));
                     break;
 
                 case AgentEventKind.SubagentStopped:
-                    subStop++;
+                    StopSubagent(subagents, e);
                     break;
 
                 case AgentEventKind.FileEdited:
@@ -147,7 +147,7 @@ public static class SessionAnalyzer
 
         var last = events[^1];
         var closed = last.Kind == AgentEventKind.SessionEnded;
-        var imported = events.All(e => e.Imported);   // transcript だけから作った過去セッション
+        var imported = events.All(e => e.Imported);   // 時刻が推定の過去セッション（transcript だけから作ったもの。Cursor の導入前のセッション）
         var startedAt = sessionStartAt ?? events[0].At;
 
         if (turns.Count > 0 && turns[^1].Status == TurnStatus.Running && (closed || imported))
@@ -163,11 +163,36 @@ public static class SessionAnalyzer
             endedDuration ?? (last.At - startedAt),
             model, modelParams, branch, startBranch, startHead, latestHead,
             tools,
-            Math.Max(0, subStart - subStop), subStart,
+            subagents.Count(s => s.Running), subagents.Count, subagents,
             compactions, lastCompaction,
             transcript, closedReason, lastSessionEndAt,
             changedFiles, testRuns, [.. running.Values], turns,
             lastPrompt, lastToolResult, lastResponse);
+    }
+
+    /// <summary>
+    /// 終わったサブエージェントを、動いているものから探して閉じる。ToolUseId（Claude）→ SubagentId（Cursor）の順に照合し、
+    /// どちらも無ければ（または一致しなければ）いちばん古い動いているもの。見つからなければ（開始が無い終わり）無視する。
+    /// </summary>
+    private static void StopSubagent(List<SubagentInfo> subagents, AgentEvent e)
+    {
+        var index = -1;
+        if (e.ToolUseId is not null)
+            index = subagents.FindIndex(s => s.Running && s.ToolUseId == e.ToolUseId);
+        if (index < 0 && e.SubagentId is not null)
+            index = subagents.FindIndex(s => s.Running && s.SubagentId == e.SubagentId);
+        if (index < 0 && e.ToolUseId is null && e.SubagentId is null)
+            index = subagents.FindIndex(s => s.Running);
+        if (index < 0)
+            return;
+
+        var s = subagents[index];
+        subagents[index] = s with
+        {
+            SubagentId = s.SubagentId ?? e.SubagentId,
+            EndedAt = e.At,
+            Elapsed = e.Duration ?? (e.At >= s.StartedAt ? e.At - s.StartedAt : null),
+        };
     }
 
     private static void CloseOpenTurn(List<TurnInfo> turns, TurnStatus status)
@@ -178,7 +203,7 @@ public static class SessionAnalyzer
 
     private static bool IsTestRun(AgentEvent e, AnalyzerSettings settings)
     {
-        if (e.ToolName != "Shell" || string.IsNullOrEmpty(e.Command))
+        if (e.ToolName != CommonTools.Shell || string.IsNullOrEmpty(e.Command))
             return false;
 
         foreach (var pattern in settings.TestCommandPatterns)

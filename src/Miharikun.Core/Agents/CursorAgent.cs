@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 namespace Miharikun.Core.Agents;
 
-public sealed partial class CursorAgent : IAgent
+public sealed partial class CursorAgent : IHookAgent
 {
     public const string AgentId = "cursor";
 

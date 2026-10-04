@@ -70,14 +70,24 @@ Copy-Item (Join-Path $hookOut 'Miharikun.Hook.exe') $stage
 @"
 Miharikun（みはりくん） v$Version
 
+Cursor と Claude Code のチャットセッションを、プロジェクトごとに一覧・状態把握できます（同じ一覧に混ざって出ます。左上のチップで絞り込めます）。
+
 1. このフォルダを好きな場所に置きます（Miharikun.exe と Miharikun.Hook.exe は同じフォルダに）。
 2. Miharikun.exe [プロジェクトのフォルダ] で起動します。省略すると、いまのフォルダが対象です。
+
+【Cursor】Hook を入れて記録します。
 3. 初回は「導入しますか？」と出るので「はい」を選びます。
    - Hook exe を %LOCALAPPDATA%\Miharikun\bin\ にコピーします。
    - %USERPROFILE%\.cursor\hooks.json に登録します（既存の設定は残し、変更前にバックアップを作ります）。
 4. Cursor でチャットを始めると、ダッシュボードに表示されます。反映されないときは Cursor を再起動してください。
 
 Hook を外すときは、画面右上の ⚙ → 「Hook を削除」。
+
+【Claude Code】導入は要りません。
+- %USERPROFILE%\.claude\projects\ にある会話ログ（CLI と Code タブの両方）を、読み取りだけで表示します（.claude には何も書き込みません）。
+- 起動したフォルダのセッション（と、その .claude\worktrees\ 配下の作業ツリーのセッション）が出ます。Claude Code を使っていなければ、何も出ません。
+- Claude Code には終了の記録がないので、「実行中」のまま一定時間（既定 10 分）動きがないセッションは「停止」と表示します
+  （サブエージェントやコマンドの結果を待っている間は停止にしません）。時間は、画面右上の ⚙ → 「設定…」で変えられます（0 で無効。保存するとすぐ効きます）。
 
 「ドキュメント」タブ：プロジェクト配下の .md / .html を読めます。表示には Microsoft Edge の WebView2 Runtime が要ります
 （Windows 11 や、Edge が入っている環境では、たいてい入っています）。

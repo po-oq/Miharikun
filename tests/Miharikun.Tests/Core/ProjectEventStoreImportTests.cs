@@ -16,8 +16,8 @@ public sealed class ProjectEventStoreImportTests : IDisposable
     public ProjectEventStoreImportTests()
     {
         _paths = new AppPaths(Path.Combine(_dir, "data"));
-        _store = new ProjectEventStore(new CursorAgent(), _paths, Root,
-            importer: new CursorTranscriptImporter(Path.Combine(_dir, "cursor")));
+        _store = new ProjectEventStore([new CursorSessionSource(new CursorAgent(), _paths, Root,
+            importer: new CursorTranscriptImporter(Path.Combine(_dir, "cursor")))]);
     }
 
     public void Dispose()
@@ -111,7 +111,7 @@ public sealed class ProjectEventStoreImportTests : IDisposable
     public void Without_an_importer_nothing_is_imported()
     {
         WriteTranscript("old", "依頼");
-        var plain = new ProjectEventStore(new CursorAgent(), _paths, Root);
+        var plain = new ProjectEventStore([new CursorSessionSource(new CursorAgent(), _paths, Root)]);
 
         Assert.Empty(plain.Refresh());
     }

@@ -16,8 +16,8 @@ public sealed class SessionMonitorTests : IDisposable
     public SessionMonitorTests()
     {
         _paths = new AppPaths(_dir);
-        var store = new ProjectEventStore(new CursorAgent(), _paths, Root);
-        _monitor = new SessionMonitor(store, _paths.EventsDir("cursor"));
+        var store = new ProjectEventStore([new CursorSessionSource(new CursorAgent(), _paths, Root)]);
+        _monitor = new SessionMonitor(store);
         _monitor.Updated += u => { lock (_lock) _updates.Add(u); };
     }
 

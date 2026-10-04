@@ -2,21 +2,24 @@ using System.Text.Json.Nodes;
 
 namespace Miharikun.Core.Agents;
 
-public interface IAgent
+/// <summary>エージェントの表示用の情報。App はこれだけを見る（AgentCatalog から引く）。</summary>
+public interface IAgentInfo
 {
     string Id { get; }
     string DisplayName { get; }
     AgentCapabilities Capabilities { get; }
+}
 
-    // Hook exe 側（NativeAOT 互換で実装すること）
+/// <summary>
+/// Hook exe が使う側（AgentRegistry から引く。NativeAOT 互換で実装すること）。
+/// 生イベントの正規化など App 側の処理は、各エージェントの具体クラス（と ISessionSource）が持つ。
+/// </summary>
+public interface IHookAgent : IAgentInfo
+{
     string? GetEventName(JsonNode payload);
     string? GetSessionId(JsonNode payload);
     bool NeedsGitSnapshot(string eventName);
     HookResponse RespondToHook(string eventName, JsonNode payload);
-
-    // App 側
-    IReadOnlyList<string> GetWorkspaceRoots(RawEventRecord raw);
-    IEnumerable<AgentEvent> Normalize(RawEventRecord raw);
 }
 
 [Flags]

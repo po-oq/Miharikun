@@ -5,7 +5,7 @@ namespace Miharikun.Core.Agents;
 
 public sealed partial class CursorAgent
 {
-    private const string ShellToolName = "Shell";
+    private const string ShellToolName = CommonTools.Shell;
 
     /// <summary>要件 5.1 の対応表。未知のイベントは何も返さない。</summary>
     public IEnumerable<AgentEvent> Normalize(RawEventRecord raw)
@@ -14,6 +14,9 @@ public sealed partial class CursorAgent
         return e is null ? [] : [e];
     }
 
+    /// <summary>Cursor はツール系などのイベントで model に "default" を入れてくる（実機で確認）。モデル名ではないので null にする。</summary>
+    private static string? ModelName(string? model) => model == "default" ? null : model;
+
     private static AgentEvent? NormalizeOne(RawEventRecord raw)
     {
         if (raw.Payload is not JsonObject p)
@@ -21,7 +24,7 @@ public sealed partial class CursorAgent
 
         var b = new AgentEvent(
             new SessionKey(raw.AgentId, raw.SessionId), raw.LineNumber, raw.ReceivedAt, AgentEventKind.SessionStarted,
-            Model: Str(p, "model_id") ?? Str(p, "model"),
+            Model: ModelName(Str(p, "model_id") ?? Str(p, "model")),
             ModelParams: p["model_params"]?.ToJsonString(),
             TranscriptPath: Str(p, "transcript_path"));
 
@@ -88,10 +91,10 @@ public sealed partial class CursorAgent
                 return b with { Kind = AgentEventKind.AssistantThought, Text = Str(p, "text"), Duration = Millis(p, "duration_ms") };
 
             case "subagentStart":
-                return b with { Kind = AgentEventKind.SubagentStarted, Text = Str(p, "task"), ToolName = Str(p, "subagent_type") };
+                return b with { Kind = AgentEventKind.SubagentStarted, Text = Str(p, "task"), ToolName = Str(p, "subagent_type"), SubagentId = Str(p, "subagent_id") };
 
             case "subagentStop":
-                return b with { Kind = AgentEventKind.SubagentStopped, Text = Str(p, "task"), ToolName = Str(p, "subagent_type"), Duration = Millis(p, "duration_ms") };
+                return b with { Kind = AgentEventKind.SubagentStopped, Text = Str(p, "task"), ToolName = Str(p, "subagent_type"), Duration = Millis(p, "duration_ms"), SubagentId = Str(p, "subagent_id") };
 
             case "afterFileEdit":
                 return b with { Kind = AgentEventKind.FileEdited, FilePath = Str(p, "file_path") };

@@ -24,6 +24,7 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     private readonly Action<(long Seq, TimelineKind Kind)> _jump;
     private readonly SessionMetaService _meta;
     private readonly string _projectFolder;
+    private readonly Func<int> _timeoutMinutes;
     private SessionSummary _summary;
     private IReadOnlyList<string>? _uncommitted;
     private bool _memoDirty;
@@ -31,6 +32,11 @@ public sealed partial class SessionDetailViewModel : ObservableObject
 
     public SessionKey Key => _summary.Key;
 
+    /// <summary>エージェントの ID（"cursor" / "claude"）と表示名（ヘッダーのバッジに出す）。</summary>
+    public string AgentId => Key.AgentId;
+    public string AgentName => AgentCatalog.Find(Key.AgentId)?.DisplayName ?? Key.AgentId;
+
+    /// <summary>表示用の状態（実行中のまま動きなしは「停止」）。ヘッダー・拡大時のタイトルが見る（StalledRule）。</summary>
     [ObservableProperty] private SessionState _state;
     [ObservableProperty] private string _stateText = "";
     [ObservableProperty] private string _title = "";
@@ -82,8 +88,9 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     public RelayCommand ClearStatusCommand { get; }
 
     public SessionDetailViewModel(SessionSnapshot snapshot, DateTimeOffset now,
-        Action<(long Seq, TimelineKind Kind)> jump, SessionMetaService meta, string projectFolder)
+        Action<(long Seq, TimelineKind Kind)> jump, SessionMetaService meta, string projectFolder, Func<int> timeoutMinutes)
     {
+        _timeoutMinutes = timeoutMinutes;
         _jump = jump;
         _meta = meta;
         _projectFolder = projectFolder;
@@ -123,9 +130,6 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     {
         var s = _summary = snapshot.Summary;
 
-        State = s.State;
-        StateText = SessionText.StateName(s.State);
-
         // 導入前のセッション（transcript から取り込み）は、時刻・ターン・ツール・git の情報を持たない。0 や ✓ を出さずに「—」にする。
         var imported = s.State == SessionState.Imported;
         var meta = new List<string> { ShortId(s.Key.SessionId) };
@@ -146,9 +150,9 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         :
         [
             new("ターン / ツール呼び出し", $"{s.TurnCount} / {s.ToolCallCount}回"),
-            new("圧縮", SessionText.CompactionText(s)),
+            .. (HasCapability(AgentCapabilities.Compaction) ? [new StatRow("圧縮", SessionText.CompactionText(s))] : Array.Empty<StatRow>()),
             new("継続時間", SessionText.Duration(s.Duration)),
-            new("サブエージェント", $"起動中 {s.SubagentsRunning} / 累計 {s.SubagentsTotal}"),
+            new("サブエージェント", SessionText.SubagentText(s)),
             new("transcript サイズ", transcript),
         ];
 
@@ -211,15 +215,15 @@ public sealed partial class SessionDetailViewModel : ObservableObject
             s.SubagentsRunning == 0
                 ? new("✓", "裏の作業なし（サブエージェント 0）", "ok")
                 : new("✗", $"裏の作業あり（サブエージェント {s.SubagentsRunning}）", "ng"),
-            CommitCheckItem(s.ChangedFiles.Count, _uncommitted),
+            CommitCheckItem(s.ChangedFiles.Count, _uncommitted, Uncommitted.WorktreeFileCount(s.ChangedFiles, _projectFolder)),
         ];
 
         ChangedFiles = s.ChangedFiles.Select(f => ShortPath(f) + (dirty?.Contains(f) == true ? "（未コミット）" : "")).ToList();
     }
 
-    private static CheckItem CommitCheckItem(int changedFileCount, IReadOnlyList<string>? uncommitted)
+    private static CheckItem CommitCheckItem(int changedFileCount, IReadOnlyList<string>? uncommitted, int worktreeFileCount)
     {
-        var (level, text) = CommitCheck.Evaluate(changedFileCount, uncommitted);
+        var (level, text) = CommitCheck.Evaluate(changedFileCount, uncommitted, worktreeFileCount);
         return new(level switch { "ok" => "✓", "ng" => "✗", _ => "—" }, text, level);
     }
 
@@ -286,9 +290,17 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         _meta.Update(Key, (m, at) => m.WithMemo(MemoText, at));
     }
 
-    /// <summary>実行中ツールの経過秒は時間とともに変わるので、定期的に呼ぶ。</summary>
+    /// <summary>Capabilities に無い項目は出さない（要件 12.8）。知らないエージェントは出す側に倒す。</summary>
+    private bool HasCapability(AgentCapabilities capability) =>
+        AgentCatalog.Find(Key.AgentId)?.Capabilities.HasFlag(capability) ?? true;
+
+    /// <summary>実行中ツールの経過秒・表示用の状態は時間とともに変わるので、定期的に呼ぶ。</summary>
     public void RefreshClock(DateTimeOffset now)
     {
+        var display = StalledRule.DisplayState(_summary, now, _timeoutMinutes());
+        State = display.State;
+        StateText = SessionText.StateName(display.State) + (display.Note is { } note ? "・" + note : "");
+
         PromptLine = SessionText.PromptLine(_summary) ?? "—";
         ToolLine = SessionText.ToolLine(_summary, now) ?? "—";
         ResponseLine = SessionText.ResponseLines(_summary)?.Replace('\n', ' ')

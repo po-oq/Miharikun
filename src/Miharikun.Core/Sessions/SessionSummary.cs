@@ -14,6 +14,17 @@ public sealed record TestRun(long Seq, DateTimeOffset At, string Command, int? E
     public bool? Succeeded => ExitCode is null ? null : ExitCode == 0;
 }
 
+/// <summary>
+/// サブエージェント 1 件の履歴。EndedAt が null なら動いている。
+/// Elapsed は、イベントが所要時間を持っていればそれ（Cursor）、なければ終了 − 開始。
+/// </summary>
+public sealed record SubagentInfo(
+    string? SubagentId, string? ToolUseId, string? Description, string? Type,
+    DateTimeOffset StartedAt, DateTimeOffset? EndedAt, TimeSpan? Elapsed)
+{
+    public bool Running => EndedAt is null;
+}
+
 public sealed record TurnInfo(int Number, long StartSeq, DateTimeOffset StartedAt, TurnStatus Status, string? Prompt);
 
 /// <summary>共通イベントから算出した、セッション1つ分の状態と派生値（要件 10章）。</summary>
@@ -36,6 +47,7 @@ public sealed record SessionSummary(
     int ToolCallCount,
     int SubagentsRunning,
     int SubagentsTotal,
+    IReadOnlyList<SubagentInfo> Subagents,
     int CompactionCount,
     CompactionInfo? LastCompaction,
     string? TranscriptPath,

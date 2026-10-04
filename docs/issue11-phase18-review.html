@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 18 レビュー結果</title>
+<style>
+:root{--bg:#fff;--fg:#222;--mut:#666;--bd:#ccc;--ng:#c62828;--wa:#b26a00;--ok:#2e7d32;--box:#f4f6f8;--hl:#fff3cd}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1d20;--fg:#e6e6e6;--mut:#9aa;--bd:#444;--ng:#ef5350;--wa:#ffb74d;--ok:#81c784;--box:#262a2f;--hl:#4a3f1a}}
+body{background:var(--bg);color:var(--fg);font:15px/1.7 "Segoe UI","Yu Gothic UI",sans-serif;max-width:960px;margin:0 auto;padding:16px}
+h1{font-size:22px}h2{font-size:18px;border-bottom:2px solid var(--bd);padding-bottom:4px;margin-top:36px}h3{font-size:16px;margin-top:22px}
+code,pre{font-family:Consolas,monospace;font-size:13px}pre{background:var(--box);padding:10px;overflow-x:auto;border-radius:4px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid var(--bd);padding:4px 8px;vertical-align:top;text-align:left}
+.ng{color:var(--ng);font-weight:bold}.wa{color:var(--wa);font-weight:bold}.ok{color:var(--ok);font-weight:bold}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
+.b{border:1px solid var(--bd);background:var(--box);padding:4px 8px;border-radius:4px;font-size:13px}
+.b.x{border-color:var(--ng);color:var(--ng)}.b.o{border-color:var(--ok)}.b.h{background:var(--hl)}
+.ar{color:var(--mut)}.note{color:var(--mut);font-size:13px}
+</style></head><body>
+<h1>Issue #11 Phase 18 レビュー結果</h1>
+<p class="note">対象：作業ツリーの <code>git diff d3b7178</code> と未追跡ファイル。依頼文 <code>docs/issue11-phase18-review-request.md</code> の 3 章（見てほしい所）と 5 章（気になっている所 10 件）に答える。行番号は現時点の作業ツリーのもの。</p>
+
+<h2>0. 結論</h2>
+<p>挙動の移し替えは<b>おおむね正しい</b>。差分の規則（8.1 の 7 行）、Store の規則、既存テストの変更が構築の行だけであること、<code>"default"</code> の移動は、どれもコードで確かめて問題なし。<br>
+次の Phase に進む前に<b>直してほしいのは 2 件</b>（下の表の A）。B は直すことを勧めるが、後回しにしてもよい。</p>
+<table>
+<tr><th>#</th><th>重さ</th><th>内容</th><th>依頼文の番号</th></tr>
+<tr><td>A1</td><td class="ng">直す</td><td><code>ReadNew</code> の途中で <code>IOException</code> 以外が出ると、<b>それより前に読んだファイルの差分</b>も捨てられる。さらに取り込み（<code>Scan</code>）で例外が出ると、<b>取り込みが二度と走らない</b></td><td>気になる所 2</td></tr>
+<tr><td>A2</td><td class="ng">直す（別コミットで）</td><td><code>Handles_the_scale_in_the_requirements</code> の最後の <code>Assert</code> はコメントの中にあり、実行されていない</td><td>気になる所 7</td></tr>
+<tr><td>B1</td><td class="wa">勧める</td><td>取り込み分の <code>Remove</code> を先に出す順序は<b>正しく、必要</b>。ただしそのあとの <code>Replace</code> は要らない。<code>Replace</code> のままだと「今回読んだ分だけで置き換える」という罠が残る</td><td>気になる所 1・見る所 1</td></tr>
+<tr><td>B2</td><td class="wa">勧める（軽い）</td><td>フォルダが消えて同じ名前で作り直されると、死んだ Watcher が残り、張り直されない（3 秒のポーリングで拾えるので、遅れるだけ）</td><td>気になる所 4・見る所 5</td></tr>
+<tr><td>—</td><td class="ok">問題なし</td><td>気になる所 3・5・6・8・9・10、見る所 2・3・6・7</td><td>4 章にまとめた</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<h2>A1. ReadNew の途中の例外で、差分を取りこぼす</h2>
+
+<h3>何が起きるか</h3>
+<p><code>CursorSessionSource.ReadNew</code>（<code>CursorSessionSource.cs:51-99</code>）は、ファイルを 1 本ずつ読んで <code>deltas</code> に積み、最後にまとめて返す。ファイルごとの <code>catch</code> は <code>IOException</code> だけ（88 行）。それ以外の例外は <code>ReadNew</code> の外へ抜け、Store の <code>catch (Exception)</code>（<code>ProjectEventStore.cs:303</code>）で止まる。このとき、<b>積んであった差分は全部捨てられる</b>。一方で、読み終えたファイルの読み取り位置（<code>JsonlTail</code> の offset）は進んだまま。そのため、次の回にも同じ行は読まれず、<b>アプリを再起動するまでそのイベントは画面に出ない</b>。</p>
+
+<div class="flow">
+ <span class="b o">a.jsonl を読む<br>offset 進む・差分を積む</span><span class="ar">→</span>
+ <span class="b o">b.jsonl を読む<br>offset 進む・差分を積む</span><span class="ar">→</span>
+ <span class="b x">c.jsonl を開く<br>UnauthorizedAccessException</span><span class="ar">→</span>
+ <span class="b x">ReadNew の外へ抜ける<br>a・b の差分は捨てられる</span><span class="ar">→</span>
+ <span class="b h">次の回：a・b は offset が進んでいるので<br>同じ行はもう読まれない ＝ 取りこぼし</span>
+</div>
+
+<h3>実際に起こりうる例外</h3>
+<ul>
+<li><b><code>UnauthorizedAccessException</code></b>：<code>IOException</code> の仲間<b>ではない</b>。アクセス権の問題で <code>new FileStream</code>（<code>JsonlTail.cs:26</code>）が投げる。共有違反は <code>IOException</code> だが、アクセス拒否はこちら。</li>
+<li><b>取り込みの <code>Scan</code> の例外</b>：<code>ImportTranscripts</code>（178-191 行）は、<b><code>Scan</code> を呼ぶ前に <code>_importScanned = true</code></b> にしている（182 行）。<code>Scan</code> が投げると、その回の Hook の差分が全部捨てられる。しかも <b>次の回からは取り込みを試しもしない</b>（導入前のセッションがこの起動の間ずっと出ない）。</li>
+<li><code>Normalize</code> は <code>TryGetValue</code> で守っているので投げにくい。ただし将来のバグや <code>OutOfMemoryException</code>（巨大な追記）は否定できない。</li>
+</ul>
+<p>旧コードでは、これらはプロセスごと落ちていた。だから悪化ではない。ただ、「Store の catch で他の Source を続ける」（A6）を入れたことで、<b>落ちずに静かに欠ける</b>という新しい状態ができた。それを防ぐのは Source の役目になる。</p>
+
+<h3>どう直すか</h3>
+<p><b>方針：</b>Source の中でファイル単位・取り込み単位に例外を閉じ込め、<b>それまでに積んだ差分は必ず返す</b>。Store の catch は「最後の砦」のままにする。</p>
+<pre>// CursorSessionSource.ReadNew のファイルのループ（84-91 行）
+try
+{
+    ReadFile(path, _files[path], switching, deltas);
+}
+catch (IOException ex)
+{
+    _log?.Invoke($"{path} の読み込みに失敗: {ex.Message}");
+}
+catch (Exception ex)   // UnauthorizedAccessException など。ほかのファイルの差分は返す
+{
+    _log?.Invoke($"{path} の読み込みに失敗: {ex}");   // スタックつき
+}</pre>
+<pre>// ImportTranscripts：成功してから「済み」にする（失敗したら次の回にまた試す）
+private void ImportTranscripts(List&lt;SessionDelta&gt; deltas)
+{
+    if (_importer is null || _importScanned)
+        return;
+
+    IReadOnlyList&lt;ImportedSession&gt; sessions;
+    try
+    {
+        sessions = _importer.Scan(_projectFolder, id =&gt; File.Exists(_paths.EventFile(_agent.Id, id)));
+    }
+    catch (Exception ex)
+    {
+        _log?.Invoke($"transcript の取り込みに失敗: {ex}");
+        return;   // _importScanned は false のまま
+    }
+    _importScanned = true;
+    foreach (var session in sessions) { ... 今のまま ... }
+}</pre>
+<p class="note">補足：ファイル 1 本の中で、offset が進んだあとに例外が出たとき（<code>Normalize</code> の途中など）のその回の行は、上の修正でも失われる。完全に防ぐには、<code>JsonlTail</code> に「読んだが確定していない」状態を持たせ、成功してから offset を確定する必要がある。そこまでは不要と考える（いまの <code>Normalize</code> は投げにくい）。代わりに、ログにスタックが残ることを優先する。</p>
+<p><b>テスト（Cursor の Source 側に足す）：</b></p>
+<ul>
+<li>「<code>Scan</code> が投げても、同じ回の Hook の差分は届く。次の回に取り込みがもう一度走る」。<code>Scan</code> を投げさせる方法は、Importer の中を見て決める（読めないフォルダを置く、など）。</li>
+<li>「1 本のファイルで例外が出ても、ほかのファイルの差分は届く」。<code>UnauthorizedAccessException</code> を確実に出すには ACL の操作が要り、テストとしては重い（<code>FileShare.None</code> で開くと <code>IOException</code> になり、今のコードでも通ってしまう）。差し替え口を作ってまで足すほどではないので、コードを読んで確かめるだけでもよい。</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2>A2. 規模のテストの Assert が実行されていない</h2>
+<p><code>tests/Miharikun.Tests/Core/ProjectEventStoreTests.cs:190</code></p>
+<pre>Console.WriteLine($"scale: {sw.Elapsed}");   // 参考値\n        Assert.True(sw.Elapsed &lt; TimeSpan.FromSeconds(3), $"{sw.Elapsed}");</pre>
+<p>改行のつもりの <code>\n</code> が<b>文字のまま</b>コメントの中に入っている（過去の編集で、改行が <code>\n</code> の 2 文字として書き込まれたもの）。そのため、時間の <code>Assert</code> がコメント扱いになっている。<b>旧コードのときからあるバグ</b>で、Phase 18 で入ったものではない。</p>
+<p><b>いまの実測：</b>このテストだけを動かして <code>scale: 00:00:01.67</code>。3 秒のしきい値は満たしている（Phase 18 の書き直しで遅くはなっていない）。</p>
+<h3>どう直すか</h3>
+<ul>
+<li>行を 2 つに分けて、<code>Assert</code> を生かす。<b>「既存テストは構築の行だけ変える」決まりの例外</b>になるので、Phase 18 のコミットには混ぜない。<b>「既存テストの Assert がコメントに入っていたのを直す」という 1 コミット</b>に分ける（利用者の了承を取ってから）。</li>
+<li>しきい値に対して余裕が約 1.8 倍しかない。テストを並列で動かすときや遅いマシンでは揺れうる。揺れたら <code>PerfFact</code> に移す（今の 3 秒は要件の規模の目安なので、値は変えない）。</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2>B1. 取り込み済み → Hook の切り替え：Remove を先に出すのは正しい。後ろの Replace が要らない</h2>
+
+<h3>Remove を先に出すこと（依頼文の問い）への答え：<span class="ok">妥当。むしろ必要</span></h3>
+<p>Source の中の辞書（<code>_files</code>・<code>_imported</code>）は大文字小文字を区別しない。一方、Store のキー <code>SessionKey</code> は区別する。ID が大文字小文字だけ違うと、計画どおり「Hook の <code>Replace</code> だけ」を出した場合、取り込み分が別のキーとして Store に残り、<b>同じセッションが 2 枚</b>になる。</p>
+<div class="flow">
+ <span class="b">Store: <code>cursor/ABC</code>（取り込み分）</span><span class="ar">＋ Hook ファイル <code>abc.jsonl</code> が現れる →</span>
+</div>
+<table>
+<tr><th>出す差分</th><th>Store の結果</th><th></th></tr>
+<tr><td>計画どおり：<code>Replace(cursor/abc, Hook)</code> だけ</td><td><code>cursor/ABC</code>（取り込み）と <code>cursor/abc</code>（Hook）の 2 つ</td><td class="ng">NG（旧と違う）</td></tr>
+<tr><td>実装：<code>Remove(cursor/ABC)</code> → <code>Replace(cursor/abc, Hook)</code></td><td><code>cursor/abc</code> だけ</td><td class="ok">旧と同じ</td></tr>
+</table>
+<p>大文字小文字が同じときも、<code>Remove(K)</code> → <code>Replace(K)</code> は同じキーへの順の適用で、結果は同じ。<code>Refresh</code> の戻り値も重複を除いているので、通知は 1 回になる。旧（<code>git show d3b7178</code> の <code>ImportTranscripts</code> 80-89 行）も「Hook のファイルがあれば、プロジェクトが一致するかどうかに関係なく取り込み分を消す」なので、<code>Remove</code> を無条件に出すのは旧と同じ動き。8.1 の 6 行目（別プロジェクトなら <code>Remove</code>）も、これで満たしている。</p>
+
+<h3>問題：そのあとの Replace は要らず、罠になる</h3>
+<p><code>ReadFile</code> の 173 行は、切り替え中のファイルの差分を <code>Replace</code> にしている。しかし <code>events</code> は<b>今回読んだ分だけ</b>。<code>Replace</code> は「保持しているもの全部をこれに置き換える」という意味なので、もしそのファイルのイベントがすでに Store にあれば、<b>前の分が消える</b>。</p>
+<div class="flow">
+ <span class="b">前の回：<code>abc.jsonl</code> の E1 を Append 済み</span><span class="ar">→</span>
+ <span class="b">今回：switching に <code>abc</code></span><span class="ar">→</span>
+ <span class="b x">Replace(abc, [E2])<br>→ E1 が消える</span>
+</div>
+<p>いまは、この状況は<b>ほぼ起きない</b>。取り込みの <code>Scan</code> に渡す <code>File.Exists</code> は Windows では大文字小文字を区別しないので、すでにある Hook ファイルの ID は取り込まれない。だから、切り替えになるのは「新しく現れたファイル」だけで、<code>events</code> は先頭からの全部になる。ただ、これは <b>Importer の判定に寄りかかった偶然</b>で、<code>Replace</code> の意味（全部を渡す）とずれている。Claude の Source を書くときに同じ形を真似すると、そのまま事故になる。</p>
+<h3>どう直すか</h3>
+<p>先に <code>Remove</code> を出しているので、Hook の差分は<b>ふつうの差分</b>でよい。<code>Remove</code> のあとの <code>Append</code> は、空の Store に足すだけなので、結果は <code>Replace</code> と同じ。</p>
+<pre>// CursorSessionSource.ReadFile 172-174 行
+// 作り直しは、Store の持つ内容を置き換える（Append にすると混ざる）。
+// 取り込み済みからの切り替えは、ReadNew が先に取り込み分の Remove を出しているので、ふつうの差分でよい。
+var kind = truncated ? SessionDeltaKind.Replace : SessionDeltaKind.Append;
+deltas.Add(new SessionDelta(key, kind, events));</pre>
+<ul>
+<li><code>ReadFile</code> の引数 <code>switching</code> が要らなくなる（<code>ReadNew</code> の中だけで使う）。</li>
+<li><b>計画 8.1 の 5 行目を更新</b>する：「<code>Remove</code>（取り込み分のキー）を先に出し、Hook のファイルはふつうの差分（初めて一致した時点で先頭からの全部）。大文字小文字だけ違う ID のため」。計画と実装のずれを残さない。</li>
+<li>特性テスト④（大文字小文字違い）と、同じ大文字小文字での切り替えのテストが、そのまま通ることを確かめる。</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2>B2. 消えて作り直されたフォルダの Watcher が残る</h2>
+<p><code>SessionMonitor.EnsureWatchers</code>（<code>SessionMonitor.cs:49-93</code>）は「フォルダが無ければ Watcher を捨てる」。しかし、3 秒の間に<b>消えて同じ名前で作り直された</b>場合、<code>Directory.Exists</code> は true なので、古いフォルダを見ていた（もう通知の来ない）Watcher が残り、張り直されない。</p>
+<div class="flow">
+ <span class="b">Watcher(dir) 動作中</span><span class="ar">→</span>
+ <span class="b x">dir 削除（Watcher は Error を出して止まる）</span><span class="ar">→</span>
+ <span class="b">dir 作り直し</span><span class="ar">→</span>
+ <span class="b x">次のポーリング：Exists=true なので張り直さない</span><span class="ar">→</span>
+ <span class="b h">以後は 3 秒ポーリングだけ（300ms → 最大 3 秒の遅れ）</span>
+</div>
+<p>Cursor の events ではまず起きない。ただ、Phase 20 の Claude では、<b>作業ツリーのフォルダ</b>（worktree を消して同じ名前で作り直す）で起こりうる。取りこぼしではなく<b>遅れるだけ</b>なので、軽い。</p>
+<h3>どう直すか</h3>
+<p><code>Error</code> を受けたら、その Watcher に「作り直す」印を付ける。次の <code>EnsureWatchers</code> で、印の付いた Watcher を捨てて張り直す。</p>
+<pre>private readonly HashSet&lt;(string, string)&gt; _broken = [];   // _gate で守る
+...
+w.Error += (_, _) =&gt; { lock (_gate) _broken.Add(key); Schedule(); };
+...
+// EnsureWatchers の先頭
+foreach (var (key, watcher) in _watchers.ToList())
+{
+    if (_broken.Remove(key) || !Directory.Exists(key.Directory))
+    {
+        watcher.Dispose();
+        _watchers.Remove(key);
+    }
+}</pre>
+<p class="note">注意：<code>Error</code> の中で <code>lock (_gate)</code> を取るので、<code>Dispose</code>（ロックの中で <code>watcher.Dispose()</code>）と待ち合いにならないか確かめること。<code>FileSystemWatcher.Dispose</code> がハンドラーの終わりを待つことはないので、デッドロックにはならないはず。ただし、<code>Error</code> はバッファあふれでも来るので、そのたびに張り直すことになる（実害はない）。</p>
+<p><b>ロックの中の重さ（依頼文の懸念）：</b>3 秒ごとに <code>Directory.Exists</code> を「Watcher の数＋監視先の数」回呼ぶだけ。<code>_store.Refresh()</code>（ファイルの読み込み）自体が同じロックの中なので、そちらのほうがずっと重い。<b>今のままでよい</b>。ネットワークドライブの対応は、このツールの範囲外。</p>
+<p><b>Dispose と RefreshNow の競合：</b><span class="ok">問題なし</span>。<code>_disposed</code> をロックの中で立て、<code>RefreshNow</code> もロックの中で見ている。タイマーの破棄はロックの外だが、その後にコールバックが来ても、<code>_disposed</code> を見て何もしない。<b>取り直しで Watcher が増え続けないか：</b><code>(Directory, Filter)</code> をキーにした辞書で重複を防いでいるので、増え続けない。</p>
+
+<!-- ================================================================ -->
+<h2>4. 問題なし（確かめたこと）</h2>
+<table>
+<tr><th>項目</th><th>確かめたこと</th></tr>
+<tr><td>見る所 1：差分の規則 7 行</td><td>1・2 行目：<code>ReadFile</code> の <code>Append</code>（174 行。照合前の行を捨てていたら 144-145 行で読み直し、全部を <code>Append</code>）。3 行目：作り直し＋一致は 1 回の <code>Replace</code>（<code>truncated</code> で 173 行）。4 行目：作り直し＋行なし／不一致／壊れた行だけは、<code>hadEvents</code> のときだけ <code>Remove</code>（131・153・162 行）。5・6 行目：B1 のとおり。7 行目：<code>ImportTranscripts</code> の <code>Replace</code>（189 行）。<b>旧の 3 つの「return changed」の経路と 1 対 1 に対応している</b></td></tr>
+<tr><td>見る所 2：Store の規則</td><td><code>Apply</code>（319-349 行）：空の <code>Replace</code> → <code>Remove</code>、空の <code>Append</code> → false、無いキーの <code>Remove</code> → false、中身が空のエントリーの <code>Remove</code> も false（<code>had</code>）、要約キャッシュの破棄（347 行）、戻り値の重複除去（311 行）。どれも 8.1 どおり</td></tr>
+<tr><td>見る所 3：既存テスト</td><td><code>git diff d3b7178 -- tests</code> の <code>+/-</code> の行を全部見た。既存 4 ファイルは構築の行だけ。<code>CursorNormalizeTests</code> は新しいテスト 1 件の追加だけ。既存の <code>Assert</code> の行の変更は 0</td></tr>
+<tr><td>見る所 4／気になる所 10：未処理の例外</td><td>3 つのハンドラーとも、<code>Handled</code> や <code>SetObserved</code> を触っていない（<code>App.xaml.cs</code> の <code>LogUnhandledExceptions</code>）。<code>AppLog.Write</code> は中で <code>try</code> しているので、ログの失敗で二重に落ちることはない。<b>アプリが落ちるのは今までどおりで、合っている</b>。<span class="note">細かい点：UI スレッドの例外は、<code>DispatcherUnhandledException</code> と <code>AppDomain.UnhandledException</code> の両方でログに出る（同じ例外が 2 回）。害はないので、そのままでよい。気になるなら、ログの文言に「この後に終了」と書くくらい</span></td></tr>
+<tr><td>見る所 6：型の分割・AOT</td><td><code>AgentRegistry.Find</code> が <code>IHookAgent?</code> を返し、<code>AgentCatalog</code> は固定の switch。リフレクションは増えていない（品質ゲート 4 の publish 警告 0 とも合う）</td></tr>
+<tr><td>見る所 7：<code>"default"</code></td><td><code>ModelName(Str("model_id") ?? Str("model"))</code>。<code>model_id</code> が <code>"default"</code> なら null になり、<code>model</code> には落ちない。旧も「<code>model_id</code> が default → <code>e.Model = "default"</code> → Analyzer で無視」で、<code>model</code> には落ちなかったので<b>同じ</b>。<code>AgentEvent.Model</code> を直接読むのは <code>SessionAnalyzer</code> だけ（他は要約の <code>Model</code>）なので、ほかへの影響もない</td></tr>
+<tr><td>気になる所 3：0 イベントの行</td><td>旧は「変更あり」を返し、Monitor が同じ内容の更新（または存在しないキーの「消えた」）を通知していた。<code>SessionAnalyzer</code> は現在時刻を使わない（<code>DateTime.Now</code> 無し）ので、要約は変わらない。<b>通知が減るだけで、画面の結果は同じ</b></td></tr>
+<tr><td>気になる所 5：<code>GetEvents</code> が内部のリスト</td><td>唯一の呼び出し元の <code>SessionMonitor</code> が、ロックの中で <code>ToArray()</code> する（134 行）。検索文字列の作成もロックの中。<code>Replace</code> が同じリストを <code>Clear</code> → <code>AddRange</code> するのも旧の作り直しと同じ。<b>問題なし</b>（Store のクラスコメントの「スレッドセーフではない」で足りる）</td></tr>
+<tr><td>気になる所 6・8・9</td><td><code>ProjectFolder</code> の削除・<code>CommonTools</code> が <code>Shell</code> だけ・固定の switch は、どれも計画の範囲で妥当。YAGNI でよい</td></tr>
+</table>
+
+<h2>5. 直す順（提案）</h2>
+<ol>
+<li><b>A1</b>：<code>CursorSessionSource</code> のファイルごとの <code>catch (Exception)</code> と、<code>ImportTranscripts</code> の「成功してから済み」。テストを足す。</li>
+<li><b>B1</b>：<code>replace = truncated</code> にして、<code>switching</code> 引数を消す。計画 8.1 の 5 行目を更新する。</li>
+<li>品質ゲート 1・5（全テストと A/B ダンプ）をやり直す。A1・B1 は通常の経路の出力を変えないので、ダンプは一致するはず。</li>
+<li><b>A2</b>：了承を得てから、別のコミットで <code>Assert</code> を生かす。</li>
+<li><b>B2</b>：Phase 20（Claude の作業ツリーの監視）の前ならいつでもよい。</li>
+</ol>
+</body></html>

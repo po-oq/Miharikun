@@ -162,8 +162,8 @@ tests/Miharikun.Tests/Core/
 | 照合前に捨てた行があり、今回初めて一致した（先頭から読み直す） | `Append`（先頭からの全イベント。Store は空なので結果は同じ） |
 | ファイルが作り直された（truncated）＋ 新しい行が一致した | `Replace`（新しいイベントだけ。1 回にまとめる） |
 | ファイルが作り直された ＋ まだ一致しない／行が無い | 前にイベントがあったときだけ `Remove`。無ければ何も出さない |
-| transcript から取り込み済み → 同じ ID の Hook ファイルが現れ、一致した | `Replace`（Hook のイベント）。**`Append` にしない**（取り込み分と混ざり、Imported の判定が壊れる） |
-| 取り込み済み → 同じ ID の Hook ファイルが現れたが、別のプロジェクト | `Remove` |
+| transcript から取り込み済み → 同じ ID の Hook ファイルが現れ、一致した | **取り込み分の `Remove` を先に出し**、Hook のファイルはふつうの差分（初めて一致した時点で先頭からの全部の `Append`）。`Remove` が要る理由：Source 内の辞書は大文字小文字を区別せず、Store のキー（`SessionKey`）は区別するので、ID が大文字小文字だけ違うと、Hook の差分だけでは取り込み分が別のキーとして残る（レビュー B1）。**今回読んだ分だけで `Replace` しない**（Store に前の分があると消える） |
+| 取り込み済み → 同じ ID の Hook ファイルが現れたが、別のプロジェクト | `Remove`（上と同じ、先に出す取り込み分の `Remove` だけ） |
 | 初回の transcript の取り込み（Hook のファイルが無いもの） | `Replace`（取り込んだイベント。`Imported = true`） |
 
 **Claude の Source**：新しいファイル・追記は `Append`、作り直されたら（Normalizer の状態も作り直して）`Replace`、ファイルが消えたら `Remove`。
@@ -173,11 +173,11 @@ tests/Miharikun.Tests/Core/
 
 | 記録 | 変換 | 決めごと |
 |---|---|---|
-| ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻＝最初の `timestamp`。`Git = new GitSnapshot(gitBranch, null)` |
+| ファイルの最初の記録（`timestamp` のあるもの） | SessionStarted | 時刻＝最初の `timestamp`。`Git = new GitSnapshot(gitBranch, null)`。**最初の記録に `gitBranch` が無いとき（実ログ 2.1.286 の `queue-operation`）は、最初に `gitBranch` を持つ行の最初のイベントの Git に載せる。以後は変わったときだけ**（Phase 22-1 で追加） |
 | **人の入力**：`type=user` の文字の行で、`isMeta` でない・`tool_result` でない・`origin` が無いか `origin.kind == "human"`・`[Request interrupted` で始まらない | PromptSubmitted | 古い版（2.1.156）は `origin` 欄そのものが無い（16 件）。`origin.kind = "task-notification"`（27 件）は入力にしない（B11）。スラッシュコマンドや `<local-command…>` はそのまま文字で |
 | `[Request interrupted…]`（`origin` 無し） | TurnEnded（Aborted） | |
 | `assistant` の `text` | AssistantMessage | `Model = message.model`。**`<synthetic>` は null**（5 件。B5） |
-| `assistant` の `thinking` | AssistantThought | |
+| `assistant` の `thinking` | AssistantThought | **本文（`thinking`）が空・空白だけのものは出さない**（実ログ 2.1.286 の思考 700 件のうち 648 件は、本文が空で `signature` だけ。Claude Code が思考の本文を記録していない） |
 | `stop_reason == "end_turn"` | TurnEnded（Completed） | **`text` を含む行で出す**。思考の行と本文の行の両方に付くことがある（449 件中 172 件）。念のため同じ `message.id` では 1 回だけ（B1）。本文の後に出す |
 | `isApiErrorMessage` の返答 | TurnEnded（Error） | `system` の `api_error` は使わない |
 | `tool_use` | ToolStarted | `ToolName` は共通名（`Bash` / `PowerShell` → `Shell`）。`Command = input.command`。`input.run_in_background` を覚えておく |
@@ -187,7 +187,7 @@ tests/Miharikun.Tests/Core/
 | Output | | **Shell だけ末尾 2000 字を残す。ほかは null**（Read の全文などでメモリが膨らむため。B4） |
 | 編集の成功（`Edit`・`Write`・`MultiEdit`・`NotebookEdit`） | FileEdited | `FilePath = input.file_path`（`NotebookEdit` は `notebook_path`）。`is_error` のときは出さない（B10） |
 | `Agent` の `tool_use` | SubagentStarted | Text＝`description`、ToolName＝`subagent_type`、ToolUseId |
-| `Agent` の結果 | SubagentStopped | **`toolUseResult.status == "completed"` のときだけ**（実ログは 84 件すべて completed）。SubagentId＝`agentId` |
+| `Agent` の結果 | SubagentStopped | **`toolUseResult.status == "completed"` のときだけ**（実ログは 84 件すべて completed）。SubagentId＝`agentId`。**ただし結果が `is_error` のときも終わりにする**（19-3 で追加。動いていないのに残らないように） |
 | `origin.kind = "task-notification"` の行 | （Agent なら）SubagentStopped | 内容の `<tool-use-id>` が動いている Agent の id と一致したとき。それ以外は読み飛ばす（今は SendMessage のものだけ） |
 | `AskUserQuestion` / `ExitPlanMode` の `tool_use` | TurnEnded（Completed） | ユーザーの返事待ち＝ボスの番。`ExitPlanMode` は実例 0 件（手書きのテストだけ） |
 | その結果 | PromptSubmitted | **依頼数・ターン数・最近の入力に数える**。Text は「（回答）」＋内容（B3） |

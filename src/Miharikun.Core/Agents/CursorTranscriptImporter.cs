@@ -12,7 +12,7 @@ public sealed record ImportedSession(SessionKey Key, string TranscriptPath, IRea
 /// hook を入れる前のセッションを共通イベントとして取り込む。入力と返事の本文だけを取り出す（ツール呼び出しは対象外）。
 /// transcript には行ごとの時刻がないので、すべてファイルの更新日時にする。
 /// </summary>
-public sealed class CursorTranscriptImporter(string cursorDir, Action<string>? log = null)
+public class CursorTranscriptImporter(string cursorDir, Action<string>? log = null)
 {
     private const string AgentId = "cursor";
 
@@ -43,7 +43,7 @@ public sealed class CursorTranscriptImporter(string cursorDir, Action<string>? l
     }
 
     /// <param name="skip">取り込まない conversation_id（hook のイベントがあるもの）なら true を返す。</param>
-    public IReadOnlyList<ImportedSession> Scan(string projectFolder, Func<string, bool>? skip)
+    public virtual IReadOnlyList<ImportedSession> Scan(string projectFolder, Func<string, bool>? skip)
     {
         var result = new List<ImportedSession>();
         var wanted = SlugFor(projectFolder);
