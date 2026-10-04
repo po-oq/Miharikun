@@ -5,8 +5,12 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Documents;
 using Miharikun.Core.Settings;
+using Miharikun.Core.Storage;
 
 namespace Miharikun.ViewModels;
+
+/// <summary>プレビューするファイル。</summary>
+public sealed record PreviewTarget(string FullPath, string RelativePath, DocumentKind Kind);
 
 /// <summary>
 /// ドキュメントタブ（要件 12.7）。索引（DocumentIndex）を変えるのは、ここ（UI スレッド）だけ。
@@ -21,6 +25,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     private readonly ProjectSettingsStore _settings;
     private readonly SynchronizationContext _ui;
     private readonly Action<string>? _log;
+    private readonly Func<bool> _isDark;
     private readonly DocumentIndex _index = new();
     private readonly DispatcherTimer _refreshTimer;
     private readonly RescanScheduler _scheduler;
@@ -39,9 +44,13 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     private bool _restored;
     private bool _disposed;
 
-    public DocumentsViewModel(string projectFolder, ProjectSettingsStore settings, SynchronizationContext ui, Action<string>? log = null)
+    public DocumentsViewModel(string projectFolder, ProjectSettingsStore settings, AppPaths paths, Func<bool> isDark,
+        SynchronizationContext ui, Action<string>? log = null)
     {
         _root = projectFolder;
+        PreviewDir = paths.PreviewDir;
+        WebViewDataDir = paths.WebView2Dir;
+        _isDark = isDark;
         _settings = settings;
         _ui = ui;
         _log = log;
@@ -60,6 +69,106 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     }
 
     public string ProjectFolder => _root;
+
+    /// <summary>md の一時 HTML の置き場（PreviewFiles）。</summary>
+    public string PreviewDir { get; }
+
+    /// <summary>WebView2 の作業フォルダ。</summary>
+    public string WebViewDataDir { get; }
+
+    public bool IsDark => _isDark();
+
+    /// <summary>プレビューの表示が変わる（選択・保存・再読み込み・テーマ変更）。第 2 引数が true なら、同じファイルでも作り直す。UI スレッドで呼ばれる。</summary>
+    public event Action<PreviewTarget?, bool>? PreviewChanged;
+
+    /// <summary>選んでいるファイル。何も選んでいなければ null。</summary>
+    public PreviewTarget? CurrentTarget
+    {
+        get
+        {
+            if (_selectedPath is null)
+                return null;
+            var name = _selectedPath[(_selectedPath.LastIndexOf('/') + 1)..];
+            var kind = DocumentEntry.TryGetKind(name, out var k) ? k : DocumentKind.Markdown;
+            return new PreviewTarget(Path.Combine(_root, _selectedPath.Replace('/', Path.DirectorySeparatorChar)), _selectedPath, kind);
+        }
+    }
+
+    private void RaisePreview(bool reload) => PreviewChanged?.Invoke(CurrentTarget, reload);
+
+    /// <summary>テーマが変わった。md は色を変えて作り直す（html はファイルの見た目を尊重するので、View 側で作り直さない）。</summary>
+    public void OnThemeChanged()
+    {
+        if (_selectedPath is not null)
+            RaisePreview(true);
+    }
+
+    /// <summary>プレビューの 1 回の読み込み失敗など、画面の外で起きたことの記録用。</summary>
+    public void Log(string message) => _log?.Invoke(message);
+
+    [RelayCommand]
+    private void ReloadPreview() => RaisePreview(true);
+
+    [RelayCommand]
+    private void OpenFolder()
+    {
+        if (CurrentTarget is { } t)
+            ShellOpen.RevealInExplorer(t.FullPath);
+    }
+
+    [RelayCommand]
+    private void OpenExternal()
+    {
+        if (CurrentTarget is { } t)
+            ShellOpen.Open(t.FullPath);
+    }
+
+    /// <summary>
+    /// プレビュー内のリンク（ローカルのファイル）を開く（要件 12.7）：対象フォルダ内の md/html（除外されていないもの）は
+    /// アプリ内で選ぶ（ツリー・一覧・最後のファイルも追従）。それ以外（対象外・除外・その他のファイル・フォルダ）は、既定のアプリ／エクスプローラー。
+    /// </summary>
+    public void OpenLocalLink(string fullPath)
+    {
+        var rel = Path.GetRelativePath(_root, fullPath).Replace('\\', '/');
+        var inside = !rel.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(rel);
+        if (inside && _index.TryGet(rel) is { } entry)
+        {
+            SelectPath(entry.RelativePath);
+            return;
+        }
+        if (File.Exists(fullPath) || Directory.Exists(fullPath))
+            ShellOpen.Open(fullPath);
+    }
+
+    private void SelectPath(string relativePath)
+    {
+        if (_index.TryGet(relativePath) is not { } entry)
+            return;
+
+        _selectedFolder = entry.Folder.Length == 0 ? null : entry.Folder;
+        ExpandAncestors(entry.Folder);
+        SetSelectedPath(entry.RelativePath);
+        _settings.SaveLastOpened(_root, entry.RelativePath);
+        RefreshNow();
+        LoadOverview(entry.RelativePath);
+        RaisePreview(false);
+    }
+
+    private void ExpandAncestors(string folder)
+    {
+        for (; folder.Length > 0; folder = folder.Contains('/') ? folder[..folder.LastIndexOf('/')] : "")
+            _expanded.Add(folder);
+    }
+
+    /// <summary>選んでいるファイルを変える（ボタンの有効/無効も更新する）。</summary>
+    private void SetSelectedPath(string? path)
+    {
+        _selectedPath = path;
+        HasSelection = path is not null;
+    }
+
+    /// <summary>ファイルを選んでいるか（プレビューのボタンの有効/無効）。</summary>
+    [ObservableProperty] private bool _hasSelection;
 
     /// <summary>ツリーの根（「すべて」の 1 件だけ）。</summary>
     public ObservableCollection<FolderNodeViewModel> TreeRoots { get; }
@@ -172,7 +281,10 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
 
         // 選んでいるファイルが保存されたら、概要（更新日時・行数）も読み直す。
         if (_selectedPath is not null && set.Upserts.Any(e => e.RelativePath.Equals(_selectedPath, StringComparison.OrdinalIgnoreCase)))
+        {
             LoadOverview(_selectedPath);
+            RaisePreview(true);
+        }
     }
 
     private void MarkDirty()
@@ -219,9 +331,10 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
         // 走査が終わっても選んでいたファイルが無ければ（消えた・除外された）、選択を解く。走査中は待つ。
         if (!IsScanning && _selectedPath is not null && _index.TryGet(_selectedPath) is null)
         {
-            _selectedPath = null;
+            SetSelectedPath(null);
             _overviewCts?.Cancel();
             Overview = null;
+            RaisePreview(false);
         }
 
         ListHeader = _selectedFolder is null ? "すべて" : $"{_selectedFolder}/ の直下";
@@ -292,9 +405,10 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
         if (_syncing || value is null)
             return;
 
-        _selectedPath = value.RelativePath;
+        SetSelectedPath(value.RelativePath);
         _settings.SaveLastOpened(_root, value.RelativePath);
         LoadOverview(value.RelativePath);
+        RaisePreview(false);
     }
 
     /// <summary>概要は全文を読む（行数）ので背景で作る。選択が変わったら捨てる。</summary>
@@ -330,11 +444,11 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
             return;
 
         _selectedFolder = entry.Folder.Length == 0 ? null : entry.Folder;
-        for (var folder = entry.Folder; folder.Length > 0; folder = folder.Contains('/') ? folder[..folder.LastIndexOf('/')] : "")
-            _expanded.Add(folder);
-        _selectedPath = entry.RelativePath;
+        ExpandAncestors(entry.Folder);
+        SetSelectedPath(entry.RelativePath);
         RefreshNow();
         LoadOverview(entry.RelativePath);
+        RaisePreview(false);
     }
 
     public void Dispose()

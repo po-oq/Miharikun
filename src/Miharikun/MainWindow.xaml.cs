@@ -23,6 +23,7 @@ public partial class MainWindow : FluentWindow
         DataContext = viewModel;
         InitializeComponent();
         DocumentsHost.DataContext = documents;
+        theme.Changed += _ => documents.OnThemeChanged();
 
         Title = $"Miharikun - {viewModel.ProjectFolder}";
         TitleBar.Title = Title;

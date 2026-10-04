@@ -25,6 +25,8 @@ public partial class App : Application
         var paths = AppPaths.Default();
         AppLog.Init(paths);
 
+        var theme = new ThemeService(new AppSettingsStore(paths, AppLog.Write));
+
         var agent = new CursorAgent();
         var store = new ProjectEventStore(agent, paths, folder, log: AppLog.Write,
             importer: new CursorTranscriptImporter(HookInstaller.ResolveCursorDir(), AppLog.Write));
@@ -36,8 +38,9 @@ public partial class App : Application
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         var hookSetup = new HookSetup(HookInstaller.CreateDefault(paths, appDir));
 
-        var theme = new ThemeService(new AppSettingsStore(paths, AppLog.Write));
-        _documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), SynchronizationContext.Current!, AppLog.Write);
+        _ = Task.Run(() => PreviewFiles.CleanOld(paths.PreviewDir));   // 1 日より古い md の一時 HTML を消す
+        _documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), paths, () => theme.IsDark,
+            SynchronizationContext.Current!, AppLog.Write);
         var window = new MainWindow(_viewModel, _documents, hookSetup, theme);
         theme.Start(window);
         window.Show();

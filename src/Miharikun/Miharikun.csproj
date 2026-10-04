@@ -2,10 +2,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Miharikun.Core\Miharikun.Core.csproj" />
+    <ProjectReference Include="..\Miharikun.Docs\Miharikun.Docs.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Docs 経由でも入るが、実行に要る DLL なので直接も参照する（出力フォルダに必ずコピーされるように） -->
+    <PackageReference Include="Markdig" Version="1.4.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 

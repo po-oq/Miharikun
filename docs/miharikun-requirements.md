@@ -571,8 +571,9 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - ツリー・一覧・絞り込み・概要カード・最後のファイルの復元・Watcher・設定ダイアログ（プレビューは空）
 - 状況：実装済み（`Views/DocumentsView`・`DocumentSettingsDialog`、`ViewModels/DocumentsViewModel` ほか）。⚙ と対象フォルダ表示は TabControl の外の共通ヘッダーへ移した（どのタブでも見える）。隔離した環境で実機確認済み：ツリー（子孫込み件数・「すべて」）、フォルダ直下の一覧、絞り込み（ヒット分の件数）、概要カード、最後のファイルの復元、除外設定（ダイアログで保存 → 即再走査・再起動後も残る、除外パターンの変更が件数に反映）、Watcher（ファイル追加・フォルダ追加・フォルダ名変更・フォルダ削除・除外フォルダ内の変更）、12,000 ファイルでも固まらない、ライト/ダーク両方。プレビューは次の Phase
 
-## [ ] Phase 16: ドキュメントのプレビュー
+## [x] Phase 16: ドキュメントのプレビュー
 - WebView2（html → md）、リンクの扱い、自動再読込、各ボタン。単一ファイル発行で動くかを、この Phase の中で確認する
+- 状況：実装済み（`Views/DocumentPreview`、`PreviewFiles`、`ShellOpen`、`ThemeService.Changed`）。WebView2 の初期化には画面に載った（ウィンドウハンドルのある）コントロールが要るので、先に載せてから始める。DevTools プロトコル（`--remote-debugging-port`）で、隔離した環境のデバッグ版と、`scripts/publish.ps1 -SkipHook` で作った単一ファイル版（133.8MB）の両方を確認済み：md（チェックボックス 3 個・うち 2 個チェック済み、日本語の見出し id、mermaid の図、コードの色付け、相対パスの画像、`<base>`）、`#` リンクのページ内スクロール、md 内の別の md へのリンクと html 内の md へのリンク（アプリ内で選択）、html の相対 css・js・画像と JavaScript、ファイル保存での自動再読み込み、タブを切り替えて戻っても表示が戻る、ダーク（背景 #1E1E1E）。http リンクの既定ブラウザ起動、Runtime 未導入時の案内は、この PC が実環境のため実機では未確認（コードのみ）
 
 ## [ ] Phase 17: ドキュメントの仕上げ
 - 1万・5万ファイルの実測、Release の発行確認、本書（12.7・5章）の更新

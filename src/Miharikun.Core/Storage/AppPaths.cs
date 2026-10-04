@@ -29,6 +29,12 @@ public sealed class AppPaths(string root)
     public string MetaFile(string agentId, string sessionId) =>
         Path.Combine(MetaDir(agentId), SanitizeFileName(sessionId) + ".json");
 
+    /// <summary>md を HTML にした一時ファイル（1 つの md につき 1 ファイル。起動時に 1 日より古いものを消す）。</summary>
+    public string PreviewDir => Path.Combine(Root, "preview");
+
+    /// <summary>WebView2 の作業フォルダ（キャッシュ・Cookie 等。消してよい）。標準の場所（exe の隣）だと配布先を汚すため、専用にする。</summary>
+    public string WebView2Dir => Path.Combine(Root, "webview2");
+
     public string ProjectsDir => Path.Combine(Root, "projects");
 
     /// <summary>

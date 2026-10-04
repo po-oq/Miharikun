@@ -17,10 +17,21 @@ public sealed class ThemeService(AppSettingsStore settings)
 
     public AppTheme Mode { get; private set; } = AppTheme.System;
 
+    /// <summary>いま、ダークで表示しているか。</summary>
+    public bool IsDark { get; private set; }
+
+    /// <summary>見た目が変わった（⚙ からの変更・OS の変更の両方）。引数は変更後の IsDark。UI スレッドで呼ばれる。</summary>
+    public event Action<bool>? Changed;
+
     /// <summary>ウィンドウが出来てから呼ぶ（OS の変更の監視にウィンドウが要る）。</summary>
     public void Start(Window window)
     {
         _window = window;
+        ApplicationThemeManager.Changed += (theme, _) =>
+        {
+            IsDark = theme == ApplicationTheme.Dark;
+            Changed?.Invoke(IsDark);
+        };
         Apply(settings.LoadTheme());
         // 監視の開始・解除は、ウィンドウが読み込まれてからでないとできない。
         window.Loaded += (_, _) => UpdateWatcher();
@@ -45,6 +56,7 @@ public sealed class ThemeService(AppSettingsStore settings)
             AppTheme.Dark => true,
             _ => ApplicationThemeManager.GetSystemTheme() != SystemTheme.Light,
         };
+        IsDark = dark;
         ApplicationThemeManager.Apply(dark ? ApplicationTheme.Dark : ApplicationTheme.Light, WindowBackdropType.Mica);
         SetColors(dark);
     }
