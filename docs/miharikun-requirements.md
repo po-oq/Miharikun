@@ -562,9 +562,10 @@ Cursor の Capabilities：`RealtimeHooks | ToolEvents | AssistantText | Thinking
 - 完了条件：1万ファイルの一時フォルダのテストが数秒以内。`dotnet build --no-incremental` が警告 0
 - 状況：実装済み（`src/Miharikun.Core/Documents/`、`Settings/ProjectSettingsStore.cs`）。除外判定・走査・索引・ツリー・絞り込み・概要・設定の保存・Watcher の振り分け（`DocumentChangeClassifier`）・再走査の予約（`RescanScheduler`）まで。1万ファイル（除外対象 2,000 を含む）の計測は `MIHARIKUN_PERF=1` のときだけ動く `PerfFact`。Core は AOT 互換（`--no-incremental` で警告 0）
 
-## [ ] Phase 14: ドキュメント md→HTML（新プロジェクト Miharikun.Docs）
+## [x] Phase 14: ドキュメント md→HTML（新プロジェクト Miharikun.Docs）
 - Markdig（Docs だけが参照。Core は AOT 互換のまま）。チェックボックス・mermaid・テーマ別 CSS
 - 完了条件：チェックボックス 6 ケースのテストが通る。要件定義書そのものを変換できる
+- 状況：実装済み（`src/Miharikun.Docs/`）。チェックボックスは Markdig 標準の出力を、読み取り専用（押しても変わらず、通常の色で表示。灰色の `disabled` をやめた）に置き換えている。見出し id は日本語を残す GitHub 方式。mermaid（CDN）・コードの色付け（highlight.js、CDN）・テーマ別 CSS・`#` リンク用スクリプト・`<base>` の URL 生成（日本語・空白・`#`・`%` 対応）。Edge（ヘッドレス）でライト/ダークの表示、チェックボックス、mermaid、色付けを確認済み
 
 ## [ ] Phase 15: ドキュメント画面
 - ツリー・一覧・絞り込み・概要カード・最後のファイルの復元・Watcher・設定ダイアログ（プレビューは空）

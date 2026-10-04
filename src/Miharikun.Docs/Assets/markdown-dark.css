@@ -1,0 +1,10 @@
+:root {
+  color-scheme: dark;
+  --fg: #e6edf3;
+  --bg: #1e1e1e;
+  --muted: #9198a1;
+  --border: #3d444d;
+  --code-bg: #2a2d31;
+  --link: #58a6ff;
+  --quote: #9198a1;
+}

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- md→HTML。Markdig はここだけが参照する（Core は NativeAOT の Hook も使うので、AOT 互換のまま保つ）。
+       テストプロジェクトが net10.0 なので、-windows にはしない。Core への参照も要らない。 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\*.css" />
+  </ItemGroup>
+
+</Project>
