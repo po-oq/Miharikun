@@ -92,6 +92,11 @@ Hook を外すときは、画面右上の ⚙ → 「Hook を削除」。
 「ドキュメント」タブ：プロジェクト配下の .md / .html を読めます。表示には Microsoft Edge の WebView2 Runtime が要ります
 （Windows 11 や、Edge が入っている環境では、たいてい入っています）。
 除外するフォルダ・ファイルは、画面右上の ⚙ → 「ドキュメントの設定…」で変えられます（gitignore 形式）。
+
+「メモ」タブ：プロジェクトごとのメモ帳です。Markdown で書き、ふだんは「ドキュメント」タブと同じ見た目で読みます（表示には WebView2 Runtime が要りますが、書く・保存するのは要りません）。
+- 右上の「✎ 編集」で書き、「保存」（Ctrl+S）で保存します。「キャンセル」で、変更を捨ててプレビューに戻ります。
+- 保存先は %LOCALAPPDATA%\Miharikun\projects\ の「.memo.md」です（1 プロジェクトに 1 つ）。未保存のまま閉じるときは、保存するか確認します。
+- メモの中の、プロジェクト内の .md / .html へのリンクは、「ドキュメント」タブで開きます。
 "@ | Set-Content (Join-Path $stage 'README.txt') -Encoding UTF8
 
 $zip = Join-Path $dist "$name.zip"
