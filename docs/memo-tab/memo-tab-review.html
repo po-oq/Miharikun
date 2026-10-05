@@ -9,15 +9,15 @@ code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #
 .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
 svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
 </style></head><body>
-<h1>メモタブ実装計画（docs/memo-tab-plan.md）レビュー</h1>
+<h1>メモタブ実装計画（docs/memo-tab/memo-tab-plan.md）レビュー</h1>
 <p><b>結論：<span class="ng">直してから進める</span></b>。全体の分け方（Core → 共通化 → 画面 → 仕上げ）と、WebView2 の環境を 1 つにする方針は妥当。
 ただし <b>7.3 の「予定のファイル」が消える／残り続ける抜け（#1・#2）</b> と、<b>読み込み失敗を「空」と扱うと保存で既存メモを消す危険（#3）</b> は、計画の段階で直しておくべき。
 ほかは計画の文言を足せば済む中〜低の指摘。コードは変えていない。</p>
 
 <h2>1. 確認した範囲</h2>
 <ul>
-<li>計画：<code>docs/memo-tab-plan.md</code>（図解 <code>memo-tab-plan.html</code> は対なので md を正として読んだ）</li>
-<li>仕様：<code>docs/miharikun-requirements.md</code> 6章・12.7・12.10・Phase 23〜26、設計イメージ <code>docs/memo-tab-design.html</code></li>
+<li>計画：<code>docs/memo-tab/memo-tab-plan.md</code>（図解 <code>memo-tab-plan.html</code> は対なので md を正として読んだ）</li>
+<li>仕様：<code>docs/miharikun-requirements.md</code> 6章・12.7・12.10・Phase 23〜26、設計イメージ <code>docs/memo-tab/memo-tab-design.html</code></li>
 <li>コード：<code>src/Miharikun/Views/DocumentPreview.xaml(.cs)</code>・<code>Views/DocumentsView.xaml(.cs)</code>・<code>ViewModels/DocumentsViewModel.cs</code>・<code>MainWindow.xaml(.cs)</code>・<code>App.xaml.cs</code>・<code>PreviewFiles.cs</code>、
 <code>Miharikun.Core/Storage/AppPaths.cs</code>・<code>Storage/AtomicFile.cs</code>・<code>Settings/ProjectSettingsStore.cs</code>・<code>Documents/GitIgnoreMatcher.cs</code>・<code>Documents/DocumentChangeClassifier.cs</code>・<code>Documents/DocumentIndex.cs</code>、<code>Miharikun.Docs/MarkdownRenderer.cs</code></li>
 </ul>

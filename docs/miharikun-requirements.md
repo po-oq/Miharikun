@@ -95,7 +95,7 @@ Cursor と Claude Code に対応し、将来 Codex / GitHub Copilot にも対応
 ### ルール
 1. **`IAgentInfo`**（Id・表示名・Capabilities）は全エージェントが実装する。**`IHookAgent : IAgentInfo`**（Hook 側の処理）は、Hook を使うエージェント（Cursor）だけが実装する。Claude Code は `IAgentInfo` だけ
 2. **読み込みは `ISessionSource` をエージェントごとに 1 つ**（`CursorSessionSource`、`ClaudeSessionSource`）。返すのは**差分（`SessionDelta`）**：追記 / 作り直し / 消えた のどれかと、`AgentEvent` の列。**プロジェクトとの照合（Cursor は `workspace_roots`、Claude Code は `cwd`）は Source の中で行う**。「Hook があれば transcript より優先」のような、エージェント固有の事情も Source の中に閉じる
-3. **保持・要約（`SessionSummary`）のキャッシュ・変更通知は、汎用の `ProjectEventStore` 1 つ**が行う。エージェントのことは知らない。`SessionMonitor` は Store を 1 つ持ち、各 Source の監視先（`WatchTargets`）をまとめて監視する。Store は Source ごとに例外を捕まえ、他の Source は動き続ける（13 章）。差分の出し方の細かい規則（Cursor の「作り直し」「取り込み済み → Hook」など）は実装計画 `issue11-claude-code-plan.md` 8.1
+3. **保持・要約（`SessionSummary`）のキャッシュ・変更通知は、汎用の `ProjectEventStore` 1 つ**が行う。エージェントのことは知らない。`SessionMonitor` は Store を 1 つ持ち、各 Source の監視先（`WatchTargets`）をまとめて監視する。Store は Source ごとに例外を捕まえ、他の Source は動き続ける（13 章）。差分の出し方の細かい規則（Cursor の「作り直し」「取り込み済み → Hook」など）は実装計画 `docs/issue11/issue11-claude-code-plan.md` 8.1
 4. **App（状態判定・画面・検索）は共通イベント `AgentEvent` だけを扱う**。生 JSON のフィールド（Cursor の `stop.status`・`workspace_roots`、Claude Code の `stop_reason`・`cwd` 等）を App 側で直接参照してはならない。ツール名も共通名に直す（`CommonTools.Shell` ほか。Claude Code の `Bash` / `PowerShell` → `Shell`）
 5. **Hook exe は生データを保存するだけ**（Cursor 用）。正規化（生 JSON → 共通イベント）は App が読み込み時に行う（正規化を修正すれば過去データにも反映される）
 6. **能力差は `Capabilities` フラグで表現**し、UI はフラグを見て表示の有無を決める
@@ -509,7 +509,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - App 側で「SessionKey + ファイル内の行番号」を ID とする（AgentEvent.Seq）（3行サマリー → タイムラインのジャンプに使用）
 
 ### 12.7 ドキュメントタブ（Issue #9）
-対象フォルダ配下の .md / .html / .htm をツリー → 一覧 → プレビューで読む。読み取り専用（編集・保存はしない）。設計イメージ：`docs/issue9-documents-design.html`（リポジトリ外）。
+対象フォルダ配下の .md / .html / .htm をツリー → 一覧 → プレビューで読む。読み取り専用（編集・保存はしない）。設計イメージ：`docs/issue9/issue9-documents-design.html`（リポジトリ外）。
 
 **画面（左から）**
 - 上部：「読み直し」ボタン（全再走査）、「パスで絞り込み」ボックス（ファイル名・フォルダ名の部分一致、大文字小文字無視、インクリメンタル）。「一覧/ボード」切替は作らない
@@ -557,7 +557,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - テーマは、これまでどおり ⚙ メニューの「テーマ」で選ぶ（設定画面には移さない）
 
 ### 12.10 メモタブ（プロジェクトメモ）
-プロジェクトのメモ帳。Markdown で書き、ふだんはドキュメントタブの md と同じ見た目で読む。設計イメージ：`docs/memo-tab-design.html`。
+プロジェクトのメモ帳。Markdown で書き、ふだんはドキュメントタブの md と同じ見た目で読む。設計イメージ：`docs/memo-tab/memo-tab-design.html`。
 
 **画面**
 - タブの全幅を 1 枚で使う。上に細いバー（見出し「プロジェクトのメモ」、最終更新の日時、ボタン）、その下をプレビューかエディタのどちらかが占める
@@ -741,7 +741,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 状況：実装し、隔離した環境（実データのコピー）でライト/ダークの画面確認済み。通常の幅（340px）でチップ5つと検索ボックスが1行に収まること、検索（「1/5件」・✕で解除）、行のダブルクリックコピー（全文がクリップボードに入り、バブルが「コピーしました」に変わる。省略表示の開閉は元のまま）、拡大（全幅で上にメモ、下にタイムライン。Esc で戻る）を確認した。判定・整形は Core の `TimelineText` に置いてテストしている。
 
 ## Phase 13〜17: ドキュメントタブ（Issue #9）
-12.7 / 6章。実装の分け方・ファイル構成は `docs/issue9-documents-plan.md`（図解 HTML と対）。全体の完了条件：1万ファイル超のフォルダでも画面が固まらずツリーが出る。除外設定の変更が即時に反映され、再起動後も残る。md のチェックボックス（未/済・入れ子・番号付き）が正しく出る。mermaid が図になる。html の相対 css・js・画像が効く。ライト/ダークの両方で確認する。
+12.7 / 6章。実装の分け方・ファイル構成は `docs/issue9/issue9-documents-plan.md`（図解 HTML と対）。全体の完了条件：1万ファイル超のフォルダでも画面が固まらずツリーが出る。除外設定の変更が即時に反映され、再起動後も残る。md のチェックボックス（未/済・入れ子・番号付き）が正しく出る。mermaid が図になる。html の相対 css・js・画像が効く。ライト/ダークの両方で確認する。
 
 ## [x] Phase 13: ドキュメント Core
 - `GitIgnoreMatcher`・`DocumentIndexer`・索引・ツリー・`DocumentFilter`・`DocumentOverview`・`ProjectSettingsStore`・`DocumentWatcher`（画面なし。テスト先行）
@@ -768,8 +768,8 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## [x] Phase 18: Claude Code 対応 ① 共通化（Issue #11。挙動は変えない）
 - 5.1 の構成に直す：`ISessionSource` / `SessionDelta`、`CursorSessionSource`（旧 `ProjectEventStore` の読み込み部分＋ `CursorTranscriptImporter`）、汎用 `ProjectEventStore`、`SessionMonitor`（各 Source の `WatchTargets`）、`IAgent` → `IAgentInfo` / `IHookAgent`、共通ツール名 `CommonTools`、モデル名 `"default"` の無視を `CursorAgent.Normalize` へ、`MetaStore` / `SessionMetaService` をエージェントごとに切り替え、`HookInstaller` / `HookSetup` のクラスのコメントに「Cursor 専用」と明記（名前は変えない。別のエージェントが Hook を使うときに抽象化する）、読み込み元ごとの例外の隔離と、捕まえられなかった例外のログ（13 章。画面の挙動は変えない）
 - 完了条件：**既存のテストが全部通る（移したクラスに合わせた修正のみ。件数を減らさない）**。Cursor の画面・Hook exe の挙動が変わらない。Core は AOT 互換（警告 0）。`publish.ps1` が通る。**本物の Cursor のデータのコピー（利用者の了承を得てから）で、移す前と後の全セッションの要約が一致する**。同じコピーを使った隔離環境で、Cursor のセッションが従来どおり表示される
-- 進め方：最初に、旧コードのまま特性テスト（テストの無い経路）と要約のダンプを足す。テストを先に直さず、既存のテストを正として、1 つずつ移す。`ProjectEventStore` は、ダミーの Source で新しいテストを書く。詳細は実装計画 `issue11-claude-code-plan.md`（1 章の品質ゲート・8.1）
-- 状況：実装済み（18-0〜18-5。コミットは利用者の指示を待つ）。`Sessions/CursorSessionSource.cs`・`ISessionSource.cs`、汎用 `ProjectEventStore`、`SessionMonitor`（`WatchTargets` を毎回取り直す）、`Agents/AgentCatalog.cs`・`CommonTools.cs`、`IHookAgent`、`SessionMetaService`（`Func<string, MetaStore>`）、`App.xaml.cs` の Source のリスト、未処理の例外のログ。品質ゲート 6 点を確認済み：テスト 514 件合格（スキップ 2。レビュー（`issue11-phase18-review.html`）への対応後の件数。着手前は 482 件 + スキップ 1。既存テストの変更は構築行のみで、`Assert` の差分なし）／Core の `--no-incremental` ビルドは警告 0／`scripts/publish.ps1`（Hook の NativeAOT を含む）が通り警告 0／本物の Cursor のデータのコピーで、移す前と後（18-2・18-4・18-5 の各時点）の全セッション（5 件）の要約と検索文字列のダンプが完全に一致／同じコピーの隔離環境で、一覧 5 件（導入前を含む）・詳細・タイムライン・メモ欄・ステータスが表示された（UI Automation での確認。目視のスクリーンショットは未撮影）。**Opus によるレビューを挟んでから Phase 19 に進む**（計画 12.3）
+- 進め方：最初に、旧コードのまま特性テスト（テストの無い経路）と要約のダンプを足す。テストを先に直さず、既存のテストを正として、1 つずつ移す。`ProjectEventStore` は、ダミーの Source で新しいテストを書く。詳細は実装計画 `docs/issue11/issue11-claude-code-plan.md`（1 章の品質ゲート・8.1）
+- 状況：実装済み（18-0〜18-5。コミットは利用者の指示を待つ）。`Sessions/CursorSessionSource.cs`・`ISessionSource.cs`、汎用 `ProjectEventStore`、`SessionMonitor`（`WatchTargets` を毎回取り直す）、`Agents/AgentCatalog.cs`・`CommonTools.cs`、`IHookAgent`、`SessionMetaService`（`Func<string, MetaStore>`）、`App.xaml.cs` の Source のリスト、未処理の例外のログ。品質ゲート 6 点を確認済み：テスト 514 件合格（スキップ 2。レビュー（`docs/issue11/issue11-phase18-review.html`）への対応後の件数。着手前は 482 件 + スキップ 1。既存テストの変更は構築行のみで、`Assert` の差分なし）／Core の `--no-incremental` ビルドは警告 0／`scripts/publish.ps1`（Hook の NativeAOT を含む）が通り警告 0／本物の Cursor のデータのコピーで、移す前と後（18-2・18-4・18-5 の各時点）の全セッション（5 件）の要約と検索文字列のダンプが完全に一致／同じコピーの隔離環境で、一覧 5 件（導入前を含む）・詳細・タイムライン・メモ欄・ステータスが表示された（UI Automation での確認。目視のスクリーンショットは未撮影）。**Opus によるレビューを挟んでから Phase 19 に進む**（計画 12.3）
 
 ## [x] Phase 19: Claude Code 対応 ② Core の正規化（Issue #11）
 - `ClaudeCodeAgent`（`IAgentInfo`）、`ClaudeTranscriptNormalizer`（5.1 の対応表。状態を持つ。サブエージェントのログにも使える形）、`AgentEvent.SubagentId`、`SessionAnalyzer` の調整（サブエージェントの履歴・失敗したテスト）、`StalledRule`（表示用の状態）、`settings.json` の `runningTimeoutMinutes`（全体を読んで書く形に直す）、形式の変化のログ（11.1）、ブランチと時刻からの head（10.1）、作業ツリーのファイルを未コミットの判定から外す（10.1）
@@ -795,7 +795,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 状況：**22-1 は実施済み**（14.2 の「Phase 22-1 の実機確認」に結果。会話ログは構造だけを数えた）。実物で見つけた 2 件を直した：①最初の記録（`queue-operation`）に `gitBranch` が無く、ブランチ・コミット一覧が出なかった ②開始より前にコミットが無いセッションのコミット一覧が「—」だった。未確認項目は、実物に出なかったので「保留」に整理した。**22-2 も実施済み**：配布 zip の `README.txt`（`scripts/publish.ps1`）に Claude Code（導入不要・読み取りだけ・停止の表示・⚙ の「設定…」）を追記、`docs/release.md` の出す前のチェックに Claude Code の確認を追加、`CLAUDE.md` の冒頭と「守ること」を Cursor と Claude Code に更新（`.claude` には何も書かない・会話ログの形式は公開仕様でない・構造だけを数える）。**Issue #11 の実装は、これで 15 章のフェーズ（18〜22）がすべて完了**。リリースはしていない（未リリースの変更は v0.1.5 以降に溜まっている。出すときは `docs/release.md`）。実機（Claude Code を日常的に使う PC）での通し確認と、保留にした記録の形（圧縮・Agent・`ExitPlanMode` ほか）の確認は、実物が出たときに行う
 
 ## Phase 23〜26: メモタブ（Issue #14）
-12.10 / 6章。実装の分け方・ファイル構成・決めごとは実装計画 `docs/memo-tab-plan.md`（図解 HTML と対）。全体の完了条件：編集 → 保存で再起動後も残る。キャンセル・未保存で閉じるときの確認が効く。プレビューがドキュメントタブの md と同じに出る（タスクリスト・mermaid・相対パスの画像）。ドキュメントタブの挙動が変わらない。ライト/ダークの両方で確認する。
+12.10 / 6章。実装の分け方・ファイル構成・決めごとは実装計画 `docs/memo-tab/memo-tab-plan.md`（図解 HTML と対）。全体の完了条件：編集 → 保存で再起動後も残る。キャンセル・未保存で閉じるときの確認が効く。プレビューがドキュメントタブの md と同じに出る（タスクリスト・mermaid・相対パスの画像）。ドキュメントタブの挙動が変わらない。ライト/ダークの両方で確認する。
 
 ## [ ] Phase 23: メモタブ Core
 - `ProjectMemoStore`（対象フォルダ → メモのパス、読む（無ければ空）、アトミックに書く、更新日時）。テスト先行

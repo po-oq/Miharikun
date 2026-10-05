@@ -24,7 +24,7 @@ Issue #11「Claude Code に対応する」の Phase 18（共通化。**挙動は
 ## 2. 前提（読むもの）
 
 - 仕様：`docs/miharikun-requirements.md` の 5.1・9・Phase 18
-- 移し方の決めごと：`docs/issue11-claude-code-plan.md` の 8.1（差分の規則）・2 章（Phase 18）
+- 移し方の決めごと：`docs/issue11/issue11-claude-code-plan.md` の 8.1（差分の規則）・2 章（Phase 18）
 - 品質ゲート：同 1 章（6 点）
 
 ## 3. 見てほしい所（この順で）
