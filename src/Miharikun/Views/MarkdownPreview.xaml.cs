@@ -11,18 +11,18 @@ using Miharikun.ViewModels;
 namespace Miharikun.Views;
 
 /// <summary>
-/// ドキュメントのプレビュー（要件 12.7）。html は元のファイルを file:/// でそのまま開き、md は HTML にして一時ファイルに書いて開く。
-/// リンクはここで振り分ける（http は既定ブラウザ、対象フォルダ内の md/html はアプリ内で選択、それ以外は既定のアプリ）。
+/// md / html のプレビュー（要件 12.7・12.10。ドキュメントタブとメモタブで共用）。html は元のファイルを file:/// でそのまま開き、
+/// md は HTML にして一時ファイルに書いて開く。リンクはここで振り分ける（http は既定ブラウザ、ローカルのファイルはホストへ）。
 /// </summary>
-public partial class DocumentPreview : UserControl
+public partial class MarkdownPreview : UserControl
 {
-    private DocumentsViewModel? _vm;
+    private IPreviewHost? _vm;
     private WebView2? _web;
     private Task<bool>? _initTask;
     private string? _pagePath;          // いま表示しているページ（html 本体、または md の一時 HTML）のパス
     private int _version;               // 連続した選択で、古い読み込みの結果を捨てるための番号
 
-    public DocumentPreview()
+    public MarkdownPreview()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
@@ -32,16 +32,19 @@ public partial class DocumentPreview : UserControl
     {
         if (_vm is not null)
             _vm.PreviewChanged -= OnPreviewChanged;
-        _vm = e.NewValue as DocumentsViewModel;
+        _vm = e.NewValue as IPreviewHost;
         if (_vm is not null)
+        {
             _vm.PreviewChanged += OnPreviewChanged;
+            MessageText.Text = _vm.EmptyText;
+        }
     }
 
-    private async void OnPreviewChanged(PreviewTarget? target, bool reload)
+    private async void OnPreviewChanged(PreviewSource? source, bool reload)
     {
         try
         {
-            await ShowAsync(target, reload);
+            await ShowAsync(source, reload);
         }
         catch (Exception ex)
         {
@@ -58,13 +61,17 @@ public partial class DocumentPreview : UserControl
         WebHost.Visibility = Visibility.Collapsed;
     }
 
-    private async Task ShowAsync(PreviewTarget? target, bool reload)
+    private async Task ShowAsync(PreviewSource? source, bool reload)
     {
         var version = ++_version;
-        if (target is null)
+        switch (source)
         {
-            ShowMessage("ファイルを選ぶと、ここに表示します");
-            return;
+            case null:
+                ShowMessage(_vm?.EmptyText ?? "");
+                return;
+            case PreviewSource.Message message:
+                ShowMessage(message.Text);
+                return;
         }
 
         if (!await EnsureWebViewAsync())
@@ -72,7 +79,7 @@ public partial class DocumentPreview : UserControl
         if (version != _version)
             return;
 
-        if (!File.Exists(target.FullPath))
+        if (source is PreviewSource.File file && !System.IO.File.Exists(file.FullPath))
         {
             ShowMessage("ファイルが見つかりません");
             return;
@@ -81,11 +88,17 @@ public partial class DocumentPreview : UserControl
         string pagePath;
         try
         {
-            pagePath = target.Kind == DocumentKind.Html ? target.FullPath : await RenderMarkdownAsync(target);
+            pagePath = source switch
+            {
+                PreviewSource.File { Kind: DocumentKind.Html } html => html.FullPath,
+                PreviewSource.File md => await RenderMarkdownFileAsync(md),
+                PreviewSource.Markdown memo => await RenderMarkdownTextAsync(memo),
+                _ => throw new InvalidOperationException(),
+            };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _vm?.Log($"{target.RelativePath} を表示できない: {ex.Message}");
+            _vm?.Log($"{NameOf(source)} を表示できない: {ex.Message}");
             ShowMessage($"ファイルを読めません：{ex.Message}");
             return;
         }
@@ -104,8 +117,15 @@ public partial class DocumentPreview : UserControl
             core.Navigate(MarkdownRenderer.FileUri(pagePath));
     }
 
+    private static string NameOf(PreviewSource source) => source switch
+    {
+        PreviewSource.File file => file.RelativePath,
+        PreviewSource.Markdown memo => memo.Title,
+        _ => "",
+    };
+
     /// <summary>md を読んで HTML にし、一時ファイルに書く（重い md でも画面を止めないよう背景で）。</summary>
-    private async Task<string> RenderMarkdownAsync(PreviewTarget target)
+    private async Task<string> RenderMarkdownFileAsync(PreviewSource.File target)
     {
         var isDark = _vm?.IsDark ?? false;
         var previewDir = _vm!.PreviewDir;
@@ -121,21 +141,26 @@ public partial class DocumentPreview : UserControl
         });
     }
 
+    /// <summary>文字を HTML にして、一時ファイルに書く。</summary>
+    private async Task<string> RenderMarkdownTextAsync(PreviewSource.Markdown memo)
+    {
+        var isDark = _vm?.IsDark ?? false;
+        var previewDir = _vm!.PreviewDir;
+        return await Task.Run(() =>
+            PreviewFiles.Write(previewDir, memo.CacheKey, MarkdownRenderer.Render(memo.Text, memo.BaseFolder, isDark, memo.Title)));
+    }
+
     // ── WebView2 の準備 ───────────────────────────────────────────────
 
     private Task<bool> EnsureWebViewAsync() => _initTask ??= InitializeAsync();
 
     private async Task<bool> InitializeAsync()
     {
-        try
-        {
-            // 未導入だと例外になる。このとき、ツリー・一覧・概要は使えるまま、案内だけを出す。
-            CoreWebView2Environment.GetAvailableBrowserVersionString();
-        }
-        catch (WebView2RuntimeNotFoundException)
+        // 未導入だと、ツリー・一覧・概要などは使えるまま、案内だけを出す。
+        if (!WebViewEnvironment.IsRuntimeInstalled())
         {
             ShowMessage("プレビューには「Microsoft Edge WebView2 Runtime」が必要ですが、このパソコンには入っていません。\n" +
-                        "ツリー・一覧・概要は使えます。入れると、md / html をここに表示できます（https://developer.microsoft.com/microsoft-edge/webview2/）。");
+                        _vm!.RuntimeMissingNote);
             return false;
         }
 
@@ -151,7 +176,7 @@ public partial class DocumentPreview : UserControl
             WebHost.Visibility = Visibility.Visible;
             MessageText.Visibility = Visibility.Collapsed;
 
-            var env = await CoreWebView2Environment.CreateAsync(null, _vm!.WebViewDataDir);
+            var env = await WebViewEnvironment.GetAsync();
             await _web.EnsureCoreWebView2Async(env);
 
             var core = _web.CoreWebView2;

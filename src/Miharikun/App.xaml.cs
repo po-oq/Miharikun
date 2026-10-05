@@ -47,6 +47,7 @@ public partial class App : Application
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         var hookSetup = new HookSetup(HookInstaller.CreateDefault(paths, appDir));
 
+        WebViewEnvironment.Configure(paths.WebView2Dir);
         _ = Task.Run(() => PreviewFiles.CleanOld(paths.PreviewDir));   // 1 日より古い md の一時 HTML を消す
         _documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), paths, () => theme.IsDark,
             SynchronizationContext.Current!, AppLog.Write);

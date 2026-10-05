@@ -802,9 +802,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：テストが通る。Core は AOT 互換（`--no-incremental` で警告 0）
 - 状況：実装済み（23-1〜23-3）。`Memo/ProjectMemoStore.cs`（読めないときは例外・BOM 付きも読める・書くのは BOM なし）、`Memo/MemoEditor.cs`（編集の状態。改行コードの違いは変更とみなさない）、`Documents/DocumentLinkRule.cs`（リンク → ドキュメントタブで開けるか）、`AppPaths.ProjectMemoFile`（名前の作り方は設定の json と共通）。テスト 842 件合格（スキップ 5。Phase 22 の終わりは 793 件）。Core の `--no-incremental` ビルドは警告 0。コミットはまだしていない
 
-## [ ] Phase 24: md プレビューの共通化（挙動は変えない）
+## [x] Phase 24: md プレビューの共通化（挙動は変えない）
 - `DocumentPreview` から、WebView2 の準備・未導入の案内・md の描画・リンクの振り分けを、ドキュメントとメモの両方で使える部品に切り出す
 - 完了条件：既存のテストが全部通る。ドキュメントタブの表示（md・html・リンク・自動再読み込み・テーマ）が従来どおり
+- 状況：実装済み（24-1）。`Views/MarkdownPreview`（`DocumentPreview` を改名・一般化）、`Views/IPreviewHost.cs`（`IPreviewHost`・`PreviewSource` の `File`/`Markdown`/`Message`）、`WebViewEnvironment`（環境を 1 つ共用。失敗は覚えない）。`DocumentsViewModel` は `IPreviewHost` を実装（案内の文は今のまま）。テスト 842 件合格（スキップ 5）。隔離環境（デバッグ版・DevTools プロトコル）で確認：md（チェックボックス・日本語の見出し id・コードの色付け・mermaid・`<base>`）、md→md と html→md のリンク、html の表示、ファイル保存での自動再読み込み、タブを切り替えて戻っても表示が戻る、ダーク（背景 #1E1E1E）。Runtime 未導入の案内・テーマ切り替えでの作り直し・`#` リンクは、コードの差分で確認（実機では未確認）。コミットはまだしていない
 
 ## [ ] Phase 25: メモタブの画面
 - `MemoView` / `MemoViewModel`：プレビュー ⇄ 編集、保存（Ctrl+S）・キャンセル（確認）、タブを移っても入力が残る、未保存で閉じるときの確認、リンクからドキュメントタブへ、外での書き換えの読み直し、空のときの案内

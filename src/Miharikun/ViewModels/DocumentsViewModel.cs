@@ -6,18 +6,16 @@ using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Documents;
 using Miharikun.Core.Settings;
 using Miharikun.Core.Storage;
+using Miharikun.Views;
 
 namespace Miharikun.ViewModels;
-
-/// <summary>プレビューするファイル。</summary>
-public sealed record PreviewTarget(string FullPath, string RelativePath, DocumentKind Kind);
 
 /// <summary>
 /// ドキュメントタブ（要件 12.7）。索引（DocumentIndex）を変えるのは、ここ（UI スレッド）だけ。
 /// 走査のバッチも Watcher の差分も UI スレッドへ送ってから反映し、画面（ツリー・一覧）は 200ms ほどまとめて作り直す。
 /// 状態（走査結果・選択・展開）はここに持つ（タブを切り替えると View は外れるため）。
 /// </summary>
-public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
+public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost, IDisposable
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(200);
 
@@ -51,7 +49,6 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     {
         _root = projectFolder;
         PreviewDir = paths.PreviewDir;
-        WebViewDataDir = paths.WebView2Dir;
         _isDark = isDark;
         _settings = settings;
         _ui = ui;
@@ -75,16 +72,18 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     /// <summary>md の一時 HTML の置き場（PreviewFiles）。</summary>
     public string PreviewDir { get; }
 
-    /// <summary>WebView2 の作業フォルダ。</summary>
-    public string WebViewDataDir { get; }
-
     public bool IsDark => _isDark();
 
     /// <summary>プレビューの表示が変わる（選択・保存・再読み込み・テーマ変更）。第 2 引数が true なら、同じファイルでも作り直す。UI スレッドで呼ばれる。</summary>
-    public event Action<PreviewTarget?, bool>? PreviewChanged;
+    public event Action<PreviewSource?, bool>? PreviewChanged;
+
+    public string EmptyText => "ファイルを選ぶと、ここに表示します";
+
+    public string RuntimeMissingNote =>
+        "ツリー・一覧・概要は使えます。入れると、md / html をここに表示できます（https://developer.microsoft.com/microsoft-edge/webview2/）。";
 
     /// <summary>選んでいるファイル。何も選んでいなければ null。</summary>
-    public PreviewTarget? CurrentTarget
+    public PreviewSource.File? CurrentTarget
     {
         get
         {
@@ -92,7 +91,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
                 return null;
             var name = _selectedPath[(_selectedPath.LastIndexOf('/') + 1)..];
             var kind = DocumentEntry.TryGetKind(name, out var k) ? k : DocumentKind.Markdown;
-            return new PreviewTarget(Path.Combine(_root, _selectedPath.Replace('/', Path.DirectorySeparatorChar)), _selectedPath, kind);
+            return new PreviewSource.File(Path.Combine(_root, _selectedPath.Replace('/', Path.DirectorySeparatorChar)), _selectedPath, kind);
         }
     }
 
