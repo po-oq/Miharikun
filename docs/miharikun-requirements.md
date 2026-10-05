@@ -797,9 +797,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## Phase 23〜26: メモタブ（Issue #14）
 12.10 / 6章。実装の分け方・ファイル構成・決めごとは実装計画 `docs/memo-tab/memo-tab-plan.md`（図解 HTML と対）。全体の完了条件：編集 → 保存で再起動後も残る。キャンセル・未保存で閉じるときの確認が効く。プレビューがドキュメントタブの md と同じに出る（タスクリスト・mermaid・相対パスの画像）。ドキュメントタブの挙動が変わらない。ライト/ダークの両方で確認する。
 
-## [ ] Phase 23: メモタブ Core
+## [x] Phase 23: メモタブ Core
 - `ProjectMemoStore`（対象フォルダ → メモのパス、読む（無ければ空）、アトミックに書く、更新日時）。テスト先行
 - 完了条件：テストが通る。Core は AOT 互換（`--no-incremental` で警告 0）
+- 状況：実装済み（23-1〜23-3）。`Memo/ProjectMemoStore.cs`（読めないときは例外・BOM 付きも読める・書くのは BOM なし）、`Memo/MemoEditor.cs`（編集の状態。改行コードの違いは変更とみなさない）、`Documents/DocumentLinkRule.cs`（リンク → ドキュメントタブで開けるか）、`AppPaths.ProjectMemoFile`（名前の作り方は設定の json と共通）。テスト 842 件合格（スキップ 5。Phase 22 の終わりは 793 件）。Core の `--no-incremental` ビルドは警告 0。コミットはまだしていない
 
 ## [ ] Phase 24: md プレビューの共通化（挙動は変えない）
 - `DocumentPreview` から、WebView2 の準備・未導入の案内・md の描画・リンクの振り分けを、ドキュメントとメモの両方で使える部品に切り出す
