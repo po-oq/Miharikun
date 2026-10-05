@@ -420,20 +420,19 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <!-- ステータス絞り込み（件数は他のフィルタに関係なく全体から数える） -->
-                                <ListBox ItemsSource="{Binding StatusTabs}" SelectedValuePath="Tab"
-                                         SelectedValue="{Binding StatusTab, Mode=TwoWay}"
-                                         ItemContainerStyle="{StaticResource StatusTabItem}"
-                                         Margin="0,8,0,0" Background="Transparent" BorderThickness="0" Padding="0"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         ScrollViewer.VerticalScrollBarVisibility="Disabled"
-                                         AutomationProperties.AutomationId="StatusTabs">
-                                    <ListBox.ItemsPanel>
+                                <!-- 「全て」以外は複数選べる（OR）。何も選ばなければ「全て」 -->
+                                <ItemsControl ItemsSource="{Binding StatusTabs}" Margin="0,8,0,0"
+                                              AutomationProperties.AutomationId="StatusTabs">
+                                    <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                                    </ListBox.ItemsPanel>
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Style="{StaticResource ChipCheckBox}" Content="{Binding Label}"
+                                                      IsChecked="{Binding IsChecked, Mode=TwoWay}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                                 <!-- エージェント絞り込み（全て / Cursor / Claude Code。1 つだけ選ぶ。件数は全体から数える） -->
                                 <ListBox ItemsSource="{Binding AgentTabs}" SelectedValuePath="Key"
                                          SelectedValue="{Binding AgentKey, Mode=TwoWay}"

@@ -25,6 +25,23 @@ public sealed class StatusFilterTests
         Assert.Equal(expected, StatusFilter.Matches(tab, status));
 
     [Fact]
+    public void MatchesAny_with_nothing_selected_passes_everything()
+    {
+        foreach (SessionStatus? s in new SessionStatus?[] { null, SessionStatus.Working, SessionStatus.Paused, SessionStatus.Done })
+            Assert.True(StatusFilter.MatchesAny(new HashSet<StatusTab>(), s));
+    }
+
+    [Fact]
+    public void MatchesAny_is_an_or_over_the_selected_tabs()
+    {
+        var notDone = new HashSet<StatusTab> { StatusTab.Unset, StatusTab.Working, StatusTab.Paused };
+        Assert.True(StatusFilter.MatchesAny(notDone, null));
+        Assert.True(StatusFilter.MatchesAny(notDone, SessionStatus.Working));
+        Assert.True(StatusFilter.MatchesAny(notDone, SessionStatus.Paused));
+        Assert.False(StatusFilter.MatchesAny(notDone, SessionStatus.Done));
+    }
+
+    [Fact]
     public void Count_per_tab_and_all_is_the_total()
     {
         SessionStatus?[] statuses =

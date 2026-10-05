@@ -42,7 +42,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _runningOnly;
     [ObservableProperty] private bool _uncommittedOnly;
     [ObservableProperty] private bool _memoOnly;
-    [ObservableProperty] private StatusTab _statusTab = StatusTab.All;
+    /// <summary>選んでいるステータス（複数可・OR）。空 = 全て。</summary>
+    private readonly HashSet<StatusTab> _statusSelection = [];
+    private bool _syncingStatusChips;
 
     /// <summary>エージェントの絞り込み（AgentFilter.All = 全て）。</summary>
     [ObservableProperty] private string _agentKey = AgentFilter.All;
@@ -64,9 +66,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public TimelineViewModel Timeline { get; } = new();
     [ObservableProperty] private IReadOnlyList<StateCount> _counts = [];
 
-    /// <summary>ステータス絞り込みタブ（全て / 未設定 / 作業中 / 中断 / 完了）。件数は中身だけ更新し、入れ替えない（選択が外れないように）。</summary>
-    public IReadOnlyList<StatusTabItem> StatusTabs { get; } =
-        Enum.GetValues<StatusTab>().Select(t => new StatusTabItem(t, StatusFilter.Name(t))).ToList();
+    /// <summary>ステータス絞り込みのチップ（全て / 未設定 / 作業中 / 中断 / 完了。「全て」以外は複数選べる）。件数は中身だけ更新し、入れ替えない（選択が外れないように）。</summary>
+    public IReadOnlyList<StatusTabItem> StatusTabs { get; }
 
     /// <summary>エージェント絞り込みのチップ（全て / Cursor / Claude Code）。ステータスのタブと同じく、件数は全カードから数え、入れ替えない。</summary>
     public IReadOnlyList<AgentTabItem> AgentTabs { get; } =
@@ -96,6 +97,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _monitor = monitor;
         _ui = ui;
         _getEvents = getEvents;
+
+        StatusTabs = Enum.GetValues<StatusTab>().Select(t => new StatusTabItem(t, StatusFilter.Name(t))).ToList();
+        foreach (var chip in StatusTabs)
+        {
+            chip.IsChecked = chip.Tab == StatusTab.All;
+            chip.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(StatusTabItem.IsChecked)) OnStatusChipChanged(chip);
+            };
+        }
 
         CardsView = CollectionViewSource.GetDefaultView(Cards);
         CardsView.SortDescriptions.Add(new SortDescription(nameof(SessionCardViewModel.LastActivityAt), ListSortDirection.Descending));
@@ -133,7 +144,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             RunningOnly = false;
             UncommittedOnly = false;
             MemoOnly = false;
-            StatusTab = StatusTab.All;
+            ClearStatusSelection();
             AgentKey = AgentFilter.All;
         }
         Selected = card;
@@ -324,14 +335,40 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     partial void OnRunningOnlyChanged(bool value) => CardsView.Refresh();
     partial void OnUncommittedOnlyChanged(bool value) => CardsView.Refresh();
     partial void OnMemoOnlyChanged(bool value) => CardsView.Refresh();
-    partial void OnStatusTabChanged(StatusTab value) => CardsView.Refresh();
+    private void ClearStatusSelection()
+    {
+        _statusSelection.Clear();
+        SyncStatusChips();
+        CardsView.Refresh();
+    }
+
+    private void SyncStatusChips()
+    {
+        _syncingStatusChips = true;
+        foreach (var chip in StatusTabs)
+            chip.IsChecked = chip.Tab == StatusTab.All ? _statusSelection.Count == 0 : _statusSelection.Contains(chip.Tab);
+        _syncingStatusChips = false;
+    }
+
+    private void OnStatusChipChanged(StatusTabItem chip)
+    {
+        if (_syncingStatusChips) return;
+        if (chip.Tab == StatusTab.All)
+            _statusSelection.Clear();   // 「全て」を押すと他を外す。選択が空のまま外しても「全て」に戻る
+        else if (chip.IsChecked)
+            _statusSelection.Add(chip.Tab);
+        else
+            _statusSelection.Remove(chip.Tab);
+        SyncStatusChips();
+        CardsView.Refresh();
+    }
     partial void OnAgentKeyChanged(string value) => CardsView.Refresh();
 
     private bool Visible(SessionCardViewModel c)
     {
         if (RunningOnly && c.State != SessionState.Running) return false;
         if (MemoOnly && !c.HasMemo) return false;
-        if (!StatusFilter.Matches(StatusTab, c.Status)) return false;
+        if (!StatusFilter.MatchesAny(_statusSelection, c.Status)) return false;
         if (!AgentFilter.Matches(AgentKey, c.AgentId)) return false;
         if (UncommittedOnly && !(c.UncommittedCount > 0)) return false;
         return SessionSearch.Matches(c.SearchText, SearchText);
@@ -387,6 +424,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 /// <summary>絞り込みタブ1つ。Count は他のフィルタに関係なく、全カードから数えた件数。</summary>
 public sealed partial class StatusTabItem(StatusTab tab, string name) : ObservableObject
 {
+    [ObservableProperty] private bool _isChecked;
     public StatusTab Tab { get; } = tab;
     public string Name { get; } = name;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(Label))] private int _count;
