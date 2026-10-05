@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue #2 ステータス機能 設計イメージ</title>
+<style>
+  body { font: 14px/1.7 "Yu Gothic UI", Meiryo, sans-serif; max-width: 980px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 22px; } h2 { font-size: 17px; margin-top: 34px; border-left: 5px solid #0b63c5; padding-left: 8px; }
+  h3 { font-size: 14px; margin: 16px 0 4px; }
+  table { border-collapse: collapse; margin: 8px 0; } th, td { border: 1px solid #bbb; padding: 4px 10px; vertical-align: top; } th { background: #eef; }
+  code, pre { background: #f2f2f4; border-radius: 3px; } code { padding: 0 4px; } pre { padding: 8px 12px; overflow: auto; }
+  .note { background: #fff4c2; padding: 8px 12px; border-radius: 4px; }
+  .q { background: #fde8e8; padding: 8px 12px; border-radius: 4px; }
+  .mock { border: 1px solid #999; border-radius: 6px; background: #fafafa; padding: 10px; margin: 8px 0; }
+  .row { display: flex; gap: 12px; } .col { flex: 1; min-width: 0; }
+  .chip { display: inline-block; border-radius: 10px; padding: 0 8px; font-size: 12px; border: 1px solid #888; background: #fff; margin: 1px; }
+  .on { background: #0b63c5; color: #fff; border-color: #0b63c5; }
+  .work { background: #dff0ff; border-color: #4c9aff; } .pause { background: #fff0cc; border-color: #d29922; } .done { background: #dff5e1; border-color: #3fb950; } .none { background: #eee; border-color: #aaa; }
+  .card { border: 1px solid #bbb; border-radius: 6px; background: #fff; padding: 6px 8px; margin: 6px 0; font-size: 12px; }
+  .sel { background: #0b63c5; color: #fff; }
+  .dim { color: #777; font-size: 12px; }
+  svg text { font: 12px "Yu Gothic UI", Meiryo, sans-serif; }
+</style>
+</head>
+<body>
+<h1>Issue #2：セッションに「ステータス」を入れる — 設計イメージ</h1>
+<p class="dim">コード変更前の確認用。決めたい点は最後の「確認したいこと」にまとめた。</p>
+
+<h2>1. 何を作るか（1 分で）</h2>
+<ul>
+  <li>セッションごとに、<b>ユーザーが手で設定する「ステータス」</b>を持たせる。値は <b>作業中 / 中断 / 完了</b>（未設定もある）。</li>
+  <li>設定する場所は<b>セッション詳細</b>（中央）。<b>一覧のカードにバッジ</b>を出し、<b>一覧をステータスで絞り込める</b>。</li>
+  <li>既存の「実行中のみ / 未コミットあり / メモあり」とは別軸。<b>組み合わせて（AND）</b>絞れる。</li>
+  <li>ステータスは<b>自動では変わらない</b>（Cursor のイベントでは書き換えない）。タイトル・メモと同じ「ユーザーが書くメタ」。</li>
+</ul>
+
+<h2>2. 用語整理：「状態」と「ステータス」は別物</h2>
+<table>
+  <tr><th></th><th>状態（いまある）</th><th>ステータス（今回追加）</th></tr>
+  <tr><td>決める人</td><td>Miharikun が Hook のイベントから自動判定</td><td>ユーザーが手で設定</td></tr>
+  <tr><td>値</td><td>実行中 / ボスの番 / 中断 / エラー / 閉じた</td><td>（未設定）/ 作業中 / 中断 / 完了</td></tr>
+  <tr><td>表示</td><td>カード左上の色つき丸 + 文字、上部の件数チップ</td><td>カードのバッジ（新規）、一覧の絞り込みタブ（新規）</td></tr>
+  <tr><td>保存先</td><td>保存しない（イベントから毎回計算）</td><td><code>meta\cursor\{sessionId}.json</code>（新規フィールド）</td></tr>
+</table>
+<p class="q">⚠ <b>「中断」が両方にある</b>（状態の「中断」＝ユーザーが Stop した、ステータスの「中断」＝やりかけで置いてある）。画面で混ざるので、呼び名を分けたい（→ 確認したいこと①）。</p>
+
+<h2>3. 画面のイメージ</h2>
+<p>赤枠＝今回の追加。Issue の画像（別ツールのコンセプト）の「一覧上部のタブ」「カードのバッジ」「詳細でステータスを選ぶ」を、Miharikun の既存レイアウトに当てはめた。</p>
+<div class="mock">
+  <div class="row">
+    <div class="col" style="flex:1.1">
+      <div class="dim">左：セッション一覧</div>
+      <div class="dim">（既存）● 実行中 0　● ボスの番 3　● 中断 0　● エラー 0　● 閉じた 2</div>
+      <div style="outline:2px solid #d22; padding:3px; margin:4px 0">
+        <span class="chip on">全て 5</span><span class="chip none">未設定 2</span><span class="chip work">作業中 2</span><span class="chip pause">中断 1</span><span class="chip done">完了 0</span>
+        <div class="dim">↑ ステータス絞り込み（クリックで1つ選ぶ。件数つき）</div>
+      </div>
+      <div>□ 実行中のみ　□ 未コミットあり　□ メモあり <span class="dim">（既存。上のタブと AND）</span></div>
+      <div class="card"><b>● ボスの番　ログイン画面の修正</b> <span class="chip work" style="outline:2px solid #d22">作業中</span><br><span class="dim">依頼4・最後の動き 9時間前</span></div>
+      <div class="card sel"><b>● ボスの番　こんにちわ</b> <span class="chip pause" style="outline:2px solid #fff">中断</span><br>依頼2・最後の動き 11時間前</div>
+      <div class="card"><b>● 閉じた　docs の整理</b> <span class="dim">（バッジなし＝未設定）</span></div>
+    </div>
+    <div class="col">
+      <div class="dim">中央：セッション詳細（選択中）</div>
+      <div class="card"><b>こんにちわ</b> ✏　　● ボスの番</div>
+      <div class="card" style="outline:2px solid #d22">
+        <b>ステータス</b>　<span class="dim">（自分で決める。自動では変わらない）</span><br>
+        <span class="chip none">未設定</span><span class="chip work">作業中</span><span class="chip pause on" style="background:#d29922;color:#fff">● 中断</span><span class="chip done">完了</span>
+        <div class="dim">クリックで即保存。選択中をもう一度押すと未設定に戻る</div>
+      </div>
+      <div class="card">セッション概要 …</div>
+      <div class="card">いまの状況 / 完了チェック / 稼働状態 …（既存）</div>
+    </div>
+  </div>
+</div>
+
+<h3>絞り込みのかかり方</h3>
+<svg viewBox="0 0 900 150" width="100%" role="img" aria-label="絞り込みの流れ">
+  <rect x="5" y="30" width="150" height="60" rx="6" fill="#eef" stroke="#667"/><text x="80" y="55" text-anchor="middle">全セッション</text><text x="80" y="75" text-anchor="middle">（カード N 枚）</text>
+  <path d="M155 60 H195" stroke="#444" marker-end="url(#a)"/>
+  <rect x="195" y="30" width="170" height="60" rx="6" fill="#dff0ff" stroke="#4c9aff"/><text x="280" y="55" text-anchor="middle">ステータスタブ</text><text x="280" y="75" text-anchor="middle">全て/未設定/作業中/中断/完了</text>
+  <path d="M365 60 H405" stroke="#444" marker-end="url(#a)"/>
+  <rect x="405" y="30" width="190" height="60" rx="6" fill="#fff" stroke="#667"/><text x="500" y="55" text-anchor="middle">既存チェック（AND）</text><text x="500" y="75" text-anchor="middle">実行中のみ/未コミット/メモ</text>
+  <path d="M595 60 H635" stroke="#444" marker-end="url(#a)"/>
+  <rect x="635" y="30" width="110" height="60" rx="6" fill="#fff" stroke="#667"/><text x="690" y="55" text-anchor="middle">検索ボックス</text><text x="690" y="75" text-anchor="middle">（既存）</text>
+  <path d="M745 60 H785" stroke="#444" marker-end="url(#a)"/>
+  <rect x="785" y="30" width="110" height="60" rx="6" fill="#dff5e1" stroke="#3fb950"/><text x="840" y="55" text-anchor="middle">表示するカード</text>
+  <text x="5" y="130" fill="#555">件数チップ（作業中 2 など）は「絞り込み前」の全カードから数える（他のチェックで件数が変わらない）。</text>
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8z" fill="#444"/></marker></defs>
+</svg>
+
+<h2>4. 中身の作り（概念図）</h2>
+<svg viewBox="0 0 900 250" width="100%" role="img" aria-label="データの流れ">
+  <rect x="10" y="20" width="170" height="70" rx="6" fill="#dff0ff" stroke="#4c9aff"/><text x="95" y="45" text-anchor="middle">セッション詳細（画面）</text><text x="95" y="65" text-anchor="middle">ステータスのボタン 4つ</text>
+  <path d="M180 55 H230" stroke="#444" marker-end="url(#b)"/><text x="205" y="48" text-anchor="middle" font-size="10">クリック</text>
+  <rect x="230" y="20" width="190" height="70" rx="6" fill="#fff" stroke="#667"/><text x="325" y="45" text-anchor="middle">SessionDetailViewModel</text><text x="325" y="65" text-anchor="middle">SetStatusCommand（新規）</text>
+  <path d="M420 55 H470" stroke="#444" marker-end="url(#b)"/>
+  <rect x="470" y="20" width="200" height="70" rx="6" fill="#fff" stroke="#667"/><text x="570" y="45" text-anchor="middle">SessionMetaService.Update</text><text x="570" y="65" text-anchor="middle">meta.WithStatus(...)（新規）</text>
+  <path d="M670 55 H710" stroke="#444" marker-end="url(#b)"/>
+  <rect x="710" y="20" width="180" height="70" rx="6" fill="#fff4c2" stroke="#d29922"/><text x="800" y="45" text-anchor="middle">meta\cursor\{id}.json</text><text x="800" y="65" text-anchor="middle">"status": "working"</text>
+
+  <path d="M570 90 V140" stroke="#444" marker-end="url(#b)"/><text x="580" y="120" font-size="10">変更通知（既存の仕組み）</text>
+  <rect x="470" y="140" width="200" height="60" rx="6" fill="#fff" stroke="#667"/><text x="570" y="165" text-anchor="middle">MainViewModel</text><text x="570" y="185" text-anchor="middle">カード更新・件数再計算・再フィルタ</text>
+  <path d="M470 170 H430" stroke="#444" marker-end="url(#b)"/>
+  <rect x="230" y="140" width="200" height="60" rx="6" fill="#dff5e1" stroke="#3fb950"/><text x="330" y="165" text-anchor="middle">一覧カード / 絞り込みタブ</text><text x="330" y="185" text-anchor="middle">バッジ・件数・表示/非表示</text>
+  <text x="10" y="235" fill="#555">タイトル・メモ・概要の保存と同じ経路に乗せる（新しい仕組みは作らない）。Hook・イベント・状態判定には触らない。</text>
+  <defs><marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8z" fill="#444"/></marker></defs>
+</svg>
+
+<h3>保存形式（meta json）</h3>
+<pre>{ "v": 1, "title": "...", "memo": "...", "status": "working" }
+  status: 省略（= 未設定） | "working"（作業中） | "paused"（中断） | "done"（完了）</pre>
+<ul>
+  <li>既存ファイルは <code>status</code> が無い＝未設定。<b>バージョンは上げない・移行も不要</b>。</li>
+  <li>知らない値が入っていたら未設定として扱う（壊れても落ちない）。</li>
+  <li>Core は AOT 互換のまま（enum は文字列と手書き変換。リフレクションなし）。</li>
+</ul>
+
+<h2>5. 触るところ</h2>
+<table>
+  <tr><th>場所</th><th>内容</th></tr>
+  <tr><td><code>Core/Meta/SessionMeta.cs</code></td><td><code>SessionStatus</code> enum、<code>Status</code> フィールド、<code>WithStatus</code>。JSON の読み書き</td></tr>
+  <tr><td><code>ViewModels/SessionDetailViewModel.cs</code></td><td>現在のステータス、設定コマンド（トグル）</td></tr>
+  <tr><td><code>ViewModels/SessionCardViewModel.cs</code></td><td>バッジ用のステータス</td></tr>
+  <tr><td><code>ViewModels/MainViewModel.cs</code></td><td>ステータスのフィルタ値、件数、<code>Visible()</code> に条件追加</td></tr>
+  <tr><td><code>MainWindow.xaml</code></td><td>左：絞り込みタブ／カードのバッジ。中央：ステータス選択。色はテーマ別の色定義に追加</td></tr>
+  <tr><td><code>docs/miharikun-requirements.md</code></td><td>6章（meta の項目）、画面の章、フェーズを追記（仕様の正を先に更新）</td></tr>
+  <tr><td>触らない</td><td>Hook、AgentEvent、状態判定（SessionAnalyzer）</td></tr>
+</table>
+
+<h2>6. 進め方（コミットの単位案）</h2>
+<ol>
+  <li>要件定義を更新（この HTML の合意内容を反映）</li>
+  <li>Core：<code>SessionStatus</code> と meta の保存（テスト先行：保存・読み戻し・未知の値・既存ファイル）</li>
+  <li>ViewModel：カード・詳細・フィルタ・件数（テスト先行：絞り込みの組み合わせ）</li>
+  <li>画面：タブ・バッジ・詳細の選択ボタン（ライト／ダークを撮って確認）</li>
+</ol>
+
+<h2>7. 確認したいこと</h2>
+<div class="q">
+<ol>
+  <li><b>「中断」の名前の衝突</b>：案A ステータス側を「中断」のまま、自動の状態側を「停止」に改名（推奨）／案B ステータス側を「保留」にする／案C 両方そのまま（混ざるのを許容）。</li>
+  <li><b>ステータスの種類</b>：Issue 本文は 3 つ（作業中・中断・完了）だが、画像には「未分類／相談中／あとで」もある。<b>本文どおり 3 つ + 未設定</b>で進めてよいか（増やしやすい作りにはしておく）。</li>
+  <li><b>絞り込みの見せ方</b>：画像のような<b>タブ（件数つき）</b>で進めてよいか。それとも既存のチェックボックス並び（複数選べる）にするか。タブは「1つだけ選ぶ」。</li>
+  <li><b>導入前のセッション（取り込み分）</b>もステータスを設定できるようにしてよいか（推奨：できる）。</li>
+  <li><b>検索の対象</b>に「作業中」などの文字は含めない（絞り込みはタブで行う）でよいか。</li>
+  <li><b>自動連動なし</b>でよいか（例：完了にしたセッションにまた依頼が来ても、ステータスは勝手に作業中に戻さない）。</li>
+</ol>
+</div>
+<p class="note">①〜⑥は「推奨のとおり」で進めてよければ、そう返信してもらえれば要件定義の更新から着手する。</p>
+</body>
+</html>

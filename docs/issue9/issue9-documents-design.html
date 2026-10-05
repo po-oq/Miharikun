@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #9 ドキュメントタブ 設計イメージ</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px}
+table{border-collapse:collapse;margin:8px 0} td,th{border:1px solid #bbb;padding:4px 10px;font-size:14px;vertical-align:top} th{background:#eef}
+code{background:#f0f0f0;padding:0 4px} .q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0}
+.rec{color:#c05000;font-weight:bold} svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>Issue #9 ドキュメントタブ 設計イメージ</h1>
+<p>ゴール：対象フォルダ配下の <code>.md</code> / <code>.html</code> を、<b>ツリー → ファイル一覧 → プレビュー</b>で読む。md は整形表示（<b>チェックボックス</b>・mermaid 含む）、html はそのまま表示（相対リンクの css/js/画像も効く）。1万ファイル超でも軽い。<b>除外するフォルダ・ファイルはプロジェクトごとに gitignore 形式で設定</b>できる。<br>※この版は、Q1〜Q9 の回答を反映した<b>確定版</b>。</p>
+
+<h2>1. 画面イメージ（Issue の画像に合わせて修正）</h2>
+<p>Issue の画像に合わせた構成：①上部に「読み直し」と「パスで絞り込み」（「一覧/ボード」切替は<b>作らない</b>）②ツリー先頭に「すべて」、各フォルダに<b>子孫込みの件数</b>③フォルダ選択で<b>直下のファイルだけ</b>を一覧（ファイル名の横に所属フォルダ）④右は「ドキュメント概要」カード＋「内容」カードの2段。md 内のリンクは青字。ヘッダー右上の <b>⚙ に「ドキュメントの設定…」</b>を追加。</p>
+<svg viewBox="0 0 960 420" width="960" font-size="13" font-family="sans-serif">
+<rect x="0" y="0" width="960" height="34" fill="#dde"/><text x="10" y="22">[ダッシュボード] [<tspan font-weight="bold">ドキュメント</tspan>] [メモ]　　C:workproj　　　⚙</text>
+<rect x="0" y="34" width="960" height="34" fill="#f3f3f3" stroke="#ccc"/>
+<rect x="8" y="40" width="64" height="22" fill="#fff" stroke="#888"/><text x="14" y="56">読み直し</text>
+<rect x="84" y="40" width="868" height="22" fill="#fff" stroke="#888"/><text x="92" y="56" fill="#888">パスで絞り込み（ファイル名・フォルダ名の部分一致）</text>
+<rect x="0" y="68" width="170" height="352" fill="#fff" stroke="#999"/>
+<text x="14" y="90">📂 すべて <tspan fill="#888">74</tspan></text>
+<rect x="0" y="98" width="170" height="22" fill="#cfe3ff"/><text x="8" y="114">▾ 📂 docs <tspan fill="#888">55</tspan></text>
+<text x="30" y="136">📁 adr <tspan fill="#888">3</tspan></text><text x="30" y="156">📁 memos <tspan fill="#888">8</tspan></text><text x="30" y="176">📁 research <tspan fill="#888">11</tspan></text><text x="30" y="196">📁 specs <tspan fill="#888">22</tspan></text>
+<text x="8" y="220">▾ 📂 documentation <tspan fill="#888">19</tspan></text><text x="30" y="240">▸ 📁 claude <tspan fill="#888">11</tspan></text>
+<text x="8" y="270" fill="#888" font-size="11">件数＝その配下すべての md/html</text>
+<rect x="170" y="68" width="200" height="352" fill="#fff" stroke="#999"/>
+<text x="178" y="88" fill="#666" font-size="12">docs/ の直下</text>
+<rect x="172" y="96" width="196" height="24" fill="#cfe3ff"/><text x="178" y="113">README.md <tspan fill="#888" font-size="11">docs</tspan></text>
+<text x="178" y="139">doc-attributes.md <tspan fill="#888" font-size="11">docs</tspan></text><text x="178" y="165">writing-guide.md <tspan fill="#888" font-size="11">docs</tspan></text><text x="178" y="191">claude-wrapper…html <tspan fill="#888" font-size="11">docs</tspan></text>
+<text x="178" y="225" fill="#888" font-size="11">「すべて」を選ぶと全件</text><text x="178" y="241" fill="#888" font-size="11">（絞り込み中はヒット分のみ）</text>
+<rect x="370" y="68" width="590" height="352" fill="#f7f7f7" stroke="#999"/>
+<rect x="384" y="80" width="562" height="76" fill="#fff" stroke="#bbb"/><text x="392" y="98" fill="#666" font-size="12">ドキュメント概要</text>
+<text x="392" y="118" font-weight="bold">docs 索引</text><text x="392" y="134" font-size="11" fill="#666">docs/README.md</text><text x="392" y="149" font-size="11" fill="#666">2026-10-02 11:15 に更新　2026-09-04 01:39 に作成　67 行　7.2 KB</text>
+<rect x="384" y="166" width="562" height="244" fill="#fff" stroke="#bbb"/><text x="392" y="184" fill="#666" font-size="12">内容（右上に [再読み込み] [フォルダで開く] [既定のアプリで開く]）</text>
+<text x="392" y="216" font-size="22" font-weight="bold">docs 索引</text>
+<text x="392" y="240" font-size="12">本文は整形して表示。表・コード・mermaid 図・青字リンク（別の md はアプリ内で開く）</text>
+<rect x="392" y="252" width="500" height="80" fill="#fff" stroke="#999"/><line x1="392" y1="272" x2="892" y2="272" stroke="#999"/><line x1="480" y1="252" x2="480" y2="332" stroke="#999"/><line x1="640" y1="252" x2="640" y2="332" stroke="#999"/>
+<text x="398" y="267" font-size="11">フォルダ</text><text x="486" y="267" font-size="11">位置づけ</text><text x="646" y="267" font-size="11">更新の考え方</text><text x="398" y="292" font-size="11" fill="#00c">vision/</text><text x="398" y="316" font-size="11" fill="#00c">adr/</text>
+</svg>
+<p>幅は画像より少し広く取り、ペイン境界はドラッグで調整可。html を選んだときも同じ2段（概要カード＋内容）。概要カードの「タイトル」は md なら最初の見出し、html なら <code>&lt;title&gt;</code>、無ければファイル名。</p>
+
+<h2>1.2 除外設定（⚙ → ドキュメントの設定…）</h2>
+<svg viewBox="0 0 700 330" width="700" font-size="13" font-family="sans-serif">
+<rect x="0" y="0" width="700" height="330" fill="#fff" stroke="#888"/><rect x="0" y="0" width="700" height="30" fill="#dde"/><text x="10" y="20">ドキュメントの設定　— C:workproj</text>
+<text x="14" y="52">除外するフォルダ・ファイル（gitignore 形式。1行1パターン）</text>
+<rect x="14" y="60" width="672" height="196" fill="#fafafa" stroke="#888"/>
+<text x="24" y="80" font-family="monospace"># 既定</text><text x="24" y="98" font-family="monospace">.git/</text><text x="24" y="116" font-family="monospace">node_modules/</text><text x="24" y="134" font-family="monospace">bin/　obj/　.vs/　.idea/　.venv/ …</text>
+<text x="24" y="160" font-family="monospace"># このプロジェクトで足した例</text><text x="24" y="178" font-family="monospace">docs/archive/</text><text x="24" y="196" font-family="monospace">*.draft.md</text><text x="24" y="214" font-family="monospace">!docs/archive/keep.md   ← ※除外したフォルダ内は戻せない（git と同じ）</text>
+<text x="14" y="280" fill="#666" font-size="12">・#=コメント　!=除外の取り消し　末尾/=フォルダのみ　*　?　**　大文字小文字は区別しない　後ろの行が優先</text>
+<rect x="14" y="292" width="96" height="26" fill="#eee" stroke="#888"/><text x="24" y="310">既定に戻す</text>
+<rect x="520" y="292" width="76" height="26" fill="#cfe3ff" stroke="#888"/><text x="534" y="310">保存</text><rect x="606" y="292" width="80" height="26" fill="#eee" stroke="#888"/><text x="616" y="310">キャンセル</text>
+</svg>
+<p>保存すると即座に再走査。設定は <code>%LOCALAPPDATA%Miharikunprojects{slug}-{hash8}.json</code>（プロジェクトのパスごとに別ファイル。日本語パスでも衝突しないようハッシュ付き）。<br>
+<b>既定の除外</b>：<code>.git/ node_modules/ bin/ obj/ .vs/ .idea/ .venv/ venv/ __pycache__/ dist/ build/ out/ target/ packages/ .gradle/ .next/ coverage/</code>（<code>.cursor/</code> は除外しない）。対象範囲はこの設定だけで決まる。</p>
+
+<h2>1.5 チェックボックス（最重要・確認済み）</h2>
+<p>Markdig の <code>UseAdvancedExtensions()</code>（タスクリスト含む）で、実際に変換して確認しました。入力と結果：</p>
+<table>
+<tr><th>md の書き方</th><th>結果</th></tr>
+<tr><td><code>- [ ] 未完了</code></td><td>☐ 空のチェックボックス</td></tr>
+<tr><td><code>- [x] 完了</code> / <code>- [X]</code></td><td>☑ チェック済み（大文字 X も可）</td></tr>
+<tr><td>入れ子（<code>  - [ ] 子</code>）</td><td>入れ子のまま、子もチェックボックス</td></tr>
+<tr><td><code>1. [x] 番号付き</code></td><td>番号付きリストでもチェックボックス</td></tr>
+<tr><td>コードブロック内の <code>- [ ]</code></td><td>そのまま文字として表示（変換しない）</td></tr>
+<tr><td>見出しの <code>## [x] Phase 1</code></td><td>文字のまま（GitHub と同じ。チェックボックスにはならない）</td></tr>
+</table>
+<p>表示方針：①読み取り専用（<code>disabled</code>。クリックで md は書き換えない）②リストの黒丸は消してチェックボックスだけにする（GitHub 風）③ライト/ダークで見やすい色。<br>
+実装時は<b>テストで固定</b>します（Core の md→HTML 変換に上の6ケースの xunit を書く）。実機でも、実際の要件定義書（Phase 見出し・チェックリスト入り）を開いて目視確認します。</p>
+
+<h2>2. 全体の仕組み（概念図）</h2>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="170" height="60" fill="#ffe9c8" stroke="#a70"/><text x="20" y="44">対象フォルダ</text><text x="20" y="62" font-size="11">（ヘッダーに出ているパス）</text>
+<line x1="180" y1="50" x2="230" y2="50" stroke="#333" marker-end="url(#a)"/>
+<rect x="230" y="10" width="220" height="80" fill="#dff" stroke="#08a"/><text x="240" y="32" font-weight="bold">① DocumentIndexer（Core）</text><text x="240" y="50" font-size="11">背景スレッドで再帰列挙</text><text x="240" y="66" font-size="11">除外（gitignore 形式）で枝刈り</text><text x="240" y="82" font-size="11">*.md *.html *.htm のみ拾う</text>
+<line x1="450" y1="50" x2="500" y2="50" stroke="#333" marker-end="url(#a)"/>
+<rect x="500" y="10" width="200" height="80" fill="#dff" stroke="#08a"/><text x="510" y="32" font-weight="bold">② メモリ上の索引</text><text x="510" y="50" font-size="11">パス・更新日時・サイズ</text><text x="510" y="66" font-size="11">フォルダ別件数（子孫込み）</text><text x="510" y="82" font-size="11">※中身は読まない</text>
+<line x1="700" y1="50" x2="750" y2="50" stroke="#333" marker-end="url(#a)"/>
+<rect x="750" y="10" width="200" height="80" fill="#efe" stroke="#383"/><text x="760" y="32" font-weight="bold">③ ツリー／一覧（WPF）</text><text x="760" y="50" font-size="11">見えている分だけ描画</text><text x="760" y="66" font-size="11">（仮想化）</text><text x="760" y="82" font-size="11">検索は索引上で即時</text>
+<text x="230" y="112" fill="#555" font-size="12">FileSystemWatcher で追加・削除・更新を差分反映（全走査のやり直しはしない／🔄 で手動再走査も可）</text>
+
+<rect x="750" y="140" width="200" height="40" fill="#efe" stroke="#383"/><text x="760" y="165">ファイルを選択</text>
+<line x1="850" y1="180" x2="850" y2="205" stroke="#333" marker-end="url(#a)"/>
+<polygon points="850,205 930,232 850,259 770,232" fill="#fff" stroke="#888"/><text x="822" y="236">拡張子は？</text>
+<line x1="770" y1="232" x2="600" y2="232" stroke="#333" marker-end="url(#a)"/><text x="690" y="224" font-size="11">.html</text>
+<line x1="850" y1="259" x2="850" y2="285" stroke="#333" marker-end="url(#a)"/><text x="858" y="278" font-size="11">.md</text>
+<rect x="380" y="205" width="220" height="56" fill="#fef" stroke="#a3a"/><text x="390" y="226">④ WebView2 にそのまま</text><text x="390" y="244" font-size="11">file:///元のパス を開く</text>
+<rect x="380" y="270" width="470" height="52" fill="#fef" stroke="#a3a"/><text x="390" y="290">⑤ Markdig で md→HTML（表・コード・チェックボックス等）</text><text x="390" y="308" font-size="11">＋ mermaid.js（CDN から読込・ネット前提）で図を描画 → 一時 HTML（<base> に元フォルダ）→ WebView2</text>
+<rect x="10" y="150" width="340" height="150" fill="#fff" stroke="#999" stroke-dasharray="4"/>
+<text x="20" y="170" font-weight="bold">プレビュー側の約束</text>
+<text x="20" y="190" font-size="12">・相対パスの画像/css/js/リンクは元ファイルの場所基準で解決</text>
+<text x="20" y="208" font-size="12">・md 内の他の .md リンク → アプリ内で開く（一覧も追従）</text>
+<text x="20" y="226" font-size="12">・http(s) リンク → 既定ブラウザで開く</text>
+<text x="20" y="244" font-size="12">・ファイルが保存されたら自動で再読み込み</text>
+<text x="20" y="262" font-size="12">・読み取り専用（編集・保存はしない）</text>
+<text x="20" y="280" font-size="12">・モード切替：整形／ソース表示（md のみ）</text>
+</svg>
+
+<h2>3. 速度（1万ファイル超対策）</h2>
+<table>
+<tr><th>ボトルネック</th><th>対策</th></tr>
+<tr><td>全フォルダの再帰走査</td><td>背景スレッドで <code>EnumerationOptions(RecurseSubdirectories)</code>＋<b>除外パターンによる枝刈り</b>（既定で <code>.git node_modules bin obj</code> 等。ここが最大の効果。プロジェクトごとに調整可）。拡張子で絞るので中身は読まない。目安：1万〜10万ファイルで数百ms〜数秒。走査中も、見つかった分から順次ツリーに出す（画面は固まらない）</td></tr>
+<tr><td>2回目以降</td><td>索引は保存せず、起動時に毎回背景走査。<span class="rec">まず実測し、遅ければキャッシュを足す</span></td></tr>
+<tr><td>一覧の描画</td><td>WPF の仮想化リスト。1フォルダ数千件でも表示は見えている分だけ</td></tr>
+<tr><td>検索</td><td>ファイル名はメモリ上の索引で部分一致（即時）。<b>本文検索はやらない</b>（提案：必要になったら別 Issue。ripgrep 的な全文走査は重い）</td></tr>
+<tr><td>変更検知</td><td>FileSystemWatcher の差分反映。大量変更（git checkout 等）は一定時間まとめて処理</td></tr>
+</table>
+
+<h2>4. 採用した機能のまとめ</h2>
+<table>
+<tr><td>ツリー</td><td>docs の無いフォルダは出さない／件数は子孫込み／「すべて」の行</td></tr>
+<tr><td>一覧</td><td>選んだフォルダの直下のみ／更新日の降順</td></tr>
+<tr><td>絞り込み</td><td>ファイル名＋フォルダ名の部分一致（本文検索はしない）</td></tr>
+<tr><td>読み直し</td><td>手動の全再走査（自動反映の保険）</td></tr>
+<tr><td>内容カードのボタン</td><td>再読み込み／フォルダで開く／既定のアプリで開く</td></tr>
+<tr><td>復元</td><td>最後に開いたファイルをプロジェクトごとに覚え、次回起動時に開く</td></tr>
+<tr><td>テーマ</td><td>md のプレビューはライト/ダークに追従（html はファイルの見た目を尊重）</td></tr>
+<tr><td>html</td><td>JavaScript 実行 OK。外部 http のリンクは既定ブラウザで開く</td></tr>
+<tr><td>作らない</td><td>一覧/ボード切替、本文検索、md の編集、索引キャッシュ</td></tr>
+</table>
+
+<h2>5. 実装の分け方（要件定義に Phase 13 として追加済み）</h2>
+<table>
+<tr><th>段</th><th>内容</th><th>テスト</th></tr>
+<tr><td>13-1 Core</td><td><code>GitIgnoreMatcher</code>（除外パターン）、<code>DocumentIndexer</code>（走査・枝刈り・件数集計）、<code>DocumentFilter</code>（絞り込み・直下）、md→HTML 変換、プロジェクト設定の保存</td><td>xunit（一時フォルダに生成して検証）</td></tr>
+<tr><td>13-2 ViewModel／画面</td><td>ドキュメントタブのツリー＋一覧（プレビューは空）、絞り込み、Watcher、設定ダイアログ</td><td>隔離環境で実機確認</td></tr>
+<tr><td>13-3 プレビュー</td><td>WebView2 導入、html 表示、リンクの扱い、自動再読込</td><td>実機（相対 css/画像/js 入りの html で確認）</td></tr>
+<tr><td>13-4 md</td><td>Markdig＋mermaid＋コードの色付け、ソース表示切替、テーマ連動</td><td>Core に md→HTML 変換を置いてテスト</td></tr>
+</table>
+<p>CLAUDE.md の禁止事項（LLM／state.vscdb／コスト）には触れない。App 側は <code>AgentEvent</code> と無関係の独立機能なので 5.1 章にも抵触しない。</p>
+
+<h2>6. 決定事項（回答の反映）</h2>
+<table>
+<tr><td>Q1</td><td>WebView2 を使う。Runtime が無い PC では、プレビューに案内を出し、ツリー・一覧・概要は使える。会社 PC の確認コマンド：<code>(Get-ItemProperty 'HKLM:SOFTWAREWOW6432NodeMicrosoftEdgeUpdateClients{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}').pv</code>（バージョンが出れば入っている）</td></tr>
+<tr><td>Q2</td><td>範囲は除外設定（gitignore 形式、プロジェクトごと）で決める</td></tr>
+<tr><td>Q3</td><td>html の JavaScript は実行する</td></tr>
+<tr><td>Q4</td><td>mermaid.js は同梱せず CDN から読む（繋がらないときはコードのまま表示）</td></tr>
+<tr><td>Q5</td><td>検索はファイル名のみ</td></tr>
+<tr><td>Q6〜Q9</td><td>提案 D〜F は採用／一覧・ボード切替は作らない／読み直しは置く／概要カードは画像どおり</td></tr>
+</table>
+</body></html>

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #17 Cursor のリアルタイム表示 レビュー</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>Issue #17「Cursor はリアルタイムでセッション表示ができない？」レビュー</h1>
+<p><b>結論：直してから進める（Q1・Q2 とも A に決定。いまは会社の PC での切り分け待ち → 5.2 章）</b></p>
+<p>Cursor も<b>設計上はリアルタイムに出ます</b>（Hook の記録ファイルを、ファイル監視 300ms ＋ 3 秒ごとのポーリングで読む。Claude Code と同じ経路）。
+「再起動すると追加されている」という症状は、<b>Hook が記録できていないときに、起動時に 1 回だけ行う transcript の取り込み（導入前の過去セッション用）でセッションが出ている</b>状態とぴったり一致します。
+つまり問題は 2 つ：<span class="ng">① Hook が記録していない（原因は要確認）</span>、<span class="ng">② それに気づけず、取り込みも起動時 1 回だけなので、再起動まで出ない</span>。</p>
+
+<h2>1. 確認した範囲</h2>
+<table>
+<tr><th>対象</th><th>見たこと</th></tr>
+<tr><td><code>src/Miharikun.Core/Sessions/SessionMonitor.cs</code></td><td>監視（FileSystemWatcher 300ms デバウンス＋3 秒ポーリング）</td></tr>
+<tr><td><code>src/Miharikun.Core/Sessions/CursorSessionSource.cs</code></td><td>events の追記読み、プロジェクト照合、transcript の取り込み</td></tr>
+<tr><td><code>src/Miharikun.Core/Agents/CursorTranscriptImporter.cs</code></td><td>取り込みの対象（<code>.cursor\projects\&lt;slug&gt;\agent-transcripts\</code>）</td></tr>
+<tr><td><code>src/Miharikun.Core/Sessions/ProjectEventStore.cs</code>／<code>Storage/JsonlTail.cs</code>／<code>Storage/AppPaths.cs</code></td><td>差分の適用、追記分だけの読み取り、書き込み先</td></tr>
+<tr><td><code>src/Miharikun.Hook/HookRunner.cs</code>／<code>Install/HookInstaller.cs</code>／<code>src/Miharikun/HookSetup.cs</code></td><td>Hook の書き込み先・登録・起動時のチェック</td></tr>
+<tr><td><code>src/Miharikun/ViewModels/MainViewModel.cs</code>／<code>SessionText.cs</code></td><td>更新通知の受け取り、「閉じた（導入前）」の表示</td></tr>
+<tr><td><code>docs/miharikun-requirements.md</code> 9・11 章（420 行目）</td><td>「取り込みは最初の Refresh で 1 回だけ」</td></tr>
+<tr><td>この PC の実データ（<b>日時・件数・ファイル名だけ</b>。中身は読んでいない）</td><td><code>%LOCALAPPDATA%\Miharikun\events\cursor\</code>、<code>logs\</code>、<code>bin\</code>、<code>%USERPROFILE%\.cursor\hooks.json</code> の command 欄、transcript の更新日時</td></tr>
+</table>
+
+<h3>この PC の実データで分かったこと（事実）</h3>
+<table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>hooks.json</td><td>13 イベントすべて <code>…\Miharikun\bin\Miharikun.Hook.exe --agent cursor</code> で登録済み（10/03 18:36）</td></tr>
+<tr><td>Hook の記録（events\cursor）</td><td>3 ファイル。最終更新 10/03 18:51・19:05・<b>20:09</b></td></tr>
+<tr><td>Cursor の transcript（このプロジェクト）</td><td>5 件。導入前の 2 件（17:27・18:03）以外の 3 件は、Hook の記録と<b>1 対 1 で対応</b>（時刻も一致）</td></tr>
+<tr><td>Hook exe</td><td><b>10/03 20:48 に更新</b>（app.log「Hook exe を更新しました」）。<b>それ以降、この PC で Cursor を使った記録は無い</b></td></tr>
+<tr><td>hook-error.log</td><td>最終更新 10/03 18:51（中身は未読）</td></tr>
+</table>
+<p>→ この PC では、<b>10/03 20:09 までは Hook が正しく記録していた</b>。症状が出たのが <b>20:48 以降の新しい Hook exe（v0.3.0 系・NativeAOT 版）</b>か、<b>別の PC（会社の PC など）</b>なら、そこで Hook が記録していない可能性が高い（<b>要確認</b>。この PC では再現材料が無い）。</p>
+
+<h2>2. 概念図</h2>
+<h3>いま</h3>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<!-- Cursor -->
+<rect x="10" y="40" width="130" height="200" fill="#ffe9c8" stroke="#a70"/>
+<text x="20" y="62" font-weight="bold">Cursor</text>
+<text x="20" y="82" font-size="12">チャット中、</text>
+<text x="20" y="98" font-size="12">イベントごとに</text>
+<text x="20" y="114" font-size="12">Hook を起動</text>
+<text x="20" y="200" font-size="12">会話を transcript</text>
+<text x="20" y="216" font-size="12">にも保存</text>
+<!-- Hook path -->
+<rect x="190" y="40" width="160" height="70" fill="#fde" stroke="#b33"/>
+<text x="200" y="62" font-weight="bold">Hook exe</text>
+<text x="200" y="80" font-size="12">bin\Miharikun.Hook.exe</text>
+<text x="200" y="97" font-size="12">（失敗すると何も書かない）</text>
+<text x="200" y="128" fill="#b33" font-size="12">← 問題 #1（記録が止まる）</text>
+<line x1="140" y1="75" x2="190" y2="75" stroke="#333" marker-end="url(#a)"/>
+<rect x="400" y="40" width="170" height="70" fill="#eee" stroke="#888"/>
+<text x="410" y="62" font-weight="bold">events\cursor\</text>
+<text x="410" y="80" font-size="12">&lt;session&gt;.jsonl</text>
+<text x="410" y="97" font-size="12">（追記）</text>
+<line x1="350" y1="75" x2="400" y2="75" stroke="#333" marker-end="url(#a)"/>
+<!-- transcripts -->
+<rect x="190" y="180" width="160" height="70" fill="#eee" stroke="#888"/>
+<text x="200" y="202" font-weight="bold">agent-transcripts\</text>
+<text x="200" y="220" font-size="12">&lt;id&gt;\&lt;id&gt;.jsonl</text>
+<text x="200" y="237" font-size="12">（監視していない）</text>
+<line x1="140" y1="210" x2="190" y2="210" stroke="#333" marker-end="url(#a)"/>
+<rect x="400" y="180" width="170" height="70" fill="#fde" stroke="#b33"/>
+<text x="410" y="202" font-weight="bold">transcript 取り込み</text>
+<text x="410" y="220" font-size="12">起動後の最初の 1 回だけ</text>
+<text x="410" y="237" font-size="12">Hook の記録が無い ID のみ</text>
+<text x="400" y="270" fill="#b33" font-size="12">← 問題 #2（再起動まで出ない）</text>
+<line x1="350" y1="215" x2="400" y2="215" stroke="#333" stroke-dasharray="5,3" marker-end="url(#a)"/>
+<!-- source -->
+<rect x="620" y="40" width="160" height="210" fill="#dff" stroke="#08a"/>
+<text x="630" y="62" font-weight="bold">CursorSessionSource</text>
+<text x="630" y="82" font-size="12">追記分だけ読む</text>
+<text x="630" y="98" font-size="12">workspace_roots で照合</text>
+<text x="630" y="230" font-size="12">取り込み分は</text>
+<text x="630" y="246" font-size="12">「閉じた（導入前）」</text>
+<line x1="570" y1="75" x2="620" y2="75" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<text x="574" y="66" font-size="11" fill="#383">監視＋3秒</text>
+<line x1="570" y1="215" x2="620" y2="215" stroke="#333" marker-end="url(#a)"/>
+<text x="578" y="206" font-size="11" fill="#555">起動時</text>
+<rect x="830" y="110" width="120" height="70" fill="#efe" stroke="#383"/>
+<text x="840" y="132" font-weight="bold">画面</text>
+<text x="840" y="150" font-size="12">一覧・タイムライン</text>
+<line x1="780" y1="145" x2="830" y2="145" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="305" font-size="12" fill="#c05000">※ 上の段が動けば Claude Code と同じくリアルタイム。止まると下の段（起動時 1 回）でしか出ない＝「再起動で増える」。</text>
+<text x="10" y="322" font-size="12" fill="#c05000">※ 下の段で出たセッションは「閉じた（導入前）」・時刻はファイルの更新日時・ツールの行なし、になる。</text>
+</svg>
+
+<h3>変更後（案）</h3>
+<svg viewBox="0 0 960 300" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="40" width="130" height="200" fill="#ffe9c8" stroke="#a70"/>
+<text x="20" y="62" font-weight="bold">Cursor</text>
+<rect x="190" y="40" width="160" height="70" fill="#dff" stroke="#08a"/>
+<text x="200" y="62" font-weight="bold">Hook exe</text>
+<text x="200" y="80" font-size="12">（切り分けて直す）</text>
+<line x1="140" y1="75" x2="190" y2="75" stroke="#333" marker-end="url(#a)"/>
+<rect x="400" y="40" width="170" height="70" fill="#eee" stroke="#888"/>
+<text x="410" y="62" font-weight="bold">events\cursor\</text>
+<line x1="350" y1="75" x2="400" y2="75" stroke="#333" marker-end="url(#a)"/>
+<rect x="190" y="180" width="160" height="70" fill="#eee" stroke="#888"/>
+<text x="200" y="202" font-weight="bold">agent-transcripts\</text>
+<text x="200" y="220" font-size="12">監視対象に加える</text>
+<text x="200" y="237" font-size="12">（読むだけ・作らない）</text>
+<line x1="140" y1="210" x2="190" y2="210" stroke="#333" marker-end="url(#a)"/>
+<rect x="400" y="180" width="170" height="70" fill="#dfd" stroke="#383"/>
+<text x="410" y="202" font-weight="bold">transcript 取り込み</text>
+<text x="410" y="220" font-size="12">更新日時が変わった分を</text>
+<text x="410" y="237" font-size="12">そのつど取り込み直す</text>
+<line x1="350" y1="215" x2="400" y2="215" stroke="#333" marker-end="url(#a)"/>
+<rect x="620" y="40" width="160" height="210" fill="#dff" stroke="#08a"/>
+<text x="630" y="62" font-weight="bold">CursorSessionSource</text>
+<rect x="628" y="120" width="144" height="70" fill="#dfd" stroke="#383"/>
+<text x="636" y="140" font-size="12" font-weight="bold">Hook の受信状況</text>
+<text x="636" y="158" font-size="12">最終受信時刻・</text>
+<text x="636" y="174" font-size="12">Hook 無しの新セッション数</text>
+<line x1="570" y1="75" x2="620" y2="75" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<line x1="570" y1="215" x2="620" y2="215" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<text x="574" y="206" font-size="11" fill="#383">監視＋3秒</text>
+<rect x="830" y="110" width="120" height="70" fill="#efe" stroke="#383"/>
+<text x="840" y="132" font-weight="bold">画面</text>
+<text x="840" y="150" font-size="12">＋ Hook 警告</text>
+<line x1="780" y1="145" x2="830" y2="145" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="280" font-size="12" fill="#c05000">※ Hook が止まっても transcript の更新から数秒で出る（時刻は推定・ツール行なし）。同時に「Hook が記録していません」と出す。</text>
+</svg>
+
+<h2>3. 問題一覧</h2>
+<table>
+<tr><th>#</th><th>重大度</th><th>何が問題か（根拠）</th><th>どう解決するか</th></tr>
+<tr><td>1</td><td class="ng">高</td>
+<td><b>Hook が記録していなくても、利用者が気づけない。</b><br>
+Hook は失敗しても Cursor を止めないよう、何も書かずに終わる（<code>HookRunner.cs:96-100</code>、fail-open）。exe 自体が起動できない場合は <code>hook-error.log</code> すら残らない。
+起動時のチェックは hooks.json の登録と exe の有無・一致だけ（<code>HookSetup.cs:18-43</code>）で、<b>実際に記録されているか</b>は見ていない。画面にも Hook の受信状況は出ない。<br>
+さらに、Hook 無しで取り込まれたセッションは「閉じた（導入前）」（<code>SessionText.cs:26</code>）と出るので、進行中なのに閉じて見え、原因に辿り着けない。</td>
+<td><b>① Core</b>：<code>CursorSessionSource</code> に「Hook の受信状況」を持たせる——events の最終更新時刻と、<b>hooks.json 導入後に更新された transcript なのに Hook の記録が無いセッションの数</b>（＝Hook が動いていない証拠）。<br>
+<b>② 画面</b>：その数が 1 以上なら、一覧の上に黄色の帯「Cursor の Hook が記録していません（N 件）。<code>hook-error.log</code> を開く／Hook を再導入」。<br>
+<b>③ 状態名</b>：導入後の transcript から作ったものは「導入前」と呼ばない（例：「Hook なし（会話ログから）」）。<br>
+※ 判定・数え方は Core に置き、テストを先に書く。</td></tr>
+<tr><td>2</td><td class="ng">中</td>
+<td><b>transcript の取り込みが起動後の 1 回だけ</b>（<code>CursorSessionSource.cs:341</code> の <code>_importScanned</code>、要件 11 章 420 行目）。監視先も events だけ（<code>CursorSessionSource.cs:205</code>）。<br>
+そのため Hook が止まっていると、<b>新しいセッションは再起動するまで出ず、出てもタイムラインは更新されない</b>。Issue の症状そのもの。</td>
+<td><b>① 監視先を足す</b>：<code>WatchTargets</code> に <code>.cursor\projects\&lt;slug&gt;\agent-transcripts\</code> を <code>CreateIfMissing: false</code> で加える（<b>Cursor のフォルダには書かない・作らない</b>）。サブフォルダ形式なので <code>IncludeSubdirectories</code> が要る（<code>WatchTarget</code> に欄を足す）。<br>
+<b>② 取り込み直し</b>：<code>_importScanned</code> をやめ、transcript ごとに「長さ・更新日時」を覚え、変わったものだけ <code>Replace</code> で出し直す（全件読み直しはしない）。Hook の記録がある ID は今までどおり飛ばす。<br>
+<b>③ 要件 11 章</b>の「1 回だけ」を「変わったら取り込み直す（Hook が無いときの代わり）」に更新。</td></tr>
+<tr><td>3</td><td>要確認</td>
+<td><b>Hook が記録しない原因そのもの</b>は、コードからは特定できない。候補：<br>
+a) <b>NativeAOT 版の Hook exe</b>（10/03 20:48 に更新）を実機の Cursor で動かすのは未確認（HANDOFF 3 章）。<br>
+b) 会社の PC などで、<code>%LOCALAPPDATA%</code> 配下の exe の実行がポリシーで止められている。<br>
+c) hooks.json を変えたあと Cursor を再起動していない（Cursor が hooks.json をいつ読み直すかは未確認）。<br>
+d) 開いているフォルダが、アプリで選んだプロジェクトと違う（サブフォルダ・マルチルート）。※この場合は再起動しても出ないので、今回の症状とは合わない。</td>
+<td>下の「4. 切り分け手順」で 1 回確かめる。<br>
+a) なら：AOT 版を手で起動して標準入力に JSON を渡すテスト（<code>MIHARIKUN_DATA_DIR</code> を一時フォルダにして、本物の環境を汚さない）で原因を出し、直す。<br>
+b) なら：導入先を変えるか、案内を出す（別 Issue）。<br>
+c) なら：導入ダイアログの完了文に「Cursor を再起動してください」を足す。</td></tr>
+</table>
+
+<h3>問題なしと判断した観点</h3>
+<ul>
+<li><span class="ok">OK</span> 監視の仕組み：Watcher（300ms デバウンス）＋ 3 秒ポーリングで、Watcher が落ちても拾える（<code>SessionMonitor.cs:35,47,87-91</code>）。Claude Code と共通。</li>
+<li><span class="ok">OK</span> Hook 書き込み中の読み取り：アプリは <code>FileShare.ReadWrite | Delete</code> で開き、改行で終わった行だけ読む（<code>JsonlTail.cs:26,46</code>）。Hook 側は失敗時 10 回再試行（<code>HookRunner.cs:143-155</code>）。</li>
+<li><span class="ok">OK</span> 新しいセッションの追加：events のファイル一覧を毎回取り直し、新しいファイルは先頭から読む（<code>CursorSessionSource.cs:210-217</code>）。</li>
+<li><span class="ok">OK</span> プロジェクト照合：最初の行に <code>workspace_roots</code> が無くても、一致した時点で先頭から読み直す（<code>CursorSessionSource.cs:299-309</code>）。</li>
+<li><span class="ok">OK</span> 画面への反映：Cursor も Claude も同じ <code>Updated</code> → <code>Apply</code>（<code>MainViewModel.cs:107,162</code>）。</li>
+<li><span class="ok">OK</span> この PC の実データ：Hook 導入後の 3 セッションはすべて Hook の記録があり、transcript と 1 対 1（10/03 20:09 まで）。</li>
+</ul>
+
+<h2>4. 切り分け手順（利用者の作業・1 回だけ）</h2>
+<ol>
+<li>Miharikun を起動したまま、Cursor で<b>新しいチャット</b>を始めて 1 回やりとりする。</li>
+<li>一覧に出なければ、下のフォルダに<b>新しいファイルが増えたか・更新日時が今か</b>を見る（中身は開かなくてよい）。
+<pre>%LOCALAPPDATA%\Miharikun\events\cursor\
+%LOCALAPPDATA%\Miharikun\logs\hook-error.log</pre></li>
+<li>結果で分かれる：
+<table>
+<tr><th>events に増えた？</th><th>意味</th><th>次</th></tr>
+<tr><td>増えた・一覧に出ない</td><td>アプリ側の不具合（今回のコードでは見つからなかった）</td><td>ファイル名（ID）を教えてもらい、構造だけ数えて調べる</td></tr>
+<tr><td>増えない・hook-error.log が更新</td><td>Hook は起動したが失敗</td><td>エラーの種類（1 行目の例外名だけ）を確認して直す</td></tr>
+<tr><td>増えない・hook-error.log も変化なし</td><td>Hook exe が起動していない（3-a/b/c）</td><td>Cursor を再起動して再確認 → だめなら AOT 版を単体で起動して確認</td></tr>
+</table></li>
+<li>アプリを再起動して出てきたカードが<b>「閉じた（導入前）」</b>なら、Hook 無し（問題 #1・#2 の状態）で確定。</li>
+</ol>
+
+<h2>5. 決めたこと</h2>
+<table>
+<tr><th>問い</th><th>決定</th></tr>
+<tr><td>Q1. 進め方</td><td><b>A</b>：まず切り分け（会社の PC）→ 原因を直す → そのあと #1・#2 を入れる</td></tr>
+<tr><td>Q2. transcript をリアルタイムに取り込むか</td><td><b>A</b>：取り込む（監視＋変わった分だけ取り込み直し）＋ #1 の警告。「Hook なし」と分かる表示にする</td></tr>
+</table>
+
+<h2>5.1 追加情報（利用者から）と見立て</h2>
+<table>
+<tr><th>情報</th><th>見立て</th></tr>
+<tr><td>この PC ではリアルタイムに出た</td><td>1 章の実データと合う。<b>アプリの読み込みの経路は正しく動いている</b>（事実）</td></tr>
+<tr><td>会社の PC：リアルタイムに出ず、再起動すると「閉じた」で出る</td><td>表示が<b>「閉じた（導入前）」か「閉じた」か</b>で原因がまったく違う（下の表）。<b>要確認</b></td></tr>
+<tr><td>会社の PC：初回起動のダイアログで導入済み。hooks.json の各イベントに、<b>別アプリの Hook と Miharikun の Hook の 2 つ</b>が並んでいる</td><td>Cursor の公式ドキュメント（Hooks）では「一致する Hook はすべて実行され、応答はまとめられる」「落ちた・時間切れ・0 以外の終了コード（2 を除く）でも先に進む（fail-open）」とされている。<b>ドキュメントどおりなら、1 つ目の Hook が失敗しても Miharikun の Hook は動く</b>。<br>
+ただし、①会社の PC の Cursor が古い版で動きが違う、②1 つ目の exe が無い・止まって毎回 5 秒待つ、は<b>未確認</b>。Miharikun の導入処理は既存のエントリを残して足しているので、<b>登録の形は正しい</b>（利用者の貼った例で確認）。</td></tr>
+</table>
+
+<h3>「閉じた」の 2 通りの意味（コードで確認）</h3>
+<table>
+<tr><th>カードの表示</th><th>どこから来たか</th><th>意味すること</th></tr>
+<tr><td><b>閉じた（導入前）</b></td><td>Hook の記録が無く、起動時に会話ログ（transcript）から取り込んだもの（<code>SessionAnalyzer.cs:150,158</code>、<code>SessionText.cs:26</code>）</td><td><b>Hook が記録していない</b>。問題 #3（a/b/c、または 2 つ目の Hook が動いていない）。#1・#2 の対象そのもの</td></tr>
+<tr><td><b>閉じた</b>（括弧なし）</td><td>Hook の記録があり、最後が <code>sessionEnd</code>（<code>SessionAnalyzer.cs:149</code>、<code>SessionText.cs:25</code>）</td><td><b>Hook は記録している</b>のに、起動中のアプリが拾えていない。会社の PC 特有の、読み込み側の問題（例：<code>%LOCALAPPDATA%</code> が別の場所に向いている、ウイルス対策でファイルの更新が遅れて見える、など）。<b>今回の #1・#2 では直らない</b>ので、別に調べる</td></tr>
+</table>
+
+<h2>5.2 会社の PC での確認（次にやること）</h2>
+<ol>
+<li>Miharikun を起動したまま、Cursor で<b>新しいチャット</b>を始め、1 往復やりとりする（Cursor は閉じない）。</li>
+<li>すぐ、下のフォルダで<b>更新日時が今のファイルがあるか</b>だけ見る（中身は開かない）。
+<pre>%LOCALAPPDATA%\Miharikun\events\cursor\
+%LOCALAPPDATA%\Miharikun\logs\hook-error.log</pre></li>
+<li>別アプリの Hook の exe（hooks.json の 1 つ目の <code>command</code> のパス）が<b>実際にあるか</b>を見る。</li>
+<li>Cursor のバージョン（ヘルプ → バージョン情報）を控える。</li>
+<li>Miharikun を再起動し、そのセッションのカードが<b>「閉じた（導入前）」か「閉じた」か</b>を見る。</li>
+</ol>
+<table>
+<tr><th>結果</th><th>次</th></tr>
+<tr><td>events に今のファイルが無い／「閉じた（導入前）」</td><td>Hook が動いていない。hook-error.log が更新されていれば例外の種類（1 行目の例外名だけ）を教えてもらう。更新も無ければ、試しに hooks.json の別アプリの行を一時的に外して（バックアップを取って）再確認 → 出るようになれば「2 つ並び」が原因</td></tr>
+<tr><td>events に今のファイルがある／「閉じた」</td><td>アプリ側。<code>%LOCALAPPDATA%</code> の実際の場所と、起動中の一覧に出るまで何秒かかるか（数分待って出るか）を教えてもらう</td></tr>
+</table>
+
+<h2>6. リスクと対策</h2>
+<table>
+<tr><th>リスク</th><th>対策</th></tr>
+<tr><td>transcript の監視で、チャット中に何度も取り込み直して重くなる</td><td>変わったファイルだけ読む（長さ・更新日時で判断）。デバウンスは既存の 300ms を共用。大きい transcript の計測は <code>PerfFact</code> で</td></tr>
+<tr><td>Hook の記録と transcript の取り込みが同じ ID で二重に出る</td><td>今の「Hook の記録がある ID は取り込まない／現れたら取り込み分を Remove」（<code>CursorSessionSource.cs:221-232</code>）を、毎回の取り込みでも守る。テストで確認</td></tr>
+<tr><td>「Hook が記録していない」の誤検知（導入直後の数秒など）</td><td>hooks.json の導入日時より後に更新され、かつ一定時間（例：1 分）経っても events が無い transcript だけ数える</td></tr>
+<tr><td>Cursor の transcript の形式は公開仕様ではない</td><td>今の取り込みと同じく、読めない行は飛ばす。Cursor のフォルダには書かない</td></tr>
+</table>
+</body></html>
