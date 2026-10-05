@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows.Threading;
 using Miharikun.Core.Settings;
 using Miharikun.ViewModels;
@@ -13,19 +14,29 @@ public partial class MainWindow : FluentWindow
     private readonly HookSetup _hookSetup;
     private readonly ThemeService _theme;
     private readonly DocumentsViewModel _documents;
+    private readonly MemoViewModel _memo;
     private readonly AppSettingsStore _settings;
 
-    public MainWindow(MainViewModel viewModel, DocumentsViewModel documents, HookSetup hookSetup, ThemeService theme, AppSettingsStore settings)
+    public MainWindow(MainViewModel viewModel, DocumentsViewModel documents, MemoViewModel memo, HookSetup hookSetup, ThemeService theme, AppSettingsStore settings)
     {
         _settings = settings;
         _viewModel = viewModel;
         _hookSetup = hookSetup;
         _theme = theme;
         _documents = documents;
+        _memo = memo;
         DataContext = viewModel;
         InitializeComponent();
         DocumentsHost.DataContext = documents;
-        theme.Changed += _ => documents.OnThemeChanged();
+        MemoHost.DataContext = memo;
+        theme.Changed += _ =>
+        {
+            documents.OnThemeChanged();
+            memo.OnThemeChanged();
+        };
+        memo.ConfirmDiscard = () => System.Windows.MessageBox.Show(this, "変更を破棄しますか？", "Miharikun - メモ",
+            System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes;
+        memo.OpenInDocumentsRequested += OpenInDocumentsTab;
 
         Title = $"Miharikun - {viewModel.ProjectFolder}";
         TitleBar.Title = Title;
@@ -47,8 +58,37 @@ public partial class MainWindow : FluentWindow
         _clock.Start();
         // 画面が出てから、hook が未導入なら導入を提案する
         Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _hookSetup.CheckAtStartup(this));
-        Closing += (_, _) => _viewModel.Flush();   // 入力途中のメモを失わない
+        Closing += OnClosing;
         Closed += (_, _) => _clock.Stop();
+    }
+
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        _viewModel.Flush();   // 入力途中のメモ（セッションのメモ）を失わない
+
+        // プロジェクトのメモ（12.10）：未保存なら確認する。保存に失敗したら閉じない。
+        if (!_memo.IsDirty)
+            return;
+        MemoTab.IsSelected = true;
+        var dialog = new Views.UnsavedMemoDialog { Owner = this };
+        dialog.ShowDialog();
+        switch (dialog.Choice)
+        {
+            case Views.UnsavedMemoChoice.Save:
+                if (!_memo.TrySaveForClose())
+                    e.Cancel = true;
+                break;
+            case Views.UnsavedMemoChoice.Cancel:
+                e.Cancel = true;
+                break;
+        }
+    }
+
+    /// <summary>メモのリンクから：ドキュメントタブに切り替えてから、そのファイルを選ぶ（タブの Loaded で走査が始まる道を、先に通す）。</summary>
+    private void OpenInDocumentsTab(string relativePath)
+    {
+        DocumentsTab.IsSelected = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => _documents.OpenFromOutside(relativePath));
     }
 
     // 拡大モード（要件 12.4.1）：左と中央を隠して、右ペインを全幅に広げる。戻すときは元の幅に戻す。

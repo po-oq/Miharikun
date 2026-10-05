@@ -42,6 +42,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
     private TimeSpan? _lastScanTime;
     private bool _started;
     private bool _restored;
+    private string? _pendingOpen;       // 外（メモのリンク）から頼まれた、走査の後に選ぶファイル
     private bool _disposed;
 
     public DocumentsViewModel(string projectFolder, ProjectSettingsStore settings, AppPaths paths, Func<bool> isDark,
@@ -139,6 +140,48 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
         }
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
             ShellOpen.Open(fullPath);
+    }
+
+    /// <summary>メモのリンク先が、ドキュメントタブで開けるか（対象フォルダ内の md/html で、除外されていない）。</summary>
+    public bool IsInAppDocument(string fullPath, out string relativePath) =>
+        DocumentLinkRule.TryGetInAppPath(_root, fullPath, _matcher, out relativePath);
+
+    /// <summary>
+    /// 外（メモのリンク）から、ドキュメントタブでファイルを選ぶ。索引にあれば選び、まだ走査が始まっていない・走査中なら、
+    /// 走査の終わりに選ぶ予定にする。走査済みで索引に無いときは、その場で既定のアプリで開く（予定を残さない）。
+    /// </summary>
+    public void OpenFromOutside(string relativePath)
+    {
+        if (_disposed)
+            return;
+
+        if (_index.TryGet(relativePath) is not null)
+        {
+            _pendingOpen = null;
+            _restored = true;                         // 最初の走査中に選んだあと、前回のファイルで選び直さない
+            SelectPath(relativePath);
+        }
+        else if (!_started)
+        {
+            _pendingOpen = relativePath;
+            Start();
+        }
+        else if (IsScanning)
+        {
+            _pendingOpen = relativePath;
+        }
+        else
+        {
+            OpenExternallyBecauseMissing(relativePath);
+        }
+    }
+
+    private void OpenExternallyBecauseMissing(string relativePath)
+    {
+        var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        _log?.Invoke($"{relativePath} は索引に無いので、既定のアプリで開く");
+        if (File.Exists(full))
+            ShellOpen.Open(full);
     }
 
     private void SelectPath(string relativePath)
@@ -262,7 +305,16 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
         _log?.Invoke($"ドキュメントの走査：{_index.Count:N0} 件、{_scanTimer.Elapsed.TotalSeconds:0.00} 秒（{_root}）");
         _scheduler.ScanCompleted();
         RefreshNow();
-        if (!_restored)
+        if (_pendingOpen is { } pending)
+        {
+            _pendingOpen = null;
+            _restored = true;
+            if (_index.TryGet(pending) is not null)
+                SelectPath(pending);
+            else
+                OpenExternallyBecauseMissing(pending);
+        }
+        else if (!_restored)
         {
             _restored = true;
             RestoreLastOpened();
@@ -411,6 +463,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
         if (_syncing || value is null)
             return;
 
+        _pendingOpen = null;                          // 利用者の選択を、予定で後から上書きしない
         SetSelectedPath(value.RelativePath);
         _settings.SaveLastOpened(_root, value.RelativePath);
         LoadOverview(value.RelativePath);
