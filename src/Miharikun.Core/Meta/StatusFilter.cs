@@ -2,7 +2,7 @@ using Miharikun.Core.Sessions;
 
 namespace Miharikun.Core.Meta;
 
-/// <summary>一覧のステータス絞り込みタブ（要件 12.2）。1つだけ選ぶ。</summary>
+/// <summary>一覧のステータス絞り込みチップ（要件 12.2）。All 以外は複数選べる（OR）。</summary>
 public enum StatusTab
 {
     All,
@@ -23,6 +23,10 @@ public static class StatusFilter
         StatusTab.Done => status == SessionStatus.Done,
         _ => true,
     };
+
+    /// <summary>選んだチップのどれかに該当するか（OR）。何も選んでいない（All を含む）なら全て通す。</summary>
+    public static bool MatchesAny(IReadOnlySet<StatusTab> selected, SessionStatus? status) =>
+        selected.Count == 0 || selected.Contains(StatusTab.All) || selected.Any(t => Matches(t, status));
 
     /// <summary>タブに該当するセッション数。他のフィルタ・検索は掛けず、全セッションの値から数える。</summary>
     public static int Count(StatusTab tab, IEnumerable<SessionStatus?> statuses) => statuses.Count(s => Matches(tab, s));
