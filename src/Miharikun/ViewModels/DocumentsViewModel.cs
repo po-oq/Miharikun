@@ -6,18 +6,16 @@ using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Documents;
 using Miharikun.Core.Settings;
 using Miharikun.Core.Storage;
+using Miharikun.Views;
 
 namespace Miharikun.ViewModels;
-
-/// <summary>プレビューするファイル。</summary>
-public sealed record PreviewTarget(string FullPath, string RelativePath, DocumentKind Kind);
 
 /// <summary>
 /// ドキュメントタブ（要件 12.7）。索引（DocumentIndex）を変えるのは、ここ（UI スレッド）だけ。
 /// 走査のバッチも Watcher の差分も UI スレッドへ送ってから反映し、画面（ツリー・一覧）は 200ms ほどまとめて作り直す。
 /// 状態（走査結果・選択・展開）はここに持つ（タブを切り替えると View は外れるため）。
 /// </summary>
-public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
+public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost, IDisposable
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(200);
 
@@ -44,6 +42,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     private TimeSpan? _lastScanTime;
     private bool _started;
     private bool _restored;
+    private string? _pendingOpen;       // 外（メモのリンク）から頼まれた、走査の後に選ぶファイル
     private bool _disposed;
 
     public DocumentsViewModel(string projectFolder, ProjectSettingsStore settings, AppPaths paths, Func<bool> isDark,
@@ -51,7 +50,6 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     {
         _root = projectFolder;
         PreviewDir = paths.PreviewDir;
-        WebViewDataDir = paths.WebView2Dir;
         _isDark = isDark;
         _settings = settings;
         _ui = ui;
@@ -75,16 +73,18 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
     /// <summary>md の一時 HTML の置き場（PreviewFiles）。</summary>
     public string PreviewDir { get; }
 
-    /// <summary>WebView2 の作業フォルダ。</summary>
-    public string WebViewDataDir { get; }
-
     public bool IsDark => _isDark();
 
     /// <summary>プレビューの表示が変わる（選択・保存・再読み込み・テーマ変更）。第 2 引数が true なら、同じファイルでも作り直す。UI スレッドで呼ばれる。</summary>
-    public event Action<PreviewTarget?, bool>? PreviewChanged;
+    public event Action<PreviewSource?, bool>? PreviewChanged;
+
+    public string EmptyText => "ファイルを選ぶと、ここに表示します";
+
+    public string RuntimeMissingNote =>
+        "ツリー・一覧・概要は使えます。入れると、md / html をここに表示できます（https://developer.microsoft.com/microsoft-edge/webview2/）。";
 
     /// <summary>選んでいるファイル。何も選んでいなければ null。</summary>
-    public PreviewTarget? CurrentTarget
+    public PreviewSource.File? CurrentTarget
     {
         get
         {
@@ -92,7 +92,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
                 return null;
             var name = _selectedPath[(_selectedPath.LastIndexOf('/') + 1)..];
             var kind = DocumentEntry.TryGetKind(name, out var k) ? k : DocumentKind.Markdown;
-            return new PreviewTarget(Path.Combine(_root, _selectedPath.Replace('/', Path.DirectorySeparatorChar)), _selectedPath, kind);
+            return new PreviewSource.File(Path.Combine(_root, _selectedPath.Replace('/', Path.DirectorySeparatorChar)), _selectedPath, kind);
         }
     }
 
@@ -140,6 +140,48 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
         }
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
             ShellOpen.Open(fullPath);
+    }
+
+    /// <summary>メモのリンク先が、ドキュメントタブで開けるか（対象フォルダ内の md/html で、除外されていない）。</summary>
+    public bool IsInAppDocument(string fullPath, out string relativePath) =>
+        DocumentLinkRule.TryGetInAppPath(_root, fullPath, _matcher, out relativePath);
+
+    /// <summary>
+    /// 外（メモのリンク）から、ドキュメントタブでファイルを選ぶ。索引にあれば選び、まだ走査が始まっていない・走査中なら、
+    /// 走査の終わりに選ぶ予定にする。走査済みで索引に無いときは、その場で既定のアプリで開く（予定を残さない）。
+    /// </summary>
+    public void OpenFromOutside(string relativePath)
+    {
+        if (_disposed)
+            return;
+
+        if (_index.TryGet(relativePath) is not null)
+        {
+            _pendingOpen = null;
+            _restored = true;                         // 最初の走査中に選んだあと、前回のファイルで選び直さない
+            SelectPath(relativePath);
+        }
+        else if (!_started)
+        {
+            _pendingOpen = relativePath;
+            Start();
+        }
+        else if (IsScanning)
+        {
+            _pendingOpen = relativePath;
+        }
+        else
+        {
+            OpenExternallyBecauseMissing(relativePath);
+        }
+    }
+
+    private void OpenExternallyBecauseMissing(string relativePath)
+    {
+        var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        _log?.Invoke($"{relativePath} は索引に無いので、既定のアプリで開く");
+        if (File.Exists(full))
+            ShellOpen.Open(full);
     }
 
     private void SelectPath(string relativePath)
@@ -263,7 +305,16 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
         _log?.Invoke($"ドキュメントの走査：{_index.Count:N0} 件、{_scanTimer.Elapsed.TotalSeconds:0.00} 秒（{_root}）");
         _scheduler.ScanCompleted();
         RefreshNow();
-        if (!_restored)
+        if (_pendingOpen is { } pending)
+        {
+            _pendingOpen = null;
+            _restored = true;
+            if (_index.TryGet(pending) is not null)
+                SelectPath(pending);
+            else
+                OpenExternallyBecauseMissing(pending);
+        }
+        else if (!_restored)
         {
             _restored = true;
             RestoreLastOpened();
@@ -412,6 +463,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IDisposable
         if (_syncing || value is null)
             return;
 
+        _pendingOpen = null;                          // 利用者の選択を、予定で後から上書きしない
         SetSelectedPath(value.RelativePath);
         _settings.SaveLastOpened(_root, value.RelativePath);
         LoadOverview(value.RelativePath);

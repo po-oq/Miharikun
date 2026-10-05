@@ -41,11 +41,16 @@ public sealed class AppPaths(string root)
     /// プロジェクトごとの設定ファイル（要件 6章）：projects\{slug}-{hash8}.json。
     /// 元はプロジェクトのフルパスを小文字・末尾区切りなしにしたもの。slug は読みやすさ用、hash8（SHA-256 の先頭 8 桁）で別のパスと区別する。
     /// </summary>
-    public string ProjectSettingsFile(string projectPath)
+    public string ProjectSettingsFile(string projectPath) => ProjectFileBase(projectPath) + ".json";
+
+    /// <summary>プロジェクトのメモ（要件 12.10）：projects{slug}-{hash8}.memo.md。名前の作り方は設定の json と同じ。</summary>
+    public string ProjectMemoFile(string projectPath) => ProjectFileBase(projectPath) + ".memo.md";
+
+    private string ProjectFileBase(string projectPath)
     {
         var key = (Projects.ProjectPath.Normalize(projectPath) ?? projectPath).ToLowerInvariant();
         var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..8].ToLowerInvariant();
-        return Path.Combine(ProjectsDir, $"{Slug(key)}-{hash}.json");
+        return Path.Combine(ProjectsDir, $"{Slug(key)}-{hash}");
     }
 
     /// <summary>英数字以外の連なりを「-」にする。何も残らなければ "project"。</summary>

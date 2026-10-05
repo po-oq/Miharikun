@@ -3,6 +3,7 @@ using System.Windows;
 using Miharikun.Core.Agents;
 using Miharikun.Core.Git;
 using Miharikun.Core.Install;
+using Miharikun.Core.Memo;
 using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
 using Miharikun.Core.Settings;
@@ -16,6 +17,7 @@ public partial class App : Application
     private SessionMonitor? _monitor;
     private MainViewModel? _viewModel;
     private DocumentsViewModel? _documents;
+    private MemoViewModel? _memo;
 
     private void OnStartup(object sender, StartupEventArgs e)
     {
@@ -47,10 +49,13 @@ public partial class App : Application
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         var hookSetup = new HookSetup(HookInstaller.CreateDefault(paths, appDir));
 
+        WebViewEnvironment.Configure(paths.WebView2Dir);
         _ = Task.Run(() => PreviewFiles.CleanOld(paths.PreviewDir));   // 1 日より古い md の一時 HTML を消す
         _documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), paths, () => theme.IsDark,
             SynchronizationContext.Current!, AppLog.Write);
-        var window = new MainWindow(_viewModel, _documents, hookSetup, theme, appSettings);
+        _memo = new MemoViewModel(folder, new ProjectMemoStore(paths, AppLog.Write), paths, () => theme.IsDark,
+            SynchronizationContext.Current!, path => _documents.IsInAppDocument(path, out var rel) ? rel : null, AppLog.Write);
+        var window = new MainWindow(_viewModel, _documents, _memo, hookSetup, theme, appSettings);
         theme.Start(window);
         window.Show();
         _monitor.Start();
@@ -75,6 +80,7 @@ public partial class App : Application
     {
         _viewModel?.Dispose();
         _documents?.Dispose();
+        _memo?.Dispose();
         _monitor?.Dispose();
     }
 }

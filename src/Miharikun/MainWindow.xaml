@@ -375,7 +375,7 @@
 
         <ui:TitleBar x:Name="TitleBar" Grid.Row="0" Title="Miharikun" />
 
-        <TabControl Grid.Row="1" Margin="8,0,8,8">
+        <TabControl x:Name="MainTabs" Grid.Row="1" Margin="8,0,8,8">
             <TabItem Header="ダッシュボード">
                 <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
@@ -911,17 +911,11 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="ドキュメント">
+            <TabItem x:Name="DocumentsTab" Header="ドキュメント">
                 <views:DocumentsView x:Name="DocumentsHost" />
             </TabItem>
-            <!-- MVP 対象外のタブ（タブだけ置く／後で実装） -->
-            <TabItem Header="メモ">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="480">
-                    <TextBlock Text="プロジェクトのメモ" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                    <TextBlock Text="MVP 対象外" Margin="0,4,0,12" Opacity="0.7" HorizontalAlignment="Center" />
-                    <TextBlock Text="プロジェクト単位の自由メモを書ける機能を予定しています。セッションごとのメモは、ダッシュボードの右上にあります。"
-                               TextWrapping="Wrap" Opacity="0.7" TextAlignment="Center" />
-                </StackPanel>
+            <TabItem x:Name="MemoTab" Header="メモ">
+                <views:MemoView x:Name="MemoHost" />
             </TabItem>
         </TabControl>
 

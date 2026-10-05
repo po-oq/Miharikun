@@ -181,7 +181,7 @@
                                        AutomationProperties.AutomationId="ReloadPreviewButton" />
                             <TextBlock Text="内容" Style="{StaticResource CardHeading}" VerticalAlignment="Center" Margin="0" />
                         </DockPanel>
-                        <local:DocumentPreview Grid.Row="1" />
+                        <local:MarkdownPreview Grid.Row="1" />
                     </Grid>
                 </Border>
             </Grid>
