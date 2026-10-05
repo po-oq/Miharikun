@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #9 実装計画（図解）</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.6;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:30px} h3{font-size:15px;margin:18px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.note{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:10px 0} .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>Issue #9 ドキュメントタブ 実装計画（図解）</h1>
+<div class="sync"><b>連動ルール</b>：この HTML と <code>issue9-documents-plan.md</code> は対。どちらかを直したら、もう一方も同じ内容に直す。仕様の正は <code>miharikun-requirements.md</code> の 12.7 / 6章 / Phase 13。</div>
+
+<h2>1. 全体像：5 Phase・12 コミット</h2>
+<svg viewBox="0 0 960 150" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="5" y="20" width="170" height="100" fill="#dff" stroke="#08a"/><text x="14" y="42" font-weight="bold">Phase 13  Core</text><text x="14" y="62" font-size="12">除外・走査・索引</text><text x="14" y="78" font-size="12">概要・設定・Watcher</text><text x="14" y="102" font-size="12" fill="#555">3 コミット／画面なし</text>
+<rect x="195" y="20" width="170" height="100" fill="#fef" stroke="#a3a"/><text x="204" y="42" font-weight="bold">Phase 14  Docs</text><text x="204" y="62" font-size="12">md→HTML（Markdig）</text><text x="204" y="78" font-size="12">チェックボックス・mermaid</text><text x="204" y="102" font-size="12" fill="#555">2 コミット／画面なし</text>
+<rect x="385" y="20" width="170" height="100" fill="#efe" stroke="#383"/><text x="394" y="42" font-weight="bold">Phase 15  画面</text><text x="394" y="62" font-size="12">ツリー・一覧・絞り込み</text><text x="394" y="78" font-size="12">概要・復元・設定ダイアログ</text><text x="394" y="102" font-size="12" fill="#555">3 コミット／プレビュー空</text>
+<rect x="575" y="20" width="170" height="100" fill="#ffe9c8" stroke="#a70"/><text x="584" y="42" font-weight="bold">Phase 16  プレビュー</text><text x="584" y="62" font-size="12">WebView2・html・md</text><text x="584" y="78" font-size="12">リンク・自動再読込</text><text x="584" y="102" font-size="12" fill="#555">3 コミット</text>
+<rect x="765" y="20" width="190" height="100" fill="#eee" stroke="#888"/><text x="774" y="42" font-weight="bold">Phase 17  仕上げ</text><text x="774" y="62" font-size="12">性能実測・発行確認</text><text x="774" y="78" font-size="12">要件定義の更新</text><text x="774" y="102" font-size="12" fill="#555">1 コミット</text>
+<line x1="175" y1="70" x2="195" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="365" y1="70" x2="385" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="555" y1="70" x2="575" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="745" y1="70" x2="765" y2="70" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<p>各 Phase は「要件定義 → Core（テスト先行）→ ViewModel → 画面」の流儀で、終わりに実機（隔離環境）で確認し、報告にビルドの有無と出力先を書く。コミットは頼まれたときだけ（ここは区切りの目安）。<br>
+新しい依存：<code>Markdig</code>（<b>Docs だけ</b>）、<code>Microsoft.Web.WebView2</code>（<b>App だけ</b>）。mermaid.js は CDN から読む。</p>
+
+<h2>2. 層の分け方（Docs を別プロジェクトにする理由）</h2>
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<rect x="330" y="10" width="300" height="60" fill="#efe" stroke="#383"/><text x="340" y="32" font-weight="bold">Miharikun（App・WPF）</text><text x="340" y="50" font-size="12">画面・ViewModel・WebView2・設定ダイアログ</text>
+<rect x="30" y="110" width="280" height="70" fill="#fef" stroke="#a3a"/><text x="40" y="132" font-weight="bold">Miharikun.Docs（新規）</text><text x="40" y="150" font-size="12">md→HTML。Markdig はここだけ</text><text x="40" y="166" font-size="12">AOT 不要</text>
+<rect x="650" y="110" width="280" height="70" fill="#dff" stroke="#08a"/><text x="660" y="132" font-weight="bold">Miharikun.Core</text><text x="660" y="150" font-size="12">除外・走査・索引・概要・設定・Watcher</text><text x="660" y="166" font-size="12">標準ライブラリのみ。AOT 互換のまま</text>
+<rect x="650" y="205" width="280" height="36" fill="#eee" stroke="#888"/><text x="660" y="228">Miharikun.Hook（NativeAOT）</text>
+<rect x="30" y="205" width="280" height="36" fill="#eee" stroke="#888"/><text x="40" y="228">Miharikun.Tests（Core と Docs をテスト）</text>
+<line x1="400" y1="70" x2="250" y2="110" stroke="#333" marker-end="url(#a)"/><line x1="560" y1="70" x2="720" y2="110" stroke="#333" marker-end="url(#a)"/><line x1="310" y1="145" x2="650" y2="145" stroke="#333" marker-end="url(#a)"/>
+<line x1="790" y1="205" x2="790" y2="180" stroke="#333" marker-end="url(#a)"/><line x1="170" y1="205" x2="170" y2="180" stroke="#333" marker-end="url(#a)"/>
+<text x="340" y="165" font-size="11" fill="#555">Docs → Core</text>
+</svg>
+<p>理由：Markdig を Core に入れると NativeAOT の Hook にも依存が混ざり、AOT 警告の原因になる（CLAUDE.md「Core はリフレクションを使わず AOT 互換」）。Docs を分ければ Core は無傷で、md 変換もテストできる（WPF の App はテストから参照できない）。<br>
+gitignore 判定は NuGet を使わず<b>自前の小さい実装</b>（正規表現を使わず手書きのマッチ。速くて AOT 互換）。</p>
+
+<h2>3. データの流れ</h2>
+<svg viewBox="0 0 960 300" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="130" height="50" fill="#ffe9c8" stroke="#a70"/><text x="20" y="42">対象フォルダ</text>
+<rect x="170" y="10" width="200" height="70" fill="#dff" stroke="#08a"/><text x="180" y="32" font-weight="bold">DocumentIndexer</text><text x="180" y="50" font-size="11">背景走査・除外で枝刈り</text><text x="180" y="66" font-size="11">見つけた分からバッチ通知</text>
+<rect x="400" y="10" width="170" height="70" fill="#dff" stroke="#08a"/><text x="410" y="32" font-weight="bold">DocumentIndex</text><text x="410" y="50" font-size="11">メモリ上の索引</text><text x="410" y="66" font-size="11">追加/削除/更新</text>
+<rect x="600" y="10" width="170" height="70" fill="#dff" stroke="#08a"/><text x="610" y="32" font-weight="bold">Tree / Filter</text><text x="610" y="50" font-size="11">子孫込み件数・直下・絞り込み</text>
+<rect x="800" y="10" width="150" height="70" fill="#efe" stroke="#383"/><text x="810" y="32" font-weight="bold">ツリー・一覧</text><text x="810" y="50" font-size="11">（仮想化）</text>
+<line x1="140" y1="45" x2="170" y2="45" stroke="#333" marker-end="url(#a)"/><line x1="370" y1="45" x2="400" y2="45" stroke="#333" marker-end="url(#a)"/><line x1="570" y1="45" x2="600" y2="45" stroke="#333" marker-end="url(#a)"/><line x1="770" y1="45" x2="800" y2="45" stroke="#333" marker-end="url(#a)"/>
+<rect x="170" y="110" width="200" height="50" fill="#dff" stroke="#08a"/><text x="180" y="130">ProjectSettingsStore</text><text x="180" y="148" font-size="11">除外テキスト・最後のファイル</text>
+<line x1="270" y1="110" x2="270" y2="80" stroke="#333" marker-end="url(#a)"/>
+<rect x="400" y="110" width="170" height="50" fill="#dff" stroke="#08a"/><text x="410" y="130">DocumentWatcher</text><text x="410" y="148" font-size="11">差分を索引へ</text>
+<line x1="485" y1="110" x2="485" y2="80" stroke="#333" marker-end="url(#a)"/>
+<rect x="800" y="110" width="150" height="40" fill="#efe" stroke="#383"/><text x="810" y="135">ファイルを選択</text>
+<line x1="875" y1="150" x2="875" y2="175" stroke="#333" marker-end="url(#a)"/>
+<rect x="600" y="175" width="200" height="40" fill="#dff" stroke="#08a"/><text x="610" y="200">DocumentOverview（概要）</text>
+<polygon points="875,175 940,200 875,225 810,200" fill="#fff" stroke="#888"/><text x="852" y="204" font-size="12">種類</text>
+<line x1="810" y1="200" x2="800" y2="200" stroke="#333"/>
+<rect x="400" y="245" width="250" height="44" fill="#ffe9c8" stroke="#a70"/><text x="410" y="264">.html → WebView2 が file:/// で</text><text x="410" y="280">そのまま開く</text>
+<rect x="680" y="245" width="270" height="44" fill="#fef" stroke="#a3a"/><text x="690" y="264">.md → MarkdownRenderer（Docs）→</text><text x="690" y="280">preview\*.html → WebView2</text>
+<line x1="875" y1="225" x2="815" y2="245" stroke="#333" marker-end="url(#a)"/><line x1="850" y1="222" x2="650" y2="255" stroke="#333" marker-end="url(#a)"/>
+</svg>
+
+<h2>4. Phase 別の中身</h2>
+<h3>Phase 13: Core（画面なし・テスト先行）</h3>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>13-1</td><td>除外パターン</td><td><code>GitIgnoreMatcher</code>（コメント・<code>!</code>・末尾 <code>/</code>・先頭/途中の <code>/</code>・<code>* ? **</code>・大文字小文字無視・後勝ち）、<code>DefaultIgnore</code></td><td>GitIgnoreMatcherTests</td></tr>
+<tr><td>13-2</td><td>走査と索引</td><td><code>DocumentIndexer</code>（背景・枝刈り・拡張子絞り・バッチ・キャンセル）、<code>DocumentIndex</code>、<code>DocumentTree</code>（子孫込み件数）、<code>DocumentFilter</code>（直下/すべて・絞り込み・更新日降順）</td><td>DocumentIndexerTests（一時フォルダ）／TreeTests／FilterTests</td></tr>
+<tr><td>13-3</td><td>概要・設定・Watcher</td><td><code>DocumentOverview</code>（タイトル・行数・サイズ・日時）、<code>ProjectSettingsStore</code>（<code>projects\{slug}-{hash8}.json</code>）、<code>DocumentWatcher</code>（デバウンス・除外適用）</td><td>OverviewTests／ProjectSettingsTests／WatcherTests</td></tr></table>
+<p>完了条件：1万ファイルの一時フォルダのテストが数秒以内。<code>dotnet build --no-incremental</code> が警告 0。</p>
+
+<h3>Phase 14: Docs（md → HTML・画面なし）</h3>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>14-1</td><td>プロジェクト追加とチェックボックス</td><td><code>Miharikun.Docs.csproj</code>（Markdig）、<code>MarkdownRenderer</code>（<code>UseAdvancedExtensions</code>）、<code>&lt;base&gt;</code> の付与</td><td><b>チェックボックス 6 ケース</b>（未/済/大文字 X/入れ子/番号付き/コード・見出し内は変換しない）</td></tr>
+<tr><td>14-2</td><td>mermaid・色付け・テーマ・CSS</td><td>mermaid（Markdig 標準の <code>&lt;pre class="mermaid"&gt;</code> ＋ CDN）、コードの色付け（highlight.js CDN）、ライト/ダーク CSS（埋め込み）、タスクリストの黒丸消し</td><td>mermaid 出力・色付け・テーマ別 CSS</td></tr></table>
+<p>完了条件：本物の要件定義書を変換して、エラーなく HTML が出る。</p>
+
+<h3>Phase 15: 画面（プレビューは空）</h3>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr>
+<tr><td>15-1</td><td>タブの骨格と走査</td><td><code>DocumentsViewModel</code>・<code>FolderNodeViewModel</code>・<code>DocumentRowViewModel</code>・<code>DocumentsView</code>、MainWindow のプレースホルダー差し替え、走査の進捗、「読み直し」、「パスで絞り込み」</td></tr>
+<tr><td>15-2</td><td>概要カード・復元・Watcher</td><td>概要カード、最後に開いたファイルの保存と復元、Watcher の差分反映（ツリーの展開状態を保つ）</td></tr>
+<tr><td>15-3</td><td>設定ダイアログ</td><td>⚙ に「ドキュメントの設定…」、<code>DocumentSettingsDialog</code>（gitignore テキスト・既定に戻す・保存で即再走査）</td></tr></table>
+<p>完了条件：実機（隔離環境）で、1万ファイル超でも固まらない。除外の変更が即反映され再起動後も残る。ライト/ダーク両方で確認。</p>
+
+<h3>Phase 16: プレビュー（WebView2）</h3>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr>
+<tr><td>16-1</td><td>html のプレビュー</td><td>WebView2 組み込み（ユーザーデータは <code>%LOCALAPPDATA%\Miharikun\webview2\</code>）、Runtime 未導入の案内、html を <code>file:///</code> で表示（相対/絶対の css・js・画像、JavaScript 実行）、http リンクは既定ブラウザ</td></tr>
+<tr><td>16-2</td><td>md のプレビュー</td><td>変換結果を <code>preview\</code> の一時 HTML に書いて表示、md 間リンクをアプリ内で開く（ツリー・一覧も追従）、テーマ連動、起動時に掃除</td></tr>
+<tr><td>16-3</td><td>自動再読込とボタン</td><td>保存で自動再読み込み、「再読み込み」「フォルダで開く」「既定のアプリで開く」</td></tr></table>
+<p>完了条件：相対 css・js・画像入りの html が崩れない。本物の要件定義書で、チェックボックス・表・コード・mermaid が正しく出る。</p>
+
+<h3>Phase 17: 仕上げ</h3>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr>
+<tr><td>17-1</td><td>性能実測と配布確認</td><td>1万・5万ファイルの実測（ツリーが出るまでの時間・メモリ）、遅ければ索引キャッシュを別 Issue に、Release の単一ファイル発行で WebView2 が動くか確認、要件定義 12.7・5章・<code>[x]</code> の更新、<code>docs/release.md</code> の確認</td></tr></table>
+<p>完了条件：<code>scripts/publish.ps1</code> の成果物を実機で起動し、ドキュメントタブが動く。Runtime 未導入時の案内も確認。</p>
+
+<h2>5. ファイル構成（追加・変更）</h2>
+<pre>src/
+├─ Miharikun.Core/
+│  ├─ Documents/                          ← 新規フォルダ
+│  │  ├─ GitIgnoreMatcher.cs      13-1  除外判定 IsIgnored(相対パス, フォルダか)
+│  │  ├─ GitIgnorePattern.cs      13-1  1行ぶんの規則（手書きの glob マッチ）
+│  │  ├─ DefaultIgnore.cs         13-1  既定の除外テキスト
+│  │  ├─ DocumentEntry.cs         13-2  1ファイルの情報（相対パス・種別・更新日時・サイズ）
+│  │  ├─ DocumentIndexer.cs       13-2  背景走査（枝刈り・バッチ通知）
+│  │  ├─ DocumentIndex.cs         13-2  メモリ上の索引（追加/削除/更新）
+│  │  ├─ DocumentTree.cs          13-2  フォルダ階層と子孫込み件数
+│  │  ├─ DocumentFilter.cs        13-2  直下/すべて・絞り込み・並び
+│  │  ├─ DocumentOverview.cs      13-3  タイトル・行数・サイズ・日時
+│  │  ├─ DocumentChangeClassifier.cs 13-3 イベント→差分/再走査の振り分け（純粋関数）
+│  │  └─ DocumentWatcher.cs       13-3  FileSystemWatcher＋デバウンス
+│  ├─ Settings/ProjectSettingsStore.cs  13-3  projects\{slug}-{hash8}.json
+│  └─ Storage/AppPaths.cs         13-3  【変更】ProjectSettingsFile() を追加
+│
+├─ Miharikun.Docs/                        ← 新規プロジェクト（Markdig）
+│  ├─ Miharikun.Docs.csproj       14-1
+│  ├─ MarkdownRenderer.cs         14-1  md→HTML（タスクリスト・&lt;base&gt;・mermaid）
+│  └─ Assets/markdown-base.css（共通）/ markdown-light.css / markdown-dark.css（色）  14-2  埋め込みリソース
+│
+└─ Miharikun/（App）
+   ├─ Miharikun.csproj            16-1  【変更】WebView2・Docs への参照
+   ├─ MainWindow.xaml             15-1  【変更】ドキュメントタブ差し替え／⚙ と対象フォルダ表示を共通ヘッダーへ／⚙ に項目(15-3)
+   ├─ ThemeService.cs             16-2  【変更】Changed イベントを追加
+   ├─ Views/                             ← 新規フォルダ
+   │  ├─ DocumentsView.xaml(.cs)          15-1  ツリー｜一覧｜右ペイン
+   │  ├─ DocumentPreview.xaml(.cs)        16-1  WebView2 を包む部品
+   │  └─ DocumentSettingsDialog.xaml(.cs) 15-3
+   ├─ ViewModels/
+   │  ├─ DocumentsViewModel.cs 15-1 / FolderNodeViewModel.cs 15-1 / DocumentRowViewModel.cs 15-1
+   │  ├─ DocumentOverviewViewModel.cs 15-2
+   │  └─ DocumentSettingsViewModel.cs 15-3
+   ├─ PreviewFiles.cs             16-2  md の一時 HTML の書き出し・掃除
+   └─ Themes/Colors.*.xaml        15-1  【変更】ツリー・一覧用の色（直書きしない）
+
+tests/Miharikun.Tests/
+├─ Miharikun.Tests.csproj         13-1/14-1  【変更】Docs への参照
+├─ Core/  GitIgnoreMatcherTests 13-1 / DocumentIndexerTests・TreeTests・FilterTests 13-2
+│         DocumentOverviewTests・WatcherTests・ProjectSettingsTests 13-3
+└─ Docs/  MarkdownRendererTests.cs 14-1/14-2
+
+Miharikun.slnx                    14-1  【変更】Miharikun.Docs を追加</pre>
+<p>実行時に増えるデータは、下の 5.5 に詳しく書く。</p>
+
+<h2>5.5 実行時に増えるデータ（詳細）</h2>
+<p>すべて <code>%LOCALAPPDATA%\Miharikun\</code> の下（<code>MIHARIKUN_DATA_DIR</code> で移せる。検証は隔離フォルダで行い、本物のデータには触れない）。</p>
+<svg viewBox="0 0 960 150" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="10" width="940" height="130" fill="#fff" stroke="#999"/><text x="20" y="32" font-weight="bold">%LOCALAPPDATA%\Miharikun\</text>
+<text x="40" y="52" fill="#666">events\ meta\ settings.json logs\ …（既存。変更なし）</text>
+<rect x="30" y="62" width="290" height="68" fill="#dff" stroke="#08a"/><text x="40" y="82" font-weight="bold">projects\{slug}-{hash8}.json</text><text x="40" y="100" font-size="12">除外パターン・最後のファイル</text><text x="40" y="116" font-size="12">利用者の設定（掃除しない）</text>
+<rect x="340" y="62" width="290" height="68" fill="#ffe9c8" stroke="#a70"/><text x="350" y="82" font-weight="bold">webview2\</text><text x="350" y="100" font-size="12">Edge エンジンの作業フォルダ</text><text x="350" y="116" font-size="12">キャッシュ・Cookie（消してよい）</text>
+<rect x="650" y="62" width="290" height="68" fill="#fef" stroke="#a3a"/><text x="660" y="82" font-weight="bold">preview\</text><text x="660" y="100" font-size="12">md を変換した一時 HTML（1md＝1ファイル）</text><text x="660" y="116" font-size="12">起動時に 1 日より古いものを削除</text>
+</svg>
+<table><tr><th>場所</th><th>中身</th><th>書く人・タイミング</th><th>大きさ</th><th>消えたら</th><th>掃除</th></tr>
+<tr><td><code>projects\{slug}-{hash8}.json</code></td><td>除外パターン（gitignore 形式のテキスト）、最後に開いたファイル、対象フォルダのパス（見分け用）。例：<code>C:\work\proj</code> → <code>c-work-proj-1a2b3c4d.json</code></td><td>App。設定ダイアログで保存したとき、ファイルを選んだとき</td><td>1KB 未満</td><td>除外は既定値に戻り、最後のファイルの復元がなくなるだけ</td><td>しない（利用者の設定）</td></tr>
+<tr><td><code>webview2\</code></td><td>WebView2 の作業フォルダ：キャッシュ、Cookie、localStorage、GPU キャッシュ。mermaid.js（CDN）のキャッシュ、html 内の JavaScript が保存したものもここ</td><td>WebView2。プレビューを初めて開いたとき作られる</td><td>数十MB（使うと増える）</td><td>消して問題なし。次のプレビューで作り直す</td><td>自動ではしない（要望があれば「キャッシュを消す」を足す）</td></tr>
+<tr><td><code>preview\</code></td><td>md を HTML にした一時ファイル。<b>1 つの md につき 1 ファイル</b>（名前はパスのハッシュ。同じ md は上書きなので無限には増えない）。<code>&lt;base&gt;</code> を元フォルダにして画像・相対リンクを効かせるために必要</td><td>App。md を選んだとき・保存で再読み込みしたとき</td><td>1ファイル数十KB〜数MB</td><td>次に開くとき作り直す</td><td>起動時に <b>1 日より古いファイルだけ</b>消す（複数起動中の別の Miharikun が使っているファイルを消さないため）</td></tr></table>
+<ul><li>どれも<b>文書そのものは変えない</b>（読み取り専用）。<code>preview\</code> には会社の md の内容のコピーが一時的に残る（同じ PC・同じ利用者の領域。気になるなら起動時の掃除を「全部消す」に変えられる）。</li>
+<li><code>webview2\</code> を専用の場所にする理由：標準では exe の隣（<code>Miharikun.exe.WebView2</code>）に作られ、ダウンロードフォルダなどを汚す／書き込めない場所で失敗するため。</li>
+<li>複数の Miharikun を起動しても <code>webview2\</code> は共有して動く（WebView2 の標準の動作）。</li></ul>
+
+<h2>6. リスクと対策</h2>
+<table><tr><th>リスク</th><th>対策</th></tr>
+<tr><td>1万ファイル超で遅い</td><td>枝刈り・背景走査・バッチ通知・仮想化。13-2 のテストと 17-1 の実測。遅ければキャッシュを別 Issue に</td></tr>
+<tr><td>WebView2 が単一ファイル発行で動かない</td><td>16-1 の時点で Release 発行を試す（17-1 まで待たない）</td></tr>
+<tr><td>Runtime 未導入</td><td>起動時に確認して案内。ツリー・一覧・概要は使える</td></tr>
+<tr><td>md の相対リンクが効かない</td><td><code>&lt;base&gt;</code> に元フォルダの <code>file:///</code>。16-2 で実機確認</td></tr>
+<tr><td>ツリー更新でちらつく</td><td>Watcher はデバウンスし差分だけ反映。展開状態を保つ</td></tr>
+
+<h2>6.5 レビュー反映（Opus 5.5 のレビュー 16 件 → すべて採用）</h2>
+<p>原本：<code>issue9-documents-review.html</code>。指摘は実コードと突き合わせて確認済み（⚙ の位置、<code>ThemeService</code>、<code>ProjectPath</code>、Markdig の出力）。<b>不採用なし</b>。ただし 2 点は、レビューの案を実測で直した。</p>
+<svg viewBox="0 0 960 190" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="18" font-weight="bold">直した点 A：見出し id と # リンク（実測）</text>
+<rect x="10" y="26" width="300" height="70" fill="#fff" stroke="#c33"/><text x="18" y="46">UseAdvancedExtensions() だけ</text><text x="18" y="64">&lt;h1 id="section"&gt;概要</text><text x="18" y="82" fill="#c33">リンク #%E6%A6%82… ≠ id → 飛ばない</text>
+<rect x="330" y="26" width="300" height="70" fill="#fff" stroke="#383"/><text x="338" y="46">UseAutoIdentifiers(GitHub) を</text><text x="338" y="64">Advanced より前に呼ぶ</text><text x="338" y="82" fill="#383">&lt;h1 id="概要"&gt;（重複は 概要-1）</text>
+<rect x="650" y="26" width="300" height="70" fill="#fff" stroke="#383"/><text x="658" y="46">+ # リンク横取りスクリプト</text><text x="658" y="64">decodeURIComponent(href) で id を探し</text><text x="658" y="82" fill="#383">scrollIntoView → 目次が動く</text>
+<text x="10" y="126" font-weight="bold">直した点 B：mermaid（実測）</text>
+<text x="10" y="148">レビュー：&lt;div class="mermaid"&gt; ＋ CSS white-space:pre が必要　→　実際：Markdig 標準が &lt;pre class="mermaid"&gt; を出す</text>
+<text x="10" y="168">→ 変換も改行用の CSS も不要。mermaid.js はそのまま描画する（テーマだけ initialize で渡す）</text>
+</svg>
+<table><tr><th>Phase</th><th>追加・変更</th><th>指摘</th></tr>
+<tr><td>13-1</td><td><code>GitIgnoreMatcher.IsPathExcluded(relPath)</code>（祖先を順に判定、1つでも当たれば除外）。走査の枝刈りと同じ結果になることをテスト</td><td>4</td></tr>
+<tr><td>13-2</td><td><code>FileSystemEnumerable</code>＋枝刈り＋拡張子絞り、<code>IgnoreInaccessible</code>、<code>ReparsePoint</code> には入らない。バッチに<b>世代番号</b>（古い世代は捨てる）。<b>Watcher は走査より先に開始</b>。索引は相対パス（大文字小文字無視）の辞書。正しさのテストは数百ファイル、1万ファイル計測は <code>[Trait("Category","Perf")]</code> に分離</td><td>5, 11, 12</td></tr>
+<tr><td>13-3</td><td><b>Watcher</b>：ファイルの差分だけ自分で反映。<b>フォルダの作成/削除/rename・Error は全再走査を予約</b>（1秒デバウンス、走査中なら終わってから 1 回）。<code>Filters</code> 空、NotifyFilter＝FileName｜DirectoryName｜LastWrite｜Size、バッファ 64KB。除外は親までさかのぼる。振り分けは純粋関数 <code>DocumentChangeClassifier</code> でテスト。<b>設定は read-modify-write</b>（知らないキーも残す）、<code>ProjectPath.Normalize</code> 流用、<code>lastOpened</code> が消えていたら復元しない</td><td>4, 10</td></tr>
+<tr><td>14-1</td><td>Docs は <b>net10.0・Core 参照なし</b>。タスクリストは Markdig 標準（6 ケースは出力の確認テスト）。見出し id は A のとおり。<code>#</code> リンク用スクリプト。base URL は <code>new Uri(folder+"\\").AbsoluteUri</code>、日本語・空白・<code>#</code>・<code>%</code> のテスト</td><td>2, 6, 13</td></tr>
+<tr><td>14-2</td><td>mermaid は標準の <code>&lt;pre class="mermaid"&gt;</code>（B）＋テーマ渡し。<b>highlight.js（CDN）でコードを色付け</b>（<code>language-mermaid</code> 以外。テーマ別 CSS。繋がらなければ色なし）</td><td>3, 6</td></tr>
+<tr><td>15-1</td><td><b>⚙ と対象フォルダ表示を TabControl の外の共通ヘッダーへ移す</b>（どのタブでも見える）。<b>索引の更新は UI スレッド 1 か所</b>、200ms でまとめて反映、展開状態を保持。状態は <code>DocumentsViewModel</code> に持つ</td><td>1, 5, 9</td></tr>
+<tr><td>15-2</td><td>概要の読み込みは <code>Task.Run</code>（選択が変われば破棄）、タイトルは先頭 64KB、UTF-8 前提でだめならファイル名</td><td>14</td></tr>
+<tr><td>15-3</td><td>設定ダイアログは<b>別 Window（ShowDialog）</b></td><td>9</td></tr>
+<tr><td>16-1</td><td><b>リンクの振り分け</b>（下図）、<b>airspace</b>（WebView2 に WPF を重ねない）、タブ切替後に <code>Loaded</code> で再表示</td><td>8, 9</td></tr>
+<tr><td>16-2</td><td><code>ThemeService.Changed</code>（isDark）を足し、md を作り直す。preview は <code>AtomicFile</code> で書く</td><td>7, 15</td></tr></table>
+<svg viewBox="0 0 960 190" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="18" font-weight="bold">16-1 リンクの振り分け（NavigationStarting と NewWindowRequested の両方）</text>
+<rect x="10" y="30" width="200" height="40" fill="#fff" stroke="#888"/><text x="20" y="55">http / https</text><text x="230" y="55">→ キャンセルして既定ブラウザ</text>
+<rect x="10" y="76" width="200" height="40" fill="#fff" stroke="#888"/><text x="20" y="101">対象フォルダ内の md / html</text><text x="230" y="101">→ キャンセルして<tspan font-weight="bold">アプリ内で選択</tspan>（ツリー・一覧・lastOpened も追従。html→html も同じ）</text>
+<rect x="10" y="122" width="200" height="40" fill="#fff" stroke="#888"/><text x="20" y="140">対象外・除外内の md/html、</text><text x="20" y="156">その他のファイル・フォルダ</text><text x="230" y="146">→ キャンセルして既定のアプリ／エクスプローラー</text>
+<text x="10" y="182">#xxx だけ（同じページ内）→ そのまま通す（md は # リンク用スクリプトが処理）</text>
+</svg>
+<ul><li>5章のリスク表の「要件定義の Phase 13 見出しは着手時に書き換える」を削除（要件定義は既に Phase 13〜17。指摘 16）。</li>
+<li>レビュー 2 の代案（<code>WebResourceRequested</code> の仮想ホスト方式）は、手数が増えるため<b>今回は採用しない</b>（<code>&lt;base&gt;</code> と # リンク用スクリプトで足りる。相対パスやリンクで問題が出たら 16-2 で見直す）。</li></ul>
+
+<h2>7. 決定事項（確認済み）</h2>
+<ol><li>Docs を別プロジェクトにする（Core を AOT 互換に保つ）。</li><li>Phase は 5 つ（13〜17）。要件定義の見出しも書き換え済み。</li><li>gitignore 判定は自前実装（NuGet を使わない）。</li><li>進める順は 13 → 14 → 15 → 16 → 17。</li></ol>
+<p>次の一歩：Phase 13-1（<code>GitIgnoreMatcher</code> のテスト先行）。</p>
+</body></html>

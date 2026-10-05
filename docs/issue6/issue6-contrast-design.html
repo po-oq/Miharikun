@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue #6 見づらさの改善 設計イメージ</title>
+<style>
+  body { font: 14px/1.7 "Yu Gothic UI", Meiryo, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 22px; } h2 { font-size: 17px; margin-top: 34px; border-left: 5px solid #0b63c5; padding-left: 8px; }
+  table { border-collapse: collapse; margin: 8px 0; font-size: 13px; } th, td { border: 1px solid #bbb; padding: 4px 10px; vertical-align: top; } th { background: #eef; }
+  code { background: #f2f2f4; padding: 0 4px; border-radius: 3px; }
+  .note { background: #fff4c2; padding: 8px 12px; border-radius: 4px; } .q { background: #fde8e8; padding: 8px 12px; border-radius: 4px; }
+  .ng { color: #c00; font-weight: bold; } .ok { color: #1a7f37; font-weight: bold; } .dim { color: #777; font-size: 12px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; } .col { flex: 1; min-width: 300px; }
+  .theme { border-radius: 8px; padding: 12px; } .tl { background: #fbfbfb; color: #1a1a1a; border: 1px solid #ccc; } .td { background: #2b2b2b; color: #fff; }
+  .card { border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 12px; border: 1px solid; }
+  .tl .card { background: #fff; border-color: #c4c4cc; } .td .card { background: #363639; border-color: #5e5e63; }
+  .t { font-weight: bold; font-size: 13px; } .meta { opacity: .7; font-size: 11px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+  .badge { border: 1px solid; border-radius: 8px; padding: 0 6px; font-size: 11px; margin-left: 4px; }
+  .memo { padding: 2px 6px; margin-top: 4px; }
+  .tl .memo { background: #fff1b8; color: #3b2f00; } .td .memo { background: #4a4325; color: #f2f2f2; }
+  /* いまの選択（現状） */
+  .tl .cur { background: #0b63c5; border-color: #0b63c5; color: #fff; } .td .cur { background: #1f5fa8; border-color: #1f5fa8; color: #fff; }
+  .cur .sum { color: #fff; }
+  /* 提案 */
+  .tl .new { background: #e8f1fd; border: 2px solid #0b63c5; color: #1a1a1a; }
+  .td .new { background: #1e3a5f; border: 2px solid #4c9aff; color: #fff; }
+  .tl .g { color: #1a7f37 } .tl .b { color: #0969da } .tl .y { color: #9a6700 } .tl .s { color: #0e7a5a }
+  .td .g { color: #3fb950 } .td .b { color: #4c9aff } .td .y { color: #d29922 } .td .s { color: #4fbf9a }
+  .bg { background: currentColor; } .tl .gd { background: #1a7f37 } .td .gd { background: #3fb950 } .tl .bd { background: #0969da } .td .bd { background: #4c9aff }
+  .chip { display: inline-block; border-radius: 11px; border: 1px solid; padding: 0 9px; font-size: 12px; margin: 2px 3px 2px 0; }
+  .tl .chip { background: #fff; border-color: #c4c4cc; } .td .chip { background: #363639; border-color: #5e5e63; }
+  .tl .chip.on, .td .chip.on { background: #0b63c5; border-color: #0b63c5; color: #fff; }
+  .tl .chip.n { border-color: #9a9aa6; } .td .chip.n { border-color: #7a7a82; }
+  .bub { border-radius: 6px; padding: 4px 8px; margin: 4px 0; font-size: 11px; }
+  .tl .bub.r0 { background: #ececef } .tl .bub.i0 { background: #dcebff } .td .bub.r0 { background: #4a4a50 } .td .bub.i0 { background: #2b4c7e }
+  .tl .bub.r1 { background: #e2e2e8 } .tl .bub.i1 { background: #cfe2ff } .td .bub.r1 { background: #55555c } .td .bub.i1 { background: #2f5c9e }
+</style>
+</head>
+<body>
+<h1>Issue #6：選択したカードや、ライト/ダークの見づらい箇所の改善 — 設計イメージ</h1>
+<p class="dim">コード変更前の確認用。色の値は実際のものを使っている。Issue 本文：「選択したとき背景色が強くて表示色が判別しづらい。ダークは見やすいがライトは見づらい。カード以外でも見づらい箇所を改善する」</p>
+
+<h2>1. 何が起きているか（原因）</h2>
+<p>いまの「選択中のカード」は、<b>濃い青で全面を塗りつぶし、字を白にしている</b>。ところがカードの中には、<b>背景が白い前提で選んだ色</b>（状態の丸の緑・青・灰、バッジの枠、概要の緑など）が入っている。濃い青の上に載ると、それらが沈んで見えなくなる。</p>
+<table>
+  <tr><th>選択中カード上の要素</th><th>ライト（背景 #0B63C5）</th><th>ダーク（背景 #1F5FA8）</th></tr>
+  <tr><td>白い文字</td><td class="ok">5.8</td><td class="ok">6.4</td></tr>
+  <tr><td>メタ行（白 70%）</td><td class="ng">3.7</td><td class="ng">4.1</td></tr>
+  <tr><td>状態の丸：緑（ボスの番）</td><td class="ng">1.15（ほぼ見えない）</td><td class="ng">2.5</td></tr>
+  <tr><td>状態の丸：青（実行中）</td><td class="ng">1.12（見えない）</td><td class="ng">2.3</td></tr>
+  <tr><td>状態の丸：灰（閉じた）</td><td class="ng">1.20（見えない）</td><td class="ng">2.4</td></tr>
+</table>
+<p class="dim">数字はコントラスト比（文字は 4.5 以上、図形は 3 以上が目安）。ダークは丸が少し見える程度には明るい色を使っているので「見やすい」と感じるが、実は同じ問題がある。</p>
+
+<h2>2. 改善イメージ（カード）</h2>
+<p><b>方針：塗りつぶしをやめ、「薄い色の地 + 太い枠」で選択を示す。</b>（左の帯は付けない）文字色・丸の色は未選択のときと同じ前提で読める。</p>
+<div class="row">
+  <div class="col theme tl">
+    <b>ライト</b>
+    <div class="dim" style="color:#777">いま（塗りつぶし）</div>
+    <div class="card cur"><span class="dot" style="background:#0969da"></span><span class="t">作業中のセッション</span><span class="badge" style="border-color:#0969da">作業中</span><br><span class="meta">依頼4・最後の動き 10時間前</span><div class="memo" style="background:#fff1b8;color:#3b2f00">📌 メモ</div></div>
+    <div class="dim" style="color:#777">提案（薄い色の地 + 枠）</div>
+    <div class="card new"><span class="dot gd"></span><span class="t">作業中のセッション</span><span class="badge b" style="border-color:#0969da">作業中</span><br><span class="meta">依頼4・最後の動き 10時間前</span><div class="s">📄 概要：…</div><div class="memo">📌 メモ</div></div>
+    <div class="card"><span class="dot" style="background:#6b7280"></span><span class="t">未選択のカード</span><br><span class="meta">依頼2・最後の動き 1分前</span></div>
+  </div>
+  <div class="col theme td">
+    <b>ダーク</b>
+    <div class="dim" style="color:#aaa">いま（塗りつぶし）</div>
+    <div class="card cur"><span class="dot" style="background:#4c9aff"></span><span class="t">作業中のセッション</span><span class="badge" style="border-color:#4c9aff">作業中</span><br><span class="meta">依頼4・最後の動き 10時間前</span><div class="memo" style="background:#4a4325;color:#f2f2f2">📌 メモ</div></div>
+    <div class="dim" style="color:#aaa">提案（濃い青の地 + 明るい枠）</div>
+    <div class="card new"><span class="dot gd"></span><span class="t">作業中のセッション</span><span class="badge b" style="border-color:#4c9aff">作業中</span><br><span class="meta">依頼4・最後の動き 10時間前</span><div class="s">📄 概要：…</div><div class="memo">📌 メモ</div></div>
+    <div class="card"><span class="dot" style="background:#9aa0a6"></span><span class="t">未選択のカード</span><br><span class="meta">依頼2・最後の動き 1分前</span></div>
+  </div>
+</div>
+<table>
+  <tr><th>提案の色</th><th>ライト</th><th>ダーク</th></tr>
+  <tr><td>選択中の地</td><td>#E8F1FD（薄い青）</td><td>#1E3A5F（濃い青）</td></tr>
+  <tr><td>選択中の枠（2px）</td><td>#0B63C5</td><td>#4C9AFF</td></tr>
+  <tr><td>文字</td><td>通常色（#1A1A1A）</td><td>通常色（白）</td></tr>
+  <tr><td>状態の丸（緑）のコントラスト</td><td class="ok">4.5（いま 1.15）</td><td class="ok">4.5（いま 2.5）</td></tr>
+  <tr><td>状態の丸（青／灰）</td><td class="ok">4.6／4.2</td><td class="ok">4.0／4.4</td></tr>
+  <tr><td>メモの黄色い帯</td><td>そのまま</td><td>そのまま</td></tr>
+</table>
+<p>副作用：<b>選択中だけ概要を白にする特例が不要になる</b>（前に足した DataTrigger を削除できて、コードが減る）。</p>
+
+<h2>2.5 具体例：ダークの何が「沈んでいる」のか</h2>
+<p>ダークの選択中カードは、青い地（#1F5FA8）に<b>白い文字</b>なので読める。問題は<b>状態の丸</b>。丸の色は「地が暗い前提」で明るく作ってあるが、<b>青い地の上だと、青や緑の丸が地に近い明るさになって目立たない</b>。実際の見え方（実寸の 2 倍に拡大）：</p>
+<div class="row">
+  <div class="col theme td">
+    <b>ダーク：いま（青い地）</b>
+    <div class="card cur" style="font-size:20px"><span class="dot" style="background:#4c9aff;width:16px;height:16px"></span><b>実行中</b>　　<span class="meta" style="font-size:13px">コントラスト 2.3</span></div>
+    <div class="card cur" style="font-size:20px"><span class="dot" style="background:#3fb950;width:16px;height:16px"></span><b>ボスの番</b>　<span class="meta" style="font-size:13px">コントラスト 2.5</span></div>
+    <div class="card cur" style="font-size:20px"><span class="dot" style="background:#9aa0a6;width:16px;height:16px"></span><b>閉じた</b>　　<span class="meta" style="font-size:13px">コントラスト 2.4</span></div>
+  </div>
+  <div class="col theme td">
+    <b>ダーク：揃えた場合（濃い青の地 + 明るい枠）</b>
+    <div class="card new" style="font-size:20px"><span class="dot" style="background:#4c9aff;width:16px;height:16px"></span><b>実行中</b>　　<span class="meta" style="font-size:13px">コントラスト 4.0</span></div>
+    <div class="card new" style="font-size:20px"><span class="dot" style="background:#3fb950;width:16px;height:16px"></span><b>ボスの番</b>　<span class="meta" style="font-size:13px">コントラスト 4.5</span></div>
+    <div class="card new" style="font-size:20px"><span class="dot" style="background:#9aa0a6;width:16px;height:16px"></span><b>閉じた</b>　　<span class="meta" style="font-size:13px">コントラスト 4.4</span></div>
+  </div>
+</div>
+<p>左（いま）は、青い丸が青い地に埋もれて輪郭がぼやける。右（揃えた場合）は、地が暗いので、丸が地からくっきり浮く。<b>実は、ダークを「見やすい」と感じていたなら、いまのままでも実害は小さい</b>（文字は読めており、丸は文字の「実行中」「ボスの番」でも分かるため）。</p>
+<ul>
+  <li><b>揃える利点</b>：ライトと同じ見え方になる。丸・バッジの枠がくっきりする。コードも 1 つの仕組みで済む。</li>
+  <li><b>揃えない利点</b>：「ダークは見やすい」という今の印象を変えずに済む。</li>
+  <li>おすすめは<b>揃える</b>（ただし、実際にやって見て気に入らなければ、ダークだけ元に戻せる作りにしておく）。</li>
+</ul>
+
+<h2>3. カード以外の見づらい箇所（Issue 後半）</h2>
+<p>色の組み合わせを数値で見直した。「境目や面が背景に溶けている」ものが中心。</p>
+<table>
+  <tr><th>場所</th><th>いま</th><th>問題</th><th>修正案</th></tr>
+  <tr><td>タイムラインの吹き出し（返事・入力）</td><td>パネルとの差 ライト 1.2／ダーク 1.4</td><td>面の境目が分からない</td><td>返事 ライト #E2E2E8・ダーク #55555C、入力 ライト #CFE2FF・ダーク #2F5C9E（差 1.3〜1.8 に）。※吹き出しは「面の色」だけで区別する前提なので、枠は付けない</td></tr>
+  <tr><td>カード・パネルの枠</td><td>ライト 1.7／ダーク 2.2</td><td>薄くて境目が弱い</td><td>枠をライト #9A9AA6（2.7）・ダーク #7A7A82（3.3）に</td></tr>
+  <tr><td>未選択チップの枠（タブ・フィルタ）</td><td>1.7〜1.9</td><td>OFF のチップが背景に溶ける</td><td>上と同じ枠色を使う</td></tr>
+  <tr><td>選択中カードのメタ行（白 70%）</td><td>3.7〜4.1</td><td>小さい字で読みにくい</td><td>提案の方式なら通常色の 70% になり 6.0 を確保（塗りつぶし廃止で解決）</td></tr>
+  <tr><td>タイムラインの時刻（60%）</td><td>4.3〜4.4</td><td>10px の小さい字でギリギリ</td><td>70% に（5.7）</td></tr>
+</table>
+<div class="row">
+  <div class="col theme tl">
+    <b>ライト：吹き出し＋チップ</b><br>
+    <span class="chip on">入力</span><span class="chip n">思考</span> <span class="dim">（OFF の枠を濃く）</span>
+    <div class="bub i0">いま（入力）</div><div class="bub r0">いま（返事）</div>
+    <div class="bub i1">提案（入力）</div><div class="bub r1">提案（返事）</div>
+  </div>
+  <div class="col theme td">
+    <b>ダーク：吹き出し＋チップ</b><br>
+    <span class="chip on">入力</span><span class="chip n">思考</span> <span class="dim">（OFF の枠を濃く）</span>
+    <div class="bub i0">いま（入力）</div><div class="bub r0">いま（返事）</div>
+    <div class="bub i1">提案（入力）</div><div class="bub r1">提案（返事）</div>
+  </div>
+</div>
+
+<h2>4. 触るところ・進め方</h2>
+<table>
+  <tr><th>場所</th><th>内容</th></tr>
+  <tr><td><code>Themes/Colors.Light.xaml</code> / <code>Colors.Dark.xaml</code></td><td>選択中の地・枠の色を追加。吹き出し・枠の色を調整</td></tr>
+  <tr><td><code>MainWindow.xaml</code>（<code>CardItem</code> スタイル）</td><td>選択中を「薄い地 + 2px 枠」に。概要を白にする特例（DataTrigger）を削除。時刻の透明度</td></tr>
+  <tr><td>触らない</td><td>Core・ViewModel・保存データ（色だけの変更。テストの追加なし）</td></tr>
+</table>
+<p>進め方：色を変更 → 実データのコピーで、ライト・ダークの両方を選択あり/なしで撮って確認 → 数値を見直す。1 コミット。</p>
+
+<h2>5. 確認したいこと</h2>
+<div class="q"><ol>
+  <li><b>ダークも同じ方式に揃えるか</b>（まだ未決定）。上の「具体例」を見て決めてほしい。</li>
+  <li><b>選択の示し方</b>：<s>「薄い地 + 枠 + 左の帯」</s> → <b>帯なしで決定</b>（「薄い地 + 枠」でいったんやってみる）。</li>
+  <li><s>3 章の「カード以外」の修正</s> → <b>今回まとめてやる（決定）</b>。</li>
+</ol></div>
+<p class="note">残りは①だけ。①を決めてもらえれば着手する。</p>
+</body>
+</html>

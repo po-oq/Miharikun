@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue #1 タイムライン全画面 設計イメージ</title>
+<style>
+  body { font: 14px/1.7 "Yu Gothic UI", Meiryo, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 22px; } h2 { font-size: 17px; margin-top: 34px; border-left: 5px solid #0b63c5; padding-left: 8px; }
+  table { border-collapse: collapse; margin: 8px 0; font-size: 13px; } th, td { border: 1px solid #bbb; padding: 4px 10px; vertical-align: top; } th { background: #eef; }
+  code { background: #f2f2f4; padding: 0 4px; border-radius: 3px; }
+  .note { background: #fff4c2; padding: 8px 12px; border-radius: 4px; } .q { background: #fde8e8; padding: 8px 12px; border-radius: 4px; }
+  .dim { color: #777; font-size: 12px; } .ok { color: #1a7f37; font-weight: bold; } .ng { color: #c00; font-weight: bold; }
+  /* 画面モック */
+  .win { border: 2px solid #555; border-radius: 6px; background: #f4f4f6; padding: 6px; margin: 8px 0; }
+  .bar { font-size: 11px; color: #555; margin-bottom: 4px; }
+  .cols { display: flex; gap: 6px; height: 210px; }
+  .pane { border: 1px solid #aaa; border-radius: 4px; background: #fff; padding: 4px 6px; font-size: 11px; overflow: hidden; }
+  .hl { outline: 3px solid #d22; background: #fff7f7; }
+  .gone { background: repeating-linear-gradient(45deg, #eee, #eee 6px, #f8f8f8 6px, #f8f8f8 12px); color: #999; display: flex; align-items: center; justify-content: center; text-align: center; }
+  .bub { border-radius: 5px; padding: 2px 6px; margin: 3px 0; font-size: 11px; } .bi { background: #cfe2ff; margin-left: 30px; } .br { background: #e2e2e8; margin-right: 30px; }
+  .btn { display: inline-block; border: 1px solid #0b63c5; color: #0b63c5; border-radius: 4px; padding: 0 6px; font-size: 11px; background: #fff; }
+  .chip { display: inline-block; border: 1px solid #9a9aa6; border-radius: 10px; padding: 0 7px; font-size: 11px; margin-right: 2px; } .on { background: #0b63c5; color: #fff; border-color: #0b63c5; }
+  svg text { font: 12px "Yu Gothic UI", Meiryo, sans-serif; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; } .col { flex: 1; min-width: 320px; }
+</style>
+</head>
+<body>
+<h1>Issue #1：タイムラインを画面いっぱいで見るモード — 設計イメージ</h1>
+<p class="dim">コード変更前の確認用。Issue は本文が空でタイトルだけ（「タイムライン（要するに右ペイン）を画面いっぱいでみるモードがほしい」）。以下は、そこから読み取れることを具体的な案にしたもの。決めたい点は最後にまとめた。</p>
+
+<h2>1. 困りごと（具体例）</h2>
+<ul>
+  <li>いまのタイムラインは、画面右の<b>幅 340px・高さは画面の半分ほど</b>の細い枠。長い返事（コードや表を含む数十行）は、<b>数行ずつしか見えず、スクロールだらけ</b>になる。</li>
+  <li>例：Cursor が 80 行の説明を返したとき、右ペインでは 1 画面に 10 行ほど。読むには 8 回スクロールして、途中で行が折り返され、表やコードが崩れて読めない。</li>
+  <li>欲しいのは、<b>タイムラインだけを大きく広げて、じっくり読めるモード</b>。</li>
+</ul>
+
+<h2>2. 画面イメージ（おすすめ案：画面の中で広げる）</h2>
+<p>タイムラインの見出しに<b>「⤢ 拡大」ボタン</b>を置く。押すと、<b>左（一覧）と中央（詳細）を隠し、タイムライン（+ メモ）がダッシュボード全面に広がる</b>（最近の入力だけ隠す）。「⤡ 戻す」か <code>Esc</code> で元に戻る。</p>
+
+<div class="win">
+  <div class="bar"><b>① 通常</b>（いまの画面）</div>
+  <div class="cols">
+    <div class="pane" style="flex:1.1">左：セッション一覧<br>・カード<br>・カード<br>・カード</div>
+    <div class="pane" style="flex:1.6">中央：セッション詳細<br>概要／いまの状況／完了チェック／稼働状態／成果／ターン一覧</div>
+    <div class="pane hl" style="flex:1">右：メモ<br><b>タイムライン</b> <span class="btn">⤢ 拡大</span><br><div class="bub bi">入力…</div><div class="bub br">返事…</div><br>最近の入力</div>
+  </div>
+</div>
+<div style="text-align:center">▼ 「⤢ 拡大」を押す　／　▲ 「⤡ 戻す」または Esc</div>
+<div class="win">
+  <div class="bar"><b>② 拡大中</b>　<span class="dim">ヘッダー（対象フォルダ・⚙）はそのまま</span></div>
+  <div class="cols">
+    <div class="pane gone" style="flex:0.12">左<br>隠す</div>
+    <div class="pane gone" style="flex:0.12">中央<br>隠す</div>
+    <div class="pane hl" style="flex:3">
+      <b>こんにちわ</b>（ボスの番・作業中）　<span class="btn">⤡ 戻す</span><br>
+      <span class="chip on">入力</span><span class="chip on">返事</span><span class="chip">思考</span><span class="chip">ツール</span><span class="chip on">圧縮</span> 🔍<span class="chip" style="width:90px">検索…</span> <span class="dim">12/48件</span>
+      <div class="bub bi" style="margin-left:20%">10/03 19:05　<span class="btn">⧉</span><br>入力：@src/… 説明して</div>
+      <div class="bub br" style="margin-right:20%">10/03 19:06　<span class="btn">⧉</span><br>返事：（長い返事。広い幅で読める）<br>…</div>
+    </div>
+    <div class="pane hl" style="flex:1"><b>メモ</b><br>放置した理由・続きの予定など<br>（そのまま書ける）</div>
+  </div>
+</div>
+</div>
+
+<h3>状態の切り替え</h3>
+<svg viewBox="0 0 900 120" width="100%" role="img" aria-label="状態">
+  <rect x="40" y="30" width="200" height="60" rx="8" fill="#eef" stroke="#667"/><text x="140" y="55" text-anchor="middle">通常（3 ペイン）</text><text x="140" y="75" text-anchor="middle">いまの画面</text>
+  <path d="M240 50 H470" stroke="#0b63c5" marker-end="url(#a)"/><text x="355" y="43" text-anchor="middle">「⤢ 拡大」ボタン</text>
+  <path d="M470 78 H240" stroke="#0b63c5" marker-end="url(#a)"/><text x="355" y="98" text-anchor="middle">「⤡ 戻す」ボタン／Esc</text>
+  <rect x="470" y="30" width="230" height="60" rx="8" fill="#dff0ff" stroke="#4c9aff"/><text x="585" y="55" text-anchor="middle">拡大（タイムラインだけ全面）</text><text x="585" y="75" text-anchor="middle">左・中央・メモ・最近の入力は隠す</text>
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8z" fill="#0b63c5"/></marker></defs>
+</svg>
+
+<h2>3. 動きの細かい決め（案）</h2>
+<table>
+  <tr><th>項目</th><th>案</th></tr>
+  <tr><td>広げる範囲</td><td>左と中央を隠し、右ペインの<b>タイムラインを全面に、メモを右に細く残す</b>（最近の入力だけ隠す）。ヘッダー（フォルダ名・⚙・タブ）は残す</td></tr>
+  <tr><td>読みやすさ</td><td>吹き出しの<b>最大幅を決める</b>（例：900px、中央寄せ）。画面が広すぎても 1 行が長くなりすぎない。コードや表は折り返さず横スクロール<span class="dim">（←今は折り返している）</span>は<b>今回やらない</b>（別の話）</td></tr>
+  <tr><td>操作</td><td>見出しの「⤢ 拡大」ボタン、<code>Esc</code> で戻す。拡大中は上部に「セッション名・状態」を出し、どのセッションか分かるようにする</td></tr>
+  <tr><td>引き継ぐもの</td><td>選択中のセッション、種別フィルタ（入力/返事/…）、検索語、強調中の行、スクロール位置、メモの入力途中の文字。<b>戻したときも同じ位置</b></td></tr>
+  <tr><td>セッションの切り替え</td><td>拡大中は左の一覧が無いので切り替えられない。切り替えたいときは「戻す」。（上部に「前 / 次のセッション」ボタンを足す案は<b>今回やらない</b>）</td></tr>
+  <tr><td>新しいイベントが来たとき</td><td>通常と同じ（追記され、末尾にいれば追従）。拡大中でも更新される</td></tr>
+  <tr><td>記憶</td><td>拡大の状態は<b>保存しない</b>（起動時は常に通常）</td></tr>
+</table>
+
+<h2>3.5 追加：行のコピーと、タイムライン内の検索（タイムラインのカードの中に入れる）</h2>
+<p>どちらも<b>通常の画面でも拡大中でも同じように使える</b>。置き場所は、タイムラインのカードの<b>見出し行・フィルタ行・各行の時刻の行</b>だけで、新しいペインや画面は作らない。</p>
+<div class="row">
+  <div class="col">
+    <div class="win"><div class="bar"><b>通常（幅 340px）のタイムラインのカード</b></div>
+      <div class="pane hl" style="height:auto">
+        <b>タイムライン</b>　<span class="btn">⤢ 拡大</span> <span class="btn" title="表示中の行をまとめてコピー">⧉ 全部</span><br>
+        <span class="chip on">入力</span><span class="chip on">返事</span><span class="chip">思考</span><span class="chip">ツール</span><span class="chip on">圧縮</span><br>
+        🔍<span class="chip" style="width:150px">AgentRegistry</span> <span class="dim">3/48件</span> <span class="btn">✕</span>
+        <div class="bub bi">10/03 19:05　　　<span class="btn">⧉</span><br>@src/…/AgentRegistry.cs 説明して</div>
+        <div class="bub br">10/03 19:06　　　<span class="btn">✓ コピーした</span><br>`AgentRegistry` は、…</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <table>
+      <tr><th>機能</th><th>案</th></tr>
+      <tr><td>行のコピー</td><td>各行の<b>時刻の行の右端に「⧉」</b>（時刻の行は空いているので本文に重ならない）。押すと、その行の<b>全文</b>（省略表示の分も含む）をクリップボードへ。押した行は 1.5 秒だけ「✓ コピーした」になる。マウスを載せたときだけ出す案もあるが、タッチ・見つけやすさのため<b>常に薄く表示</b>する</td></tr>
+      <tr><td>まとめてコピー</td><td>見出しに「⧉ 全部」。<b>いま表示している行</b>（フィルタ・検索で絞った結果）を、「時刻　入力/返事：本文」の形で連結してコピー。（不要なら外す）</td></tr>
+      <tr><td>検索</td><td>フィルタ行の下に検索ボックス。入れた語を<b>含む行だけを表示</b>（大文字小文字無視。省略表示の分も含む全文が対象）。種別のチップとは<b>AND</b>。「3/48件」と「✕」（クリア）を添える。<b>語の強調や「次へ」ジャンプはやらない</b>（フィルタだけ）</td></tr>
+      <tr><td>検索の保持</td><td>セッションを切り替えたら検索語はクリア。拡大⇄戻すでは保持</td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>4. 別の案（比較）</h2>
+<div class="row">
+  <div class="col">
+    <b>案 A：画面の中で広げる（おすすめ）</b>
+    <ul><li class="ok">実装が小さい（既存のタイムラインをそのまま使い、他のペインを隠すだけ）</li>
+    <li class="ok">どこでも同じ操作、戻すのも簡単</li>
+    <li class="ng">拡大中は他のペイン（詳細・一覧）を同時に見られない</li></ul>
+  </div>
+  <div class="col">
+    <b>案 B：別ウィンドウで開く</b>
+    <ul><li class="ok">別モニタに置いて、詳細を見ながらタイムラインを読める</li>
+    <li class="ng">実装が大きい（2 つ目のウィンドウ、同期、終了処理、テーマの適用）</li>
+    <li class="ng">ウィンドウが増えて、管理が面倒</li></ul>
+  </div>
+  <div class="col">
+    <b>案 C：区切りをドラッグして広げるだけ</b>
+    <ul><li class="ok">すでに区切り線があり、実装ほぼ不要</li>
+    <li class="ng">左・中央の最小幅（360px・320px）が残るので、1280px の画面では右は 550px ほどまでしか広がらない。画面いっぱいにはならない</li></ul>
+  </div>
+</div>
+<p>案 A を作り、必要になれば案 B（別ウィンドウ）を後から足せるようにする。A の作りは B の土台にもなる（タイムラインの中身は 1 つにまとめて、置き場所だけが違う形にする）。</p>
+
+<h2>5. 触るところ・進め方</h2>
+<table>
+  <tr><th>場所</th><th>内容</th></tr>
+  <tr><td><code>MainViewModel</code></td><td><code>IsTimelineExpanded</code>（拡大中か）と切り替えコマンドを追加</td></tr>
+  <tr><td><code>MainWindow.xaml</code></td><td>タイムライン見出しにボタン。拡大中は左・中央のペインと区切りを隠し、右ペインを全面に。メモ・最近の入力の行を隠す。拡大中の上部（セッション名・状態）。吹き出しの最大幅</td></tr>
+  <tr><td><code>MainWindow.xaml.cs</code></td><td>列の幅の切り替え（通常の幅を覚えて戻す）、<code>Esc</code> キー</td></tr>
+  <tr><td>触らない</td><td>Core・保存データ・タイムラインの中身（行の作り方）</td></tr>
+  <tr><td>要件定義</td><td>12.4 に「拡大モード」を追記（先に更新する）</td></tr>
+</table>
+<p>進め方：①要件定義 ②画面と切り替え ③実データのコピーで、ライト・ダークの両方で、拡大→戻すを確認（スクロール位置・フィルタが保たれること）。1 コミット。ロジックは薄いので、テストは追加しない（画面確認が中心）。</p>
+
+<h2>6. 確認したいこと</h2>
+<div class="q"><p style="margin:0">決定済み：方式＝案 A／幅＝900px 中央寄せ／操作＝見出しのボタンと Esc／セッション切り替えは今回なし／メモは残す（最近の入力だけ隠す）</p><ol>
+  <li><b>行のコピー</b>：各行の「⧉」（常に薄く表示）でよいか。マウスを載せたときだけ出す案にするか。</li>
+  <li><b>「⧉ 全部」（表示中の行をまとめてコピー）</b>は要るか。要らなければ外す。</li>
+  <li><b>検索</b>：フィルタ行の下の検索ボックス（含む行だけ表示、チップと AND、語の強調・次へジャンプなし）でよいか。</li>
+  <li>拡大中のメモの幅は <b>300px 固定</b>でよいか。</li>
+</ol></div>
+<p class="note">①〜④「おすすめのとおり」でよければ、そう返信してもらえれば要件定義の更新から着手する。</p>
+</body>
+</html>

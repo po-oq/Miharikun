@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Issue9 計画レビュー</title>
+<style>
+:root{--bg:#fff;--fg:#222;--mut:#666;--line:#ccc;--box:#f4f6f8;--hi:#c62828;--md:#e65100;--lo:#2e7d32;--acc:#1565c0}
+@media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#ddd;--mut:#999;--line:#555;--box:#2a2d31;--hi:#ef5350;--md:#ffa726;--lo:#66bb6a;--acc:#64b5f6}}
+body{background:var(--bg);color:var(--fg);font:14px/1.6 "Yu Gothic UI",Meiryo,sans-serif;max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:20px}h2{font-size:17px;border-bottom:1px solid var(--line);margin-top:28px}h3{font-size:15px;margin:18px 0 4px}
+table{border-collapse:collapse;width:100%;margin:6px 0}td,th{border:1px solid var(--line);padding:4px 6px;vertical-align:top;text-align:left}
+th{background:var(--box)}code{background:var(--box);padding:0 3px;border-radius:3px}
+pre{background:var(--box);padding:8px;overflow-x:auto}
+.H{color:var(--hi);font-weight:bold}.M{color:var(--md);font-weight:bold}.L{color:var(--lo);font-weight:bold}
+.box{background:var(--box);padding:8px 12px;border-radius:6px}
+svg{max-width:100%;height:auto}svg text{fill:var(--fg);font-size:12px}
+svg .r{fill:var(--box);stroke:var(--line)}svg .bad{stroke:var(--hi);fill:none;stroke-width:2}svg .ok{stroke:var(--lo);fill:none;stroke-width:2}
+svg .a{stroke:var(--fg);fill:none;marker-end:url(#ar)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="currentColor"/></marker></defs></svg>
+
+<h1>Issue #9 ドキュメントタブ 実装計画のレビュー</h1>
+<p>対象：<code>docs/issue9/issue9-documents-plan.md</code>。突き合わせた既存実装：<code>Miharikun.slnx</code>、各 csproj、<code>MainWindow.xaml</code>、<code>ThemeService.cs</code>、<code>AppPaths.cs</code>、<code>AppSettings.cs</code>、<code>ProjectPath.cs</code>、<code>SessionMonitor.cs</code>、<code>scripts/publish.ps1</code>、要件定義 5・6・12.7・15章。</p>
+
+<div class="box">
+<b>結論：</b>層の分け方（Core / Docs / App）と Phase の順番は妥当で、このまま着手してよい。<br>
+ただし <span class="H">要修正 5件</span>・<span class="M">要追記 5件</span>・<span class="L">軽微 6件</span> があり、特に <b>①⚙ の位置</b>・<b>②&lt;base&gt; と #リンク</b>・<b>③コードの色付けの欠落</b>は計画どおり作ると要件を満たせない。各 Phase に入る前に計画へ反映するのがおすすめ。
+</div>
+
+<h2>一覧</h2>
+<table>
+<tr><th>#</th><th>重さ</th><th>問題</th><th>直す Phase</th></tr>
+<tr><td>1</td><td class="H">要修正</td><td>⚙ メニューがダッシュボードタブの中にあり、ドキュメントタブからは見えない</td><td>15-3 の前（15-1）</td></tr>
+<tr><td>2</td><td class="H">要修正</td><td>md プレビューの <code>&lt;base&gt;</code> で、ページ内リンク <code>#見出し</code> が壊れる。パスの記号（# % 空白）も壊れる</td><td>16-2</td></tr>
+<tr><td>3</td><td class="H">要修正</td><td>要件「コードブロックは色付けする」が計画に無い</td><td>14-2</td></tr>
+<tr><td>4</td><td class="H">要修正</td><td>Watcher の穴：フォルダの名前変更・削除やバッファあふれで黙ってずれる、除外フォルダ内の md が載る → ファイル差分以外は自動で読み直し</td><td>13-3</td></tr>
+<tr><td>5</td><td class="H">要修正</td><td>走査・Watcher・画面が同時に索引を触る競合。再走査時に古い結果が混ざる</td><td>13-2 / 15-1</td></tr>
+<tr><td>6</td><td class="M">要追記</td><td>Markdig 標準機能（タスクリスト・mermaid）を自作しない。<code>&lt;pre class="mermaid"&gt;</code> は不要</td><td>14-1 / 14-2</td></tr>
+<tr><td>7</td><td class="M">要追記</td><td><code>ThemeService</code> に「テーマが変わった」通知が無い → md プレビューが追従できない</td><td>16-2</td></tr>
+<tr><td>8</td><td class="M">要追記</td><td>リンク遷移の扱いが未定義（別タブで開く・html→html・その他の拡張子）</td><td>16-1</td></tr>
+<tr><td>9</td><td class="M">要追記</td><td>WebView2 は HWND なので WPF の重ね表示が隠れる（airspace）。タブ切替で作り直される</td><td>16-1</td></tr>
+<tr><td>10</td><td class="M">要追記</td><td>プロジェクト設定は「読んで → 1項目だけ変えて → 全体を書く」。パスの正規化は既存を流用</td><td>13-3</td></tr>
+<tr><td>11</td><td class="L">軽微</td><td>走査は <code>FileSystemEnumerable</code>＋<code>ShouldRecursePredicate</code>、アクセス拒否・ジャンクションの扱い</td><td>13-2</td></tr>
+<tr><td>12</td><td class="L">軽微</td><td>「1万ファイルを数秒」のテストは不安定（Defender 等）。時間の assert は分ける</td><td>13-2</td></tr>
+<tr><td>13</td><td class="L">軽微</td><td>Docs は <code>net10.0</code> 必須（テストが net10.0）。Docs→Core 参照は不要</td><td>14-1</td></tr>
+<tr><td>14</td><td class="L">軽微</td><td>概要カードの行数・タイトルは重いファイルで画面を止める。文字コード</td><td>15-2</td></tr>
+<tr><td>15</td><td class="L">軽微</td><td>複数起動で同じ preview ファイルを同時に書く</td><td>16-2</td></tr>
+<tr><td>16</td><td class="L">軽微</td><td>計画 md 内の矛盾（5章「着手時に書き換える」⇔ 6章「書き換え済み」）</td><td>今</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>1. ⚙ メニューがドキュメントタブから見えない <span class="H">要修正</span></h2>
+<p><b>事実：</b><code>MainWindow.xaml:351-373</code>。⚙ ボタン（Hook・テーマのメニュー）は <code>TabItem Header="ダッシュボード"</code> の<b>中</b>に置かれている。要件 12.7 は「ヘッダー右上の ⚙ メニューに『ドキュメントの設定…』」、12.4.1 も「ヘッダー（タブ・対象フォルダ・⚙）」と、⚙ をタブ共通のヘッダー扱いにしている。計画 15-3 は「⚙ に項目追加」だけなので、<b>ドキュメントタブを開いているときに設定を開けない</b>。</p>
+<svg viewBox="0 0 760 170">
+<text x="10" y="16" font-weight="bold">いま</text>
+<rect class="r" x="10" y="24" width="350" height="22"/><text x="18" y="40">TitleBar</text>
+<rect class="r" x="10" y="50" width="350" height="22"/><text x="18" y="66">[ダッシュボード] [ドキュメント] [メモ]</text>
+<rect class="r" x="10" y="76" width="350" height="86"/><text x="18" y="94">ダッシュボードの中身</text>
+<rect class="bad" x="300" y="82" width="52" height="22"/><text x="314" y="98">⚙</text>
+<text x="18" y="150" fill="currentColor">→ ドキュメントタブに切り替えると ⚙ ごと消える</text>
+<text x="400" y="16" font-weight="bold">直したあと</text>
+<rect class="r" x="400" y="24" width="350" height="22"/><text x="408" y="40">TitleBar</text>
+<rect class="r" x="400" y="50" width="350" height="22"/><text x="408" y="66">[ダッシュボード] [ドキュメント] [メモ]</text>
+<rect class="ok" x="690" y="50" width="52" height="22"/><text x="704" y="66">⚙</text>
+<rect class="r" x="400" y="76" width="350" height="86"/><text x="408" y="94">各タブの中身</text>
+<text x="408" y="150">→ どのタブでも ⚙ が見える</text>
+</svg>
+<p><b>解決：</b>15-1 に「⚙ ボタン（と対象フォルダの表示）を TabControl の外の共通ヘッダーへ移す」を追加。やり方は、<code>Grid.Row="1"</code> に TabControl と同じセルへ <code>HorizontalAlignment="Right" VerticalAlignment="Top"</code> で ⚙ を重ねる（タブ見出しの行の右端に乗る）のが一番手数が少ない。ToolTip も「Hook の導入・削除、テーマ、ドキュメントの設定」に直す。ダッシュボードの拡大モード（12.4.1）の見た目が変わらないか確認する。</p>
+
+<!-- ============================================================ -->
+<h2>2. &lt;base&gt; で #リンクが壊れる・パスの記号が壊れる <span class="H">要修正</span></h2>
+<p><b>事実：</b>md は <code>preview\{hash}.html</code> に書き出し、<code>&lt;base href="file:///元フォルダ/"&gt;</code> を付ける計画。<code>&lt;base&gt;</code> は<b>すべての相対 URL</b> の基準を変えるので、目次などの <code>[概要](#概要)</code> も <code>file:///元フォルダ/#概要</code> に飛び、<b>フォルダ一覧（または空ページ）に遷移してしまう</b>。Markdig の <code>UseAdvancedExtensions</code> は見出しに id を付けるので、目次付きの md（要件定義書もそう）で必ず踏む。</p>
+<svg viewBox="0 0 760 120">
+<rect class="r" x="10" y="10" width="220" height="40"/><text x="18" y="28">preview\ab12.html</text><text x="18" y="44">&lt;base href=file:///C:/proj/docs/&gt;</text>
+<path class="a" d="M230 30 H300" style="color:var(--fg)"/>
+<text x="305" y="22">img/a.png → C:/proj/docs/img/a.png</text><text x="640" y="22" fill="currentColor">○</text>
+<text x="305" y="42">other.md → C:/proj/docs/other.md</text><text x="640" y="42">○（横取りしてアプリ内で開く）</text>
+<text x="305" y="62">#概要 → file:///C:/proj/docs/#概要</text><text x="640" y="62" style="fill:var(--hi)">× ページ外へ</text>
+<text x="305" y="82">フォルダ名 C# → file:///C:/proj/C#/</text><text x="640" y="82" style="fill:var(--hi)">× # 以降が切れる</text>
+<text x="305" y="102">base の末尾 / なし → docs の親が基準</text><text x="640" y="102" style="fill:var(--hi)">× 1階層ずれる</text>
+</svg>
+<p><b>解決：</b></p>
+<ul>
+<li><code>MarkdownRenderer</code> が出す HTML に、<code>#</code> で始まるリンクのクリックを横取りしてページ内スクロールする小さなスクリプトを入れる：
+<pre>document.addEventListener('click', e =&gt; {
+  const a = e.target.closest('a[href^="#"]'); if (!a) return;
+  e.preventDefault();
+  document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)))?.scrollIntoView();
+});</pre></li>
+<li>base の URL は自前で文字列連結せず、<code>new Uri(folder + "\\").AbsoluteUri</code> で作る（末尾 <code>/</code> 必須）。テストに「日本語・空白・<code>#</code>・<code>%</code> を含むフォルダ名」のケースを足し、<code>#</code> が <code>%23</code> になっていることを確認する。html を <code>file:///</code> で開くときの URL も同じ関数を使う。</li>
+<li>（代案）一時ファイルと <code>&lt;base&gt;</code> をやめ、WebView2 の <code>WebResourceRequested</code> で仮想ホスト <code>https://doc.miharikun/</code> にプロジェクトを割り当て、md だけその場で HTML にして返す方式もある。#リンクも相対パスも自然に効き、<code>preview\</code>（会社 md のコピー）も要らなくなる。ただしファイル配信・Content-Type を自前で書くので手数は増える。<b>今回は上のスクリプト案で十分</b>。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>3. コードブロックの色付けが計画に無い <span class="H">要修正</span></h2>
+<p><b>事実：</b>要件 12.7「コードブロックは色付けする」。Markdig は <code>&lt;pre&gt;&lt;code class="language-cs"&gt;</code> を出すだけで色は付けない。計画 14-2 は mermaid と CSS だけ。</p>
+<p><b>解決：</b>14-2 に「highlight.js を CDN から読み、<code>language-mermaid</code> 以外の code に適用。テーマ別の hljs CSS（light/dark）も CDN」を追加。mermaid と同じく CDN 前提なので「繋がらないときは色なしのコード」で要件の考え方と揃う。C# で色付けする NuGet（ColorCode 等）は依存が増え、言語の網羅も弱いので選ばない。テストは「<code>class="language-xx"</code> が付く」「hljs の script タグが入る」までを見る。</p>
+
+<!-- ============================================================ -->
+<h2>4. Watcher の穴 <span class="H">要修正</span></h2>
+<p><b>事実：</b>計画は「FileSystemWatcher＋デバウンス＋除外適用」とだけ書かれている。FileSystemWatcher には次の性質があり、素直に作ると索引が黙ってずれる。</p>
+<table>
+<tr><th>起きること</th><th>素直に作ると</th><th>「読み直し」ボタンで直るか</th></tr>
+<tr><td><code>docs\</code> フォルダを丸ごと名前変更・削除</td><td>イベントは<b>フォルダ1件だけ</b>。中の md の削除イベントは来ないので、ツリーに消えたファイルが残る</td><td>直る。ただしよくある操作で、ずれても何も出ないので利用者は押す理由に気づけない</td></tr>
+<tr><td><code>npm install</code>・<code>git checkout</code> で大量のイベント</td><td>内部バッファ（既定 8KB）があふれて <code>Error</code> イベントが来て、取りこぼす</td><td>直る。同じく気づけない</td></tr>
+<tr><td><code>Filters = *.md, *.html, *.htm</code> を付ける</td><td>フォルダ名も絞られて、上のフォルダのイベント自体が来なくなる</td><td>直る（上の 2 つを起きやすくする原因）</td></tr>
+<tr><td><code>node_modules\a\b\c.md</code> が変わる</td><td>ファイル名だけ見ると除外に当たらず、<b>除外したはずのファイルが索引に載る</b></td><td><b>直らない</b>。読み直すと消えるが、npm を動かすたびにまた載る</td></tr>
+</table>
+
+<h3>方針：Watcher はファイルの差分だけ扱い、それ以外は「自動で読み直し」</h3>
+<p>フォルダ単位の差分（接頭辞で消す・そのフォルダだけ走査し直す）は作らない。<b>ややこしいイベントが来たら、「読み直し」ボタンと同じ全再走査を自動で呼ぶ</b>。全再走査は背景で動き、1万ファイルで数秒なので画面は固まらない。走査中に古い結果が混ざらないことは、5 の世代番号で担保する。</p>
+<svg viewBox="0 0 760 250">
+<rect class="r" x="10" y="100" width="130" height="40"/><text x="20" y="118">FileSystemWatcher</text><text x="20" y="134">（拡張子で絞らない）</text>
+<path class="a" d="M140 120 H175" style="color:var(--fg)"/>
+<rect class="ok" x="177" y="100" width="150" height="40"/><text x="185" y="118">① 除外の判定</text><text x="185" y="134">親フォルダまでさかのぼる</text>
+<path class="a" d="M252 140 V170" style="color:var(--fg)"/><text x="185" y="185">当たれば捨てる</text>
+<path class="a" d="M327 120 H362" style="color:var(--fg)"/>
+<rect class="r" x="364" y="100" width="130" height="40"/><text x="372" y="118">② 振り分け</text><text x="372" y="134">（下の表）</text>
+<path class="a" d="M494 110 L560 50" style="color:var(--fg)"/>
+<path class="a" d="M494 130 L560 190" style="color:var(--fg)"/>
+<rect class="ok" x="562" y="25" width="190" height="50"/><text x="570" y="44">ファイルの差分</text><text x="570" y="62">→ 索引に追加/削除/更新</text>
+<rect class="ok" x="562" y="165" width="190" height="60"/><text x="570" y="184">全再走査を予約</text><text x="570" y="200">（1秒デバウンス・走査中なら</text><text x="570" y="216">終わってからもう1回だけ）</text>
+<text x="10" y="240">どちらも 300ms ほどでまとめて UI スレッドへ（5 のとおり、索引を変えるのは 1 か所）</text>
+</svg>
+<table>
+<tr><th>イベント</th><th>判定</th><th>動き</th></tr>
+<tr><td>Created / Changed / Deleted</td><td>パスが <code>.md</code> <code>.html</code> <code>.htm</code></td><td>ファイルの差分として、索引に追加・更新・削除</td></tr>
+<tr><td>Renamed</td><td>古い名前と新しい名前のどちらかが対象の拡張子</td><td>古い名前を削除し、新しい名前を追加（エディタが一時ファイルを rename して保存する場合もこれで更新扱いになる）</td></tr>
+<tr><td>Created / Renamed（新しい名前）</td><td><code>Directory.Exists</code> が true（フォルダ）</td><td><b>全再走査を予約</b></td></tr>
+<tr><td>Deleted / Renamed（古い名前）</td><td>拡張子が対象外で、索引にその下（<code>path\</code> で始まる）のエントリがある＝消えたのはフォルダ</td><td><b>全再走査を予約</b>（消えた後なので <code>Directory.Exists</code> では判定できない）</td></tr>
+<tr><td><code>Error</code>（バッファあふれ）</td><td>―</td><td><b>全再走査を予約</b></td></tr>
+<tr><td>フォルダの Changed、対象外のファイル</td><td>―</td><td>捨てる（フォルダの Changed は中のファイルが変わるたびに来るため、ここで再走査すると走査が止まらない）</td></tr>
+</table>
+<ul>
+<li><b>除外の判定（①）は必須</b>：<code>GitIgnoreMatcher</code> に <code>IsPathExcluded(relPath)</code> を足し、<code>a</code>、<code>a\b</code>、<code>a\b\c.md</code> と親フォルダから順に <code>IsIgnored</code> を見て、1つでも当たれば捨てる。走査の枝刈りと同じ結果になることをテストで確かめる。</li>
+<li>設定：<code>NotifyFilter = FileName | DirectoryName | LastWrite | Size</code>、<code>IncludeSubdirectories = true</code>、<code>Filters</code> は空、<code>InternalBufferSize = 64KB</code>（あふれにくくする。あふれても再走査で直る）。</li>
+<li>全再走査中も、選択中のファイル・ツリーの展開状態・絞り込みの文字は保つ（再走査が勝手に走っても画面がリセットされたように見せない）。</li>
+<li>テスト：FileSystemWatcher そのものではなく、<b>「イベント → ファイルの差分 or 再走査」の振り分け</b>を純粋関数（例：<code>DocumentChangeClassifier</code>）に切り出して、上の表の行ごとにテストする。実物の Watcher のテストは 1〜2 本に留める（タイミング次第で落ちるため）。デバウンスの書き方は既存の <code>SessionMonitor</code>（Timer）に揃える。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>5. 索引の同時更新と、再走査の混線 <span class="H">要修正</span></h2>
+<p><b>事実：</b>走査（背景スレッド）・Watcher（スレッドプール）・画面（UI スレッド）の 3 者が <code>DocumentIndex</code> を触る計画で、所有者が決まっていない。また「保存で即再走査」「読み直し」のとき、キャンセルした前回の走査のバッチが<b>キャンセル後に届いて</b>新しい索引へ混ざる。</p>
+<svg viewBox="0 0 760 150">
+<rect class="r" x="10" y="10" width="150" height="30"/><text x="20" y="30">DocumentIndexer</text>
+<rect class="r" x="10" y="60" width="150" height="30"/><text x="20" y="80">DocumentWatcher</text>
+<rect class="r" x="10" y="110" width="150" height="30"/><text x="20" y="130">設定保存/読み直し</text>
+<path class="a" d="M160 25 L280 65" style="color:var(--fg)"/><path class="a" d="M160 75 H280" style="color:var(--fg)"/><path class="a" d="M160 125 L280 85" style="color:var(--fg)"/>
+<rect class="ok" x="282" y="55" width="200" height="40"/><text x="292" y="72">1本の列（UI スレッド or Channel）</text><text x="292" y="88">バッチ毎に「世代番号」を確認</text>
+<path class="a" d="M482 75 H560" style="color:var(--fg)"/>
+<rect class="r" x="562" y="55" width="190" height="40"/><text x="572" y="72">DocumentIndex（所有者1人）</text><text x="572" y="88">→ ツリー/一覧を作り直す</text>
+</svg>
+<p><b>解決：</b></p>
+<ul>
+<li>索引を変えるのは<b>1か所だけ</b>：バッチも Watcher の差分も UI スレッドへ <code>Dispatcher.InvokeAsync</code> で送って、そこで <code>DocumentIndex</code> を更新する（Core の <code>DocumentIndex</code> 自体はスレッド非安全でよく、テストが簡単）。</li>
+<li>再走査ごとに<b>世代番号</b>を +1 し、バッチに番号を持たせる。現在の世代と違うバッチは捨てる。</li>
+<li><b>Watcher は走査より先に開始</b>する（走査中に増えたファイルを拾うため）。索引は相対パス（大文字小文字無視）をキーにした辞書なので、走査と Watcher の両方から同じファイルが来ても重複しない。</li>
+<li>画面への反映は 200ms 程度でまとめる（バッチごとにツリーを作り直すとちらつく）。展開状態はフォルダの相対パスで覚えて作り直し後に戻す。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>6. Markdig の標準機能を使う <span class="M">要追記</span></h2>
+<ul>
+<li><b>タスクリスト</b>：<code>UseAdvancedExtensions</code> に含まれ、<code>&lt;li class="task-list-item"&gt;&lt;input disabled type="checkbox" checked&gt;</code> を出す（大文字 X・入れ子・番号付き・コードブロック内は対象外、も標準の挙動）。自前の置換は書かず、14-1 の 6 ケースは「Markdig の出力の確認テスト」として書く。黒丸消しは CSS <code>.task-list-item{list-style:none}</code> だけ。</li>
+<li><b>mermaid</b>：<code>UseAdvancedExtensions</code> の Diagrams 拡張で、<code>```mermaid</code> は <code>&lt;div class="mermaid"&gt;</code>（中身は HTML エスケープ済み）で出る。計画の「<code>&lt;pre class="mermaid"&gt;</code> に変換」は自作になるので不要。mermaid.js は <code>.mermaid</code> を見るのでそのまま動く。オフライン時にコードの改行が潰れないよう CSS で <code>.mermaid{white-space:pre}</code>。</li>
+<li>mermaid にも<b>テーマ</b>を渡す（<code>mermaid.initialize({theme: dark ? 'dark' : 'default'})</code>）。</li>
+<li>実際の出力の形は、14-1 の最初にテストで固定してから CSS を書く（バージョンで変わり得るため）。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>7. テーマ変更の通知が無い <span class="M">要追記</span></h2>
+<p><b>事実：</b><code>ThemeService</code> は <code>Mode</code> と <code>Set()</code> だけで、変わったことを知らせるイベントが無い。OS 追従（System）のときは OS の切り替えでも変わる。</p>
+<p><b>解決：</b>16-2 に「<code>ThemeService</code> に <code>event Action&lt;bool isDark&gt; Changed</code> を足す（⚙ からの変更・OS 変更の両方で発火）。<code>DocumentsViewModel</code> は受けたら表示中の md を作り直して再表示」を追加。html は変えない（要件どおり）。</p>
+
+<!-- ============================================================ -->
+<h2>8. リンク遷移の扱い <span class="M">要追記</span></h2>
+<p>WebView2 の <code>NavigationStarting</code> と <code>NewWindowRequested</code>（<code>target="_blank"</code>）の<b>両方</b>で、次の表で振り分ける。決めておかないと、html→html で開いた先が「保存で自動再読込」で元のファイルに戻される等が起きる。</p>
+<table>
+<tr><th>遷移先</th><th>動き</th></tr>
+<tr><td>http / https（mermaid・hljs の CDN 読み込みは遷移ではないので対象外）</td><td>キャンセルして既定ブラウザ（<code>Process.Start</code> UseShellExecute）</td></tr>
+<tr><td>対象フォルダ内の .md / .html / .htm</td><td>キャンセルして<b>アプリ内で選択</b>（ツリー・一覧も追従、lastOpened も更新）。html→html も同じ扱いにする</td></tr>
+<tr><td>対象フォルダ外の .md / .html、除外フォルダ内</td><td>キャンセルして既定のアプリで開く（ツリーに無いので）</td></tr>
+<tr><td>その他のローカルファイル（pdf・xlsx 等）・フォルダ</td><td>キャンセルして既定のアプリ／エクスプローラー</td></tr>
+<tr><td><code>#xxx</code> だけ（同じページ内）</td><td>そのまま通す（md は 2 のスクリプトで処理済み）</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>9. WebView2 の airspace とタブ切り替え <span class="M">要追記</span></h2>
+<ul>
+<li>WebView2（WPF）は中身が別ウィンドウ（HWND）なので、<b>同じ領域に重ねた WPF 要素は下に隠れる</b>。「Runtime が必要です」の案内・読み込み中表示・WPF-UI の Snackbar などをプレビューの上に重ねない。案内はプレビュー領域を <code>Visibility</code> で入れ替えて出す。設定ダイアログは別 Window（<code>ShowDialog</code>）にする（ContentDialog のようなウィンドウ内オーバーレイだと隠れる）。⚙ の ContextMenu は別ポップアップなので問題ない。</li>
+<li>WPF の TabControl は選んでいないタブの中身をビジュアルツリーから外す。走査結果・選択・展開状態は View ではなく <code>DocumentsViewModel</code> に持つ。WebView2 は戻ってきたとき作り直しになり得るので、<code>Loaded</code> で「選択中のファイルを表示」を呼び直す作りにする。16-1 で「タブを行き来しても表示が残る/戻る」を確認項目に入れる。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>10. プロジェクト設定の書き方 <span class="M">要追記</span></h2>
+<ul>
+<li>同じ JSON に <code>ignore</code>（ダイアログ保存）と <code>lastOpened</code>（選択のたび）が入る。片方だけ持ったオブジェクトで上書きすると他方が消えるので、<b>毎回「読む → 該当キーだけ変える → 全体を <code>AtomicFile</code> で書く」</b>。知らないキーも残す（将来の追加用）。既存の <code>AppSettingsStore</code> と同じく <code>JsonNode</code> で扱う（AOT 互換）。</li>
+<li>ファイル名のキーは <code>ProjectPath.Normalize(path)!.ToLowerInvariant()</code> を使い、自前で正規化しない（9章のプロジェクト判定と揃う）。<code>AppPaths.ProjectSettingsFile(path)</code> で slug と hash8 を作る。</li>
+<li><code>lastOpened</code> が指すファイルが消えていたら復元しない（テストに入れる）。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>11〜16. 軽微</h2>
+<h3>11. 走査の書き方 <span class="L">軽微</span></h3>
+<p><code>System.IO.Enumeration.FileSystemEnumerable&lt;T&gt;</code> を使い、<code>ShouldRecursePredicate</code> で除外フォルダを枝刈り、<code>ShouldIncludePredicate</code> で拡張子を絞る。<code>FileSystemEntry</code> から更新日時・作成日時・サイズが追加の I/O 無しで取れるので速い。<code>EnumerationOptions{ IgnoreInaccessible = true, AttributesToSkip = 0 }</code>、ジャンクション/シンボリックリンクのフォルダ（<code>ReparsePoint</code>）には入らない（ループ・別ドライブへの迷い込み防止）。AOT 互換。</p>
+<h3>12. 性能テスト <span class="L">軽微</span></h3>
+<p>1万ファイルの生成＋時間の assert は、Defender のスキャンや CI の遅さで落ちる。正しさのテスト（件数・枝刈り）は数百ファイルで行い、1万ファイルの時間計測は <code>[Trait("Category","Perf")]</code> にして通常の <code>dotnet test</code> から外す（<code>--filter</code> で明示実行）。</p>
+<h3>13. Docs プロジェクト <span class="L">軽微</span></h3>
+<p>テストプロジェクトが <code>net10.0</code> なので Docs も <code>net10.0</code>（<code>-windows</code> にしない）。<code>MarkdownRenderer</code> は「md 文字列＋元フォルダ＋テーマ → HTML 文字列」で完結し、Core を参照する必要がない（計画の「参照：Core」は外してよい）。CSS は <code>EmbeddedResource</code> で、単一ファイル発行でも問題なし。</p>
+<h3>14. 概要カード <span class="L">軽微</span></h3>
+<p>行数は全文を読むので、数 MB の html で UI が止まる。<code>Task.Run</code> で読み、選択が変わったら破棄する。タイトル抽出は先頭 64KB だけ読めば十分。文字コードは UTF-8 前提で、読めない（Shift_JIS の古い html 等）ときはファイル名にフォールバック。</p>
+<h3>15. preview ファイルの同時書き込み <span class="L">軽微</span></h3>
+<p>2 つの Miharikun が同じ md を開くと同じ <code>preview\{hash}.html</code> を書く。<code>AtomicFile.WriteAllText</code> で書き、IOException は握ってログ（失敗しても前の内容が残るだけ）。</p>
+<h3>16. 計画 md の矛盾 <span class="L">軽微</span></h3>
+<p>5章のリスク表「要件定義の Phase 13 見出しは、着手時に書き換える」と、6章「要件定義の見出しも書き換え済み」が食い違う。要件定義は既に Phase 13〜17 になっているので、5章の行を消す。</p>
+
+<!-- ============================================================ -->
+<h2>計画への反映案（どこに何を足すか）</h2>
+<table>
+<tr><th>Phase</th><th>追加・変更</th></tr>
+<tr><td>13-1</td><td><code>GitIgnoreMatcher.IsPathExcluded(relPath)</code>（祖先を順に判定）とテスト</td></tr>
+<tr><td>13-2</td><td><code>FileSystemEnumerable</code>＋枝刈り、ReparsePoint・アクセス拒否、世代番号、性能テストは Perf に分離</td></tr>
+<tr><td>13-3</td><td>Watcher：ファイルの差分だけ自分で反映し、フォルダのイベント・Error は全再走査を予約（1秒デバウンス）。除外は親フォルダまでさかのぼる。拡張子で絞らない・64KB。振り分けを純粋関数に切り出してテスト。設定は read-modify-write、<code>ProjectPath.Normalize</code> 流用</td></tr>
+<tr><td>14-1</td><td>Docs は net10.0・Core 参照なし。タスクリストは Markdig 標準を確認するテスト。<code>#</code> リンク用スクリプト。base URL を <code>Uri.AbsoluteUri</code> で作るテスト（日本語・空白・#・%）</td></tr>
+<tr><td>14-2</td><td>mermaid は標準の <code>div.mermaid</code> を使う＋テーマ渡し。<b>highlight.js（CDN）を追加</b></td></tr>
+<tr><td>15-1</td><td><b>⚙ と対象フォルダ表示を共通ヘッダーへ移動</b>。索引の更新は UI スレッド 1 か所。200ms でまとめて反映、展開状態の保持</td></tr>
+<tr><td>15-2</td><td>概要の読み込みは背景で</td></tr>
+<tr><td>15-3</td><td>設定ダイアログは別 Window</td></tr>
+<tr><td>16-1</td><td>リンク振り分け表（8）、airspace、タブ切替で表示が戻ること</td></tr>
+<tr><td>16-2</td><td><code>ThemeService.Changed</code> 追加、preview の書き込みは AtomicFile</td></tr>
+</table>
+</body>
+</html>
