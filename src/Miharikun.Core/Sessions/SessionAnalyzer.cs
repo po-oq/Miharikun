@@ -148,6 +148,7 @@ public static class SessionAnalyzer
         var last = events[^1];
         var closed = last.Kind == AgentEventKind.SessionEnded;
         var imported = events.All(e => e.Imported);   // 時刻が推定の過去セッション（transcript だけから作ったもの。Cursor の導入前のセッション）
+        var noHook = imported && events.Any(e => e.HookMissing);   // そのうち Hook が記録していないもの（Issue #17）
         var startedAt = sessionStartAt ?? events[0].At;
 
         if (turns.Count > 0 && turns[^1].Status == TurnStatus.Running && (closed || imported))
@@ -155,7 +156,7 @@ public static class SessionAnalyzer
 
         return new SessionSummary(
             key,
-            imported ? SessionState.Imported : closed ? SessionState.Closed : turnState,
+            imported ? (noHook ? SessionState.NoHook : SessionState.Imported) : closed ? SessionState.Closed : turnState,
             !imported && turnState == SessionState.Running,
             autoTitle,
             prompts, stops,

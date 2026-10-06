@@ -839,8 +839,9 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 
 ※ Phase 27〜33 は Issue #22（macOS 対応。別ブランチ）で使う。Issue #17 は 34 から。
 
-## [ ] Phase 34: Cursor の Hook の置き場所・Hook なしの判定 Core（Issue #17）
+## [x] Phase 34: Cursor の Hook の置き場所・Hook なしの判定 Core（Issue #17）
 - `settings.json` の `hookDir`、`HookInstaller` の置き場所の受け取りと「別の場所の登録」の検出、transcript の変わった分だけの取り込み、`NoHook` の判定（8.2・10・11 章）。テスト先行。計画：`docs/issue17/issue17-cursor-hook-plan.md`
+- 状況：実装済み（34-1〜34-4）。`AppSettingsStore.LoadHookDir/SaveHookDir`、`HookInstaller`（`CreateDefault(…, hookDir)`・`DefaultHookDir`・`ToSettingValue`・`TryParseExePath`・`SameRegistration`・`FindRegisteredElsewhere`。設定した置き場所はフォルダを作らない。`GetState` の一致は `SameRegistration`）、`Install/HookRegistration`（`Stamp`・`Since`）、`CursorTranscriptImporter`（変わった分だけ・共有して読む・書きかけの最後の行は飛ばす・`HookMissing`・hooks.json が変わったら全部読み直す）、`CursorSessionSource`（毎回 Scan・同じ失敗のログは 1 回・transcript を監視先に）、`WatchTarget.IncludeSubdirectories`、`SessionState.NoHook`（「Hook なし」）・`SessionText.IsTranscriptOnly`。`App.xaml.cs` で組み立て済み（画面はまだ。NoHook は灰色の丸で出るだけ）。テスト 950 件合格（スキップ 5。Phase 34 の前は 842 件）。Core の `--no-incremental` ビルドは警告 0。起動中の流れ（登録あり・events なし・新しい transcript → Hook なし → 追記で増える → 登録を外すと導入前に戻る）は、`SessionMonitor` を使うテストで確認（画面での確認は Phase 35）。本物の transcript（この PC の 6 件）の末尾は、すべて改行で終わっていた（最後の 1 バイトだけ読んで数えた。中身は見ていない）。コミットはまだしていない
 
 ## [ ] Phase 35: Cursor の Hook の置き場所・警告の画面（Issue #17）
 - 起動時の受け入れ、設定画面の置き場所、`NoHook` の表示と一覧の上の警告（8.2・12.9・12.11）

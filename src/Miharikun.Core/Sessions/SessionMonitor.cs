@@ -79,6 +79,7 @@ public sealed class SessionMonitor : IDisposable
                 {
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
                     InternalBufferSize = 64 * 1024,
+                    IncludeSubdirectories = target.IncludeSubdirectories,
                 };
                 w.Created += (_, _) => Schedule();
                 w.Changed += (_, _) => Schedule();

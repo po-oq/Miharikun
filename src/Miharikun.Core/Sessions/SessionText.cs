@@ -24,8 +24,12 @@ public static class SessionText
         SessionState.Error => "エラー",
         SessionState.Closed => "閉じた",
         SessionState.Imported => "閉じた（導入前）",
+        SessionState.NoHook => "Hook なし",
         _ => state.ToString(),
     };
+
+    /// <summary>transcript だけから作ったセッション（Imported / NoHook）か。時刻・ターン・ツール・git が実際のものではないので、画面は「—」にし、「最近の入力」に出さない。</summary>
+    public static bool IsTranscriptOnly(SessionState state) => state is SessionState.Imported or SessionState.NoHook;
 
     /// <summary>ユーザー設定のステータスの名前。null は未設定（絞り込みタブの「未設定」）。</summary>
     public static string StatusName(SessionStatus? status) => status switch
