@@ -15,8 +15,8 @@ public enum SessionDeltaKind
 /// <summary>Source が前回から変わったセッション 1 つ分の差分（計画 8.1）。</summary>
 public sealed record SessionDelta(SessionKey Key, SessionDeltaKind Kind, IReadOnlyList<AgentEvent> Events);
 
-/// <summary>監視するフォルダ。CreateIfMissing が true のものだけ、無ければ作る（Cursor の events。Claude の .claude は作らない）。</summary>
-public sealed record WatchTarget(string Directory, string Filter, bool CreateIfMissing);
+/// <summary>監視するフォルダ。CreateIfMissing が true のものだけ、無ければ作る（Cursor の events。Claude の .claude は作らない）。IncludeSubdirectories はサブフォルダの変更も通知する（Cursor の transcript）。</summary>
+public sealed record WatchTarget(string Directory, string Filter, bool CreateIfMissing, bool IncludeSubdirectories = false);
 
 /// <summary>
 /// エージェントごとの読み込み。ファイルの追記分を読み、共通イベントの差分にして返す。

@@ -130,8 +130,8 @@ public sealed partial class SessionDetailViewModel : ObservableObject
     {
         var s = _summary = snapshot.Summary;
 
-        // 導入前のセッション（transcript から取り込み）は、時刻・ターン・ツール・git の情報を持たない。0 や ✓ を出さずに「—」にする。
-        var imported = s.State == SessionState.Imported;
+        // transcript から取り込んだセッション（導入前・Hook なし）は、時刻・ターン・ツール・git の情報を持たない。0 や ✓ を出さずに「—」にする。
+        var imported = SessionText.IsTranscriptOnly(s.State);
         var meta = new List<string> { ShortId(s.Key.SessionId) };
         if (!imported) meta.Add("開始 " + SessionText.Clock(s.StartedAt, now));
         if (SessionText.BranchText(s) is { } branch) meta.Add("ブランチ " + branch);
@@ -199,11 +199,12 @@ public sealed partial class SessionDetailViewModel : ObservableObject
         var s = _summary;
         var dirty = _uncommitted is null ? null : new HashSet<string>(_uncommitted, StringComparer.OrdinalIgnoreCase);
 
-        if (s.State == SessionState.Imported)
+        if (SessionText.IsTranscriptOnly(s.State))
         {
+            var reason = s.State == SessionState.NoHook ? "Hook の記録が無いセッション" : "導入前のセッション";
             Checks =
             [
-                new("—", "ターン終了・裏の作業・コミット済みは、導入前のセッションなので不明", "na"),
+                new("—", $"ターン終了・裏の作業・コミット済みは、{reason}なので不明", "na"),
             ];
             ChangedFiles = [];
             return;

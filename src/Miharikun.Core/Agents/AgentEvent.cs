@@ -22,6 +22,7 @@ public sealed record CompactionInfo(string? Trigger, int? ContextUsagePercent);
 /// Output / Duration / Reason / ModelParams / TranscriptPath は 5.1 の目安に追加した項目
 /// （成果のテスト実行詳細、継続時間、閉じた理由、モデル表示、transcript サイズに必要）。
 /// SubagentId はサブエージェントの識別（Claude Code の agentId。Issue #11）。
+/// HookMissing は、transcript から取り込んだ時点で Hook が記録していないと分かったもの（transcript の最後の更新が Hook の登録より後。Issue #17）。
 /// </summary>
 public sealed record AgentEvent(
     SessionKey Session, long Seq, DateTimeOffset At, AgentEventKind Kind,
@@ -32,4 +33,5 @@ public sealed record AgentEvent(
     string? Output = null, TimeSpan? Duration = null, string? Reason = null,
     string? ModelParams = null, string? TranscriptPath = null,
     bool Imported = false,
-    string? SubagentId = null);
+    string? SubagentId = null,
+    bool HookMissing = false);

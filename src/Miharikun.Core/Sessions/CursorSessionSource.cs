@@ -7,7 +7,7 @@ namespace Miharikun.Core.Sessions;
 /// <summary>
 /// Cursor の読み込み（要件 9章）。events\cursor\*.jsonl（Hook が書く生イベント）を追記分だけ読み、
 /// 対象プロジェクトに一致するセッションの共通イベントの差分を返す。
-/// 導入前の過去セッションは transcript から最初の 1 回だけ取り込み、同じ ID の Hook のイベントが現れたらそちらに切り替える。
+/// Hook の記録が無いセッションは transcript から取り込み（変わった分を毎回。Issue #17）、同じ ID の Hook のイベントが現れたらそちらに切り替える。
 /// 差分の出し方は計画 8.1 の表のとおり。スレッドセーフではない（呼び出しは ProjectEventStore の排他の中）。
 /// </summary>
 public sealed class CursorSessionSource : ISessionSource
@@ -32,7 +32,8 @@ public sealed class CursorSessionSource : ISessionSource
     private readonly Dictionary<string, FileState> _files = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>transcript から取り込んで Store に渡した導入前のセッション（hook のイベントがあるものは持たない）。</summary>
     private readonly Dictionary<string, SessionKey> _imported = new(StringComparer.OrdinalIgnoreCase);
-    private bool _importScanned;
+    /// <summary>直前の Scan の失敗のログの文。同じ文を毎回（3 秒ごとに）出さないために覚える。成功したら忘れる。</summary>
+    private string? _lastScanFailure;
 
     public CursorSessionSource(CursorAgent agent, AppPaths paths, string projectFolder, Action<string>? log = null,
         CursorTranscriptImporter? importer = null)
@@ -46,7 +47,20 @@ public sealed class CursorSessionSource : ISessionSource
 
     public string AgentId => _agent.Id;
 
-    public IReadOnlyList<WatchTarget> WatchTargets => [new WatchTarget(_paths.EventsDir(_agent.Id), "*.jsonl", CreateIfMissing: true)];
+    /// <summary>events（Hook の記録。無ければ作る）と、transcript のフォルダ（サブフォルダ込み。読むだけで作らない）。</summary>
+    public IReadOnlyList<WatchTarget> WatchTargets
+    {
+        get
+        {
+            var targets = new List<WatchTarget> { new(_paths.EventsDir(_agent.Id), "*.jsonl", CreateIfMissing: true) };
+            if (_importer is not null)
+            {
+                foreach (var dir in _importer.TranscriptDirs(_projectFolder))
+                    targets.Add(new WatchTarget(dir, "*.jsonl", CreateIfMissing: false, IncludeSubdirectories: true));
+            }
+            return targets;
+        }
+    }
 
     public IReadOnlyList<SessionDelta> ReadNew()
     {
@@ -179,10 +193,13 @@ public sealed class CursorSessionSource : ISessionSource
         deltas.Add(new SessionDelta(key, truncated ? SessionDeltaKind.Replace : SessionDeltaKind.Append, events));
     }
 
-    /// <summary>導入前の過去セッションを transcript から取り込む。最初の 1 回だけ。</summary>
+    /// <summary>
+    /// transcript から取り込む（Hook の記録が無いセッション）。毎回 Scan を呼ぶ：importer が、前回から変わった transcript だけを返す
+    /// （Issue #17。Hook が動かない環境でも、会話の進みが起動中に見えるように）。
+    /// </summary>
     private void ImportTranscripts(List<SessionDelta> deltas)
     {
-        if (_importer is null || _importScanned)
+        if (_importer is null)
             return;
 
         IReadOnlyList<ImportedSession> sessions;
@@ -192,11 +209,14 @@ public sealed class CursorSessionSource : ISessionSource
         }
         catch (Exception ex)
         {
-            // 同じ回の Hook の差分は返す。「済み」にしないので、次の回にまた試す。
-            _log?.Invoke($"transcript の取り込みに失敗: {ex}");
+            // 同じ回の Hook の差分は返す。次の回にまた試す。失敗が続くときは、同じ文のログを 1 回しか出さない。
+            var failure = $"transcript の取り込みに失敗: {ex}";
+            if (failure != _lastScanFailure)
+                _log?.Invoke(failure);
+            _lastScanFailure = failure;
             return;
         }
-        _importScanned = true;
+        _lastScanFailure = null;
 
         foreach (var session in sessions)
         {

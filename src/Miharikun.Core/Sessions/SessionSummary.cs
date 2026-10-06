@@ -2,7 +2,8 @@ using Miharikun.Core.Agents;
 
 namespace Miharikun.Core.Sessions;
 
-public enum SessionState { Running, YourTurn, Aborted, Error, Closed, Imported }
+/// <summary>NoHook は Imported のうち、Hook が記録していないもの（Issue #17）。列挙の最後に足す。</summary>
+public enum SessionState { Running, YourTurn, Aborted, Error, Closed, Imported, NoHook }
 
 public enum TurnStatus { Running, Completed, Aborted, Error, Unknown }
 

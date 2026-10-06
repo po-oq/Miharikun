@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #17 Cursor Hook 実装計画（図解）</title>
+<style>
+body{font-family:"Yu Gothic UI","Hiragino Sans","Noto Sans JP",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.6;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:30px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:10px 0} .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px} .rec{color:#c05000;font-weight:bold}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%;height:auto}
+</style></head><body>
+<!-- 内容は issue17-cursor-hook-plan.md と同じにする（連動ルール）。節番号も同じ -->
+<h1>Cursor の Hook の置き場所・Hook なしの警告・transcript のリアルタイム取り込み 実装計画（図解）（Issue #17）</h1>
+<div class="sync"><b>連動ルール</b>：この HTML と <code>issue17-cursor-hook-plan.md</code> は対。<b>どちらかを直したら、もう一方も同じ内容に直す。</b><br>
+仕様の正は <code>docs/miharikun-requirements.md</code>（6 章 settings.json・<b>8.2</b>・9 章のファイル監視・10 章の状態の表・<b>11 章の「Issue #17 で変更」</b>・12.9・<b>12.11</b>・Phase 34〜36）。設計の資料は <code>docs/issue17/issue17-cursor-realtime-review.html</code>（原因の切り分けと Q1〜Q5 の回答）。<br>
+この計画は、実装の分け方・コミット・ファイル構成と、<b>実装で迷いやすい所の決めごと（7 章）</b>。<br>
+進め方：Core（テスト先行）→ 画面 → 仕上げ。各 Phase の終わりに隔離環境（<code>MIHARIKUN_DATA_DIR</code>・<code>MIHARIKUN_CURSOR_DIR</code>）で確かめ、要件定義の <code>[x]</code> と「状況」を更新して、ビルドの有無と出力先を報告する。コミットは頼まれたときだけ（ここは区切りの目安）。途中のコミットは <code>Refs #17</code>、最後だけ <code>Fixes #17</code>。</div>
+
+<h2>1. 全体像</h2>
+<svg viewBox="0 0 960 150" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="290" height="100" fill="#dff" stroke="#08a"/><text x="20" y="42" font-weight="bold">34 Core（テスト先行）</text><text x="20" y="62" font-size="12">置き場所・別の場所の登録の検出</text><text x="20" y="78" font-size="12">transcript の変わった分・Hook なし</text><text x="20" y="102" font-size="12" fill="#555">4 コミット</text>
+<rect x="345" y="20" width="290" height="100" fill="#efe" stroke="#383"/><text x="355" y="42" font-weight="bold">35 画面</text><text x="355" y="62" font-size="12">起動時の受け入れ・設定画面の置き場所</text><text x="355" y="78" font-size="12">「Hook なし」の表示・警告の帯</text><text x="355" y="102" font-size="12" fill="#555">2 コミット</text>
+<rect x="680" y="20" width="270" height="100" fill="#eee" stroke="#888"/><text x="690" y="42" font-weight="bold">36 仕上げ</text><text x="690" y="62" font-size="12">README.txt・release.md</text><text x="690" y="78" font-size="12">要件定義の状況</text><text x="690" y="102" font-size="12" fill="#555">1 コミット（Fixes #17）</text>
+<line x1="300" y1="70" x2="345" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="635" y1="70" x2="680" y2="70" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ul>
+<li>原因（会社の PC で <code>%LOCALAPPDATA%</code> 配下の exe が動かない）への対策は <b>Hook の置き場所の設定＋既存の登録の受け入れ</b>（34-1・35-1）。保険が <b>transcript のリアルタイム取り込み</b>（34-2）と <b>Hook なしの判定・警告</b>（34-3・35-2）。</li>
+<li>新しい依存パッケージは無い。フォルダ選択は .NET 標準の <code>Microsoft.Win32.OpenFolderDialog</code>。</li>
+<li>Core は AOT 互換のまま（リフレクションを使わない。JSON は <code>TryGetValue</code>）。<b>Hook exe（<code>src/Miharikun.Hook</code>）は変えない</b>。Hook の記録先は exe の場所に関係なく <code>AppPaths.Default()</code>（<code>%LOCALAPPDATA%\Miharikun</code>）のまま（<code>Program.cs</code>）。</li>
+<li>Cursor のフォルダ（<code>~\.cursor\projects\…\agent-transcripts\</code>）は<b>読むだけ</b>。監視のためにフォルダを作らない（<code>CreateIfMissing: false</code>）。</li>
+<li>共通化（挙動を変えないリファクタ）のフェーズは無い。ただし 34-2 は既存の取り込みの経路を変えるので、<b>既存の取り込みのテストを全部通すこと</b>を完了条件に入れる（例外は 1 件だけ：<code>CursorSessionSourceFailureTests.A_failing_import_scan_is_tried_again_on_the_next_read</code> は「成功したらもう Scan を呼ばない」を確かめているので、意図を変えて書き直す。34-2）。</li>
+<li>レビュー（<code>docs/issue17/issue17-cursor-hook-review.html</code>）の指摘 #1〜#13 と、その Q1〜Q3（すべて A）を反映済み。</li>
+<li>いまのテスト：<b>842 件合格 + スキップ 5</b>（<code>PerfFact</code>。worktree で実行して確認）。<b>件数は減らさない</b>。</li>
+<li>ブランチ：<code>feature/issue17-cursor-hook</code>（main から。作業フォルダは worktree <code>C:\zDev\repo\Miharikun-issue17</code>）。Issue #22（macOS 対応・Avalonia へ移す）が別ブランチで進んでいる。<b>#22 の Phase 28（ViewModel の切り出し）より先に、この Issue を main に入れる</b>のが手戻りが少ない（8 章）。</li>
+</ul>
+
+<h3>データの流れ（変更後）</h3>
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="150" height="60" fill="#ffe9c8" stroke="#a70"/><text x="20" y="42" font-weight="bold">Cursor</text><text x="20" y="62" font-size="12">Hook を起動</text>
+<rect x="200" y="20" width="200" height="60" fill="#dfd" stroke="#383"/><text x="210" y="42" font-weight="bold">Hook exe</text><text x="210" y="62" font-size="12">置き場所＝設定（34-1）</text>
+<rect x="440" y="20" width="200" height="60" fill="#eee" stroke="#888"/><text x="450" y="42" font-weight="bold">events\cursor\</text><text x="450" y="62" font-size="12">記録先は変えない</text>
+<line x1="160" y1="50" x2="200" y2="50" stroke="#333" marker-end="url(#a)"/><line x1="400" y1="50" x2="440" y2="50" stroke="#333" marker-end="url(#a)"/>
+<rect x="10" y="130" width="150" height="60" fill="#ffe9c8" stroke="#a70"/><text x="20" y="152" font-weight="bold">Cursor</text><text x="20" y="172" font-size="12">会話を保存</text>
+<rect x="200" y="130" width="200" height="60" fill="#eee" stroke="#888"/><text x="210" y="152" font-weight="bold">agent-transcripts\</text><text x="210" y="172" font-size="12">監視を足す（読むだけ）</text>
+<rect x="440" y="130" width="200" height="80" fill="#dfd" stroke="#383"/><text x="450" y="152" font-weight="bold">transcript 取り込み</text><text x="450" y="172" font-size="12">変わった分だけ（34-2）</text><text x="450" y="190" font-size="12">後なら Hook なし（34-3）</text>
+<line x1="160" y1="160" x2="200" y2="160" stroke="#333" marker-end="url(#a)"/><line x1="400" y1="160" x2="440" y2="160" stroke="#333" marker-end="url(#a)"/>
+<rect x="690" y="20" width="160" height="190" fill="#dff" stroke="#08a"/><text x="700" y="42" font-weight="bold">CursorSession</text><text x="700" y="60" font-weight="bold">Source</text><text x="700" y="84" font-size="12">Hook の記録がある</text><text x="700" y="100" font-size="12">ID は取り込まない</text>
+<line x1="640" y1="50" x2="690" y2="50" stroke="#383" stroke-width="2" marker-end="url(#a)"/><line x1="640" y1="170" x2="690" y2="170" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<text x="646" y="42" font-size="11" fill="#383">監視</text><text x="646" y="162" font-size="11" fill="#383">監視</text>
+<rect x="870" y="80" width="80" height="70" fill="#efe" stroke="#383"/><text x="878" y="102" font-weight="bold">画面</text><text x="878" y="122" font-size="12">帯（35-2）</text>
+<line x1="850" y1="115" x2="870" y2="115" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="235" font-size="12" fill="#c05000">※ 上の段が動けば今まで通り。上の段が止まっても下の段で数秒以内に「Hook なし」として出て、帯で気づける。</text>
+</svg>
+
+<h2>2. Phase 34：Core（テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>34-1</td><td>Hook の置き場所</td><td><code>AppSettingsStore</code>：<code>LoadHookDir() → string?</code>（欠けている・空・文字列でない・完全なパスでない（<code>Path.IsPathFullyQualified</code>）・<code>Path.GetFullPath</code> が例外 → null。null にしたときは <code>app.log</code> に 1 行。返す値は正規化済み：<code>GetFullPath</code>＋<code>Path.TrimEndingDirectorySeparator</code>）、<code>SaveHookDir(string? dir) → bool</code>（null → キーを消す。ファイルもキーも無ければ何も書かない。他のキーは残す。読めない・書けないときは false。7.5）。<code>HookInstaller</code>：<code>CreateDefault(paths, appDirectory, hookDir)</code>（null → 既定の <code>paths.Root\bin</code>。7.5 のフォルダを作るかの区別も渡す）、<code>DefaultHookDir(paths)</code>、<code>ToSettingValue(dir, paths) → string?</code>（正規化して、既定と同じなら null。受け入れと設定画面の保存で共通。7.5）、<code>TryParseExePath(command) → string?</code>（7.2）、<code>SameRegistration(command, exePath) → bool</code>（7.2）、<code>FindRegisteredElsewhere() → string?</code>（7.1。採用できる別の場所の exe のフルパス。無ければ null）。<b><code>GetState</code> の「一致」を <code>SameRegistration</code> に替える</b>（文字列の完全一致をやめる。レビュー Q1）</td><td><code>LoadHookDir</code>：無い・空・数値・文字列・相対パス → null・不正な文字（NUL）→ null・末尾の <code>\</code> あり → 無しと同じ値。<code>SaveHookDir</code>：書く・null で消す・他のキーが残る・ファイルが無く null → ファイルを作らない・読めないときは書かず false。<code>ToSettingValue</code>：既定と同じ（大文字小文字・末尾の <code>\</code> 違い）→ null。<code>TryParseExePath</code>：<code>C:/dev/Miharikun.Hook.exe --agent cursor</code>・引用符つきの空白入り・引数なし・Miharikun 以外・相対パス → null・<code>--agent</code> の前に空白 2 つ。<code>SameRegistration</code>：<code>\</code> 区切り・空白なしの引用符・大文字小文字違い → true／引数なし・<code>--agent</code> だけ・別の場所 → false。<code>GetState</code>：書き方だけ違う 13 件 → <code>Installed</code>・引数なしの 13 件 → <code>Partial</code>。<code>FindRegisteredElsewhere</code>：7.1 の表の行ごと。<code>CreateDefault</code> に dir を渡すと <code>InstalledExePath</code> がそこになり、<code>GetState</code> が <code>Installed</code>・dir のフォルダが無い → <code>Install</code> は失敗し、hooks.json もフォルダも作らない（既定の <code>bin</code> は今まで通り作る。7.5）（既存のテストは全部そのまま通る）</td></tr>
+<tr><td>34-2</td><td>transcript の変わった分だけの取り込み</td><td><code>WatchTarget</code> に <code>IncludeSubdirectories</code>（既定 false）を足し、<code>SessionMonitor</code> が <code>FileSystemWatcher.IncludeSubdirectories</code> に渡す。<code>CursorTranscriptImporter</code>：<code>TranscriptDirs(projectFolder)</code>（監視先用。いまの <code>FindTranscriptDirs</code> を公開）、<code>Scan</code> は<b>前回から長さか更新日時が変わったファイルだけ</b>返す（初回は全部。7.3）。読むときは <code>FileShare.ReadWrite | Delete</code>。最後の行は「改行で終わる、または JSON として最後まで読める」なら使い、それ以外（書きかけ）は飛ばす（レビュー Q3）。覚える値は開く前に取る（7.3）。<code>skip</code> が true の ID は覚えた値も消す。<code>CursorSessionSource</code>：<code>_importScanned</code> をやめて毎回 <code>Scan</code> を呼ぶ。Scan の失敗のログは、同じ文なら 1 回だけ（成功したら忘れる）。<code>WatchTargets</code> に transcript のフォルダ（<code>*.jsonl</code>・サブフォルダ込み・<code>CreateIfMissing: false</code>）を足す</td><td>一時フォルダ：初回は全部・変わらなければ 2 回目は空（既存の <code>A_transcript_is_imported_once_and_not_reported_again</code> はそのまま通る）・追記したら同じキーで <code>Replace</code>・新しい transcript が増えたら出る・hook の記録がある ID は出ない・途中で切れた最後の行は飛ばし、続きが書かれたら出る・<b>末尾に改行の無い完全な行は使う</b>・読んでいる途中で追記された分は次の Scan で出る（テスト用の差し込み口で、読み終わる前にファイルを伸ばす）・他のプロセスが書き込みで開いていても読める・<code>subagents\</code> は見ない・transcript が消えてもセッションは消えない・取り込み → hook のファイルができて切り替え → hook のファイルを消す → 次の Scan で取り込みに戻る。<code>CursorSessionSource</code>：Scan が同じ例外を 3 回投げてもログは 1 行。<code>SessionMonitor</code>：サブフォルダ内のファイルの変更で通知が来る（<code>IncludeSubdirectories</code>）。既存の取り込みのテスト（<code>ProjectEventStoreImportTests</code>・<code>CursorSessionSourceFailureTests</code>・<code>ProjectEventStoreCharacterizationTests</code>）が全部通る。ただし <code>A_failing_import_scan_is_tried_again_on_the_next_read</code> は書き直す：失敗 → 次の回に再試行（<code>Calls == 2</code>）・成功の後も毎回呼ぶ（<code>Calls == 3</code>）が差分は空。件数は変えない</td></tr>
+<tr><td>34-3</td><td>Hook なしの判定</td><td><code>HookRegistration</code>（新規。7.4）：<code>new HookRegistration(hooksJsonPath, eventsDir)</code>、<code>Stamp() → DateTimeOffset?</code>（hooks.json の更新日時。無ければ null。stat だけ）、<code>Since() → DateTimeOffset?</code>。<code>AgentEvent</code> に <code>bool HookMissing = false</code>。<code>CursorTranscriptImporter</code> のコンストラクタに <code>HookRegistration?</code>（null → すべて Imported）を渡す。transcript の更新日時が <code>Since</code> より後なら、その回のイベントを全部 <code>HookMissing: true</code> にする。<code>Scan</code> のたびに <code>Stamp()</code> を見て、前回と違えば <code>Since</code> を取り直し、<b>覚えた値を全部消して全 transcript を読み直す</b>（レビュー Q2。7.4）。<code>SessionState.NoHook</code> を足し、<code>SessionAnalyzer</code> で「全部 Imported かつ 1 つでも HookMissing → NoHook」。<code>SessionText.StateName(NoHook)</code> = 「Hook なし」、ラベルは「⚪ Hook なし」。<code>SessionText.IsTranscriptOnly(state)</code>（Imported か NoHook。7.6）を足し、<code>RecentActivity</code> の除外をそれに替える</td><td><code>HookRegistration.Since</code>：登録なし → null・登録あり・events 無し → hooks.json の更新日時・events あり → 早いほう・hooks.json が壊れている → null。<code>Stamp</code>：無い → null・書き換えると変わる。importer：since より後 → HookMissing・前 → そうでない・registration が null → そうでない・<code>Stamp</code> が変わらなければ変わっていない transcript は読まない・hooks.json から登録を外す → 次の Scan で NoHook だったものが Imported で出直す・登録を足す（更新日時は transcript より後）→ 読み直すが Imported のまま。<code>SessionAnalyzer</code>：NoHook・Imported のまま・hook のイベントが混ざれば今まで通り。<code>SessionText</code>：名前とラベル。<code>RecentActivity</code>：NoHook の入力を出さない。<code>StalledRule</code>：NoHook はそのまま</td></tr>
+<tr><td>34-4</td><td>組み立て（App の起動）</td><td><code>App.xaml.cs</code>：<code>settings.LoadHookDir()</code> を <code>HookInstaller.CreateDefault</code> に渡す。<code>CursorTranscriptImporter</code> に <code>new HookRegistration(…\hooks.json, paths.EventsDir("cursor"))</code> を渡す。画面はまだ変えない（NoHook は灰色の丸・「Hook なし」で出るだけ）</td><td>ビルドが通る。隔離環境で：hooks.json に登録あり＋events 無し＋新しい transcript → 起動中に「Hook なし」のカードが数秒で出る・transcript に追記 → タイムラインが増える・hooks.json から登録を外す → 数秒で「閉じた（導入前）」に戻る。本物の transcript で、<b>末尾が改行で終わるか</b>を数える（先に利用者に了承を取る。読むだけ・コピーしない。各ファイルの最後の 1 バイトだけ見て、件数だけ報告する。中身は見ない・引用しない）</td></tr></table>
+<p>完了条件：テストが通る（842 件以上）。<code>dotnet build src/Miharikun.Core --no-incremental</code> が警告 0（AOT 互換）。</p>
+
+<h2>3. Phase 35：画面</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認（隔離環境）</th></tr>
+<tr><td>35-1</td><td>置き場所：起動時の受け入れと設定画面</td><td><code>HookSetup</code> は <code>Func&lt;string?, HookInstaller&gt;</code>（置き場所を受け取って作る）と <code>AppSettingsStore</code> を持つ。<code>CheckAtStartup</code> の順番は 7.1 の図（<code>Unreadable</code> → 受け入れ → <code>CanInstall</code> の確認 → 今までの提案）。受け入れたら <code>SaveHookDir(ToSettingValue(フォルダ))</code> して <code>app.log</code> に 1 行（「hook の置き場所を hooks.json の登録から採用: &lt;フォルダ&gt;」。保存に失敗したら「…（保存できなかったので今回だけ使う）」）、<b>受け入れたフォルダを直接渡して</b>作り直した installer で状態を見直す（設定を読み直さない。7.1）。<code>AppSettingsDialog</code>：「Cursor の Hook exe の置き場所」の入力欄＋「参照…」（<code>OpenFolderDialog</code>）＋「既定に戻す」。存在しないフォルダ・完全なパスでない値は保存できない（エラーの文を出す）。「保存」の有効・無効は、分と置き場所の両方の検査をまとめた <code>Revalidate()</code> で決め、両方の <code>TextChanged</code> から呼ぶ。<code>MainWindow.OnSettingsClick</code>：場所が変わったら <code>SaveHookDir(ToSettingValue(…))</code> → 「この場所に Hook を導入し直しますか？」→ はいで <code>HookSetup.InstallFromMenu</code>（7.5）</td><td>hooks.json を手で <code>C:/…/別の場所/Miharikun.Hook.exe</code> に（13 イベント全部）書き換えて起動 → ダイアログが出ず、settings.json に <code>hookDir</code> が入り、<code>app.log</code> に 1 行・次の起動でもダイアログが出ない・<code>\</code> 区切り（<code>C:\…\Miharikun.Hook.exe --agent cursor</code>）で書き換えても同じ（Q1）・<code>--agent cursor</code> を消して書き換え → 「登録し直します」・settings.json を別のプロセスが排他で開いている間に起動 → 受け入れは今回だけ使われ、ダイアログが出ず、hooks.json は変わらない・別の場所の exe の中身が同梱と違う → 「更新」の提案 → はいで<b>その場所に</b>コピー（<code>%LOCALAPPDATA%</code> 側は変わらない）・別の場所が一部のイベントだけ → 今まで通り「登録し直します」・exe が無い → 同じ。設定画面：参照で選ぶ・無いフォルダ・相対パス → 保存できない（分を打ち直しても保存できないまま）・既定に戻す → <code>hookDir</code> が消える・場所を変えて保存 → 導入し直す？→ はい → hooks.json の 13 件がその場所になり exe がコピーされる／いいえ → hooks.json は変わらない（次の起動の確認で「登録し直します」は出ない：受け入れで元の場所に戻る。7.5）</td></tr>
+<tr><td>35-2</td><td>Hook なしの表示と警告</td><td><code>SessionDetailViewModel</code> の <code>imported</code> 判定を <code>SessionText.IsTranscriptOnly</code> に替える（チェック欄の文は 7.6）。<code>MainViewModel</code>：<code>NoHookCount</code>（カードの中の NoHook の数）と <code>HookWarningText</code>、<code>OpenHookErrorLogCommand</code>（<code>ShellOpen.Open</code>。ファイルが無ければ押せない）。<code>UpdateCounts</code> の件数は今のまま（NoHook はどの件数にも入れない）。<code>MainWindow.xaml</code>：左ペインの最上段（<code>Counts</code> の上）に黄色の帯（<code>NoHookCount &gt; 0</code> のときだけ）。帯の色はテーマのリソース（ライト/ダーク）を足す</td><td>events 無し＋transcript 2 件（Hook の登録より後）→ 帯「…（Hook なし 2 件）…」・カードは灰色の丸「Hook なし」・詳細は「—」・「最近の入力」に出ない。hook-error.log がある → ボタンで開く／無い → 押せない。events の記録を後から置く（Hook が直った）→ そのセッションが Hook の記録に切り替わり、帯の件数が減り、0 で消える。Hook の登録より前の transcript は「閉じた（導入前）」のまま。⚙ →「hook を削除」→ 数秒で帯が消え、カードは「閉じた（導入前）」に（Q2）。ライト/ダーク。本物の Cursor を使う確認は 10.2（利用者の作業）</td></tr></table>
+<p>完了条件：8.2・12.9・12.11 の各動作を隔離環境で確かめる。ライト/ダークの両方。既存の起動時の導入ダイアログ（未導入・一部・更新）が今まで通り出る。</p>
+
+<h3>画面イメージ（35-2 の警告の帯）</h3>
+<svg viewBox="0 0 960 200" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="10" width="420" height="180" fill="#fff" stroke="#999"/>
+<rect x="20" y="20" width="400" height="56" fill="#fff6dd" stroke="#d4a72c"/>
+<text x="30" y="40" font-size="12">⚠ Cursor の Hook が記録していません（Hook なし 2 件）。</text>
+<text x="30" y="58" font-size="12">⚙ →「設定…」で置き場所を変えてください。</text>
+<rect x="280" y="46" width="138" height="22" fill="#fff" stroke="#999" rx="3"/><text x="286" y="62" font-size="11">hook-error.log を開く</text>
+<text x="440" y="50" font-size="12" fill="#c05000">← 新規（NoHook が 1 件以上のときだけ）</text>
+<text x="20" y="98" font-size="12">● 実行中 1　● ボスの番 3　● 閉じた 5</text>
+<text x="440" y="98" font-size="12" fill="#c05000">← 件数は今まで通り（Hook なしは数えない）</text>
+<rect x="20" y="110" width="400" height="60" fill="#f7f7f7" stroke="#bbb" rx="6"/>
+<circle cx="34" cy="128" r="5" fill="#999"/><text x="44" y="132" font-size="12">Hook なし</text>
+<text x="34" y="154" font-size="11" fill="#666">（会話ログから。時刻は推定）</text>
+<text x="440" y="132" font-size="12" fill="#c05000">← 状態の名前（灰色の丸）</text>
+</svg>
+
+<h2>4. Phase 36：仕上げ</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr>
+<tr><td>36-1</td><td>仕上げ</td><td>配布 zip の <code>README.txt</code>（<code>scripts/publish.ps1</code>）に「会社の PC などで Hook が動かないとき（⚙ → 設定… → Hook exe の置き場所）」と「Hook なし」の意味（導入・置き場所の変更の直後に出たら、まず Cursor を再起動する）を足す。<code>docs/release.md</code> の出す前のチェックに 35-1・35-2 の確認を足す。要件定義の <code>[x]</code> と「状況」。<code>CLAUDE.md</code> は変えない（守ることに変化が無い）。<code>Fixes #17</code></td></tr></table>
+
+<h2>5. （欠番：共通化のフェーズは無い）</h2>
+
+<h2>6. ファイル構成（追加・変更）</h2>
+<pre>src/Miharikun.Core/
+├─ Settings/AppSettings.cs              34-1 変更：LoadHookDir（検査・正規化）/ SaveHookDir（キーを消す処理・bool）
+├─ Install/HookInstaller.cs             34-1 変更：CreateDefault(…, hookDir)・DefaultHookDir・ToSettingValue・TryParseExePath・
+│                                                  SameRegistration（GetState の一致）・FindRegisteredElsewhere・設定の場所は作らない
+├─ Install/HookRegistration.cs          34-3 新規：Stamp()・Since()
+├─ Sessions/ISessionSource.cs           34-2 変更：WatchTarget に IncludeSubdirectories
+├─ Sessions/SessionMonitor.cs           34-2 変更：IncludeSubdirectories を Watcher に渡す
+├─ Agents/CursorTranscriptImporter.cs   34-2 変更：TranscriptDirs・変わった分だけ・共有して読む・最後の行
+│                                       34-3 変更：HookRegistration → HookMissing・登録が変わったら全部読み直す
+├─ Sessions/CursorSessionSource.cs      34-2 変更：毎回 Scan・失敗のログは 1 回・WatchTargets に transcript
+├─ Agents/AgentEvent.cs                 34-3 変更：HookMissing
+├─ Sessions/SessionSummary.cs           34-3 変更：SessionState.NoHook
+├─ Sessions/SessionAnalyzer.cs          34-3 変更：NoHook の判定
+├─ Sessions/SessionText.cs              34-3 変更：「Hook なし」・IsTranscriptOnly
+└─ Sessions/RecentActivity.cs           34-3 変更：IsTranscriptOnly で除外
+
+src/Miharikun/
+├─ App.xaml.cs                          34-4 変更：hookDir・HookRegistration の組み立て
+├─ HookSetup.cs                         35-1 変更：installer の作り直し（受け入れたフォルダを直接渡す）・受け入れ
+├─ Views/AppSettingsDialog.xaml(.cs)    35-1 変更：置き場所の欄・参照・既定に戻す・存在チェック・Revalidate
+├─ MainWindow.xaml.cs                   35-1 変更：OnSettingsClick で置き場所の保存と導入し直し
+├─ ViewModels/MainViewModel.cs          35-2 変更：NoHookCount・HookWarningText・OpenHookErrorLogCommand
+├─ ViewModels/SessionDetailViewModel.cs 35-2 変更：IsTranscriptOnly
+├─ MainWindow.xaml                      35-2 変更：左ペイン最上段の警告の帯
+└─ Themes/Colors.Light.xaml / Colors.Dark.xaml  35-2 変更：警告の帯の色
+
+scripts/publish.ps1・docs/release.md    36-1 変更
+
+tests/Miharikun.Tests/Core/
+├─ AppSettingsTests.cs                  34-1 追加：hookDir
+├─ HookInstallerTests.cs                34-1 追加：TryParseExePath・SameRegistration・GetState（書き方違い）・FindRegisteredElsewhere・CreateDefault(dir)
+├─ CursorTranscriptRealtimeTests.cs     34-2 新規：変わった分だけ・共有・最後の行・読む途中の追記・skip で忘れる・subagents
+├─ CursorSessionSourceFailureTests.cs   34-2 変更：成功の後も毎回 Scan（1 件を書き直し）・失敗のログは 1 回
+├─ SessionMonitorWatchTests.cs          34-2 追加：サブフォルダの通知
+├─ HookRegistrationTests.cs             34-3 新規：Stamp・Since
+├─ CursorTranscriptRealtimeTests.cs     34-3 追加：HookMissing・登録が変わったら読み直す
+└─ SessionAnalyzerTests.cs・SessionTextAndSearchTests.cs・RecentActivityTests.cs  34-3 追加：NoHook</pre>
+
+<h2>7. 実装の決めごと（迷いやすい所）</h2>
+<h3>7.1 起動時の確認と「別の場所の登録」の受け入れ</h3>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="180" height="50" fill="#dff" stroke="#08a"/><text x="20" y="42" font-weight="bold">1. GetState()</text><text x="20" y="60" font-size="12">設定の場所で判定</text>
+<rect x="250" y="20" width="200" height="50" fill="#eee" stroke="#888"/><text x="260" y="42" font-weight="bold">Unreadable</text><text x="260" y="60" font-size="12">警告して終わり</text>
+<rect x="500" y="20" width="200" height="50" fill="#efe" stroke="#383"/><text x="510" y="42" font-weight="bold">2. Installed</text><text x="510" y="60" font-size="12">終わり</text>
+<line x1="190" y1="45" x2="250" y2="45" stroke="#333" marker-end="url(#a)"/>
+<line x1="450" y1="45" x2="500" y2="45" stroke="#333" stroke-dasharray="4,3"/>
+<rect x="10" y="120" width="280" height="70" fill="#dfd" stroke="#383"/><text x="20" y="142" font-weight="bold">3. FindRegisteredElsewhere()</text><text x="20" y="162" font-size="12">全イベントが同じ別の場所＋exe あり？</text><text x="20" y="178" font-size="12" fill="#555">（1 回だけ）</text>
+<line x1="100" y1="70" x2="100" y2="120" stroke="#333" marker-end="url(#a)"/><text x="106" y="100" font-size="11" fill="#555">それ以外</text>
+<rect x="350" y="120" width="300" height="70" fill="#dfd" stroke="#383"/><text x="360" y="142" font-weight="bold">受け入れ ← 新規</text><text x="360" y="162" font-size="12">SaveHookDir・app.log に 1 行</text><text x="360" y="178" font-size="12">受け入れたフォルダで作り直して 1. へ</text>
+<line x1="290" y1="155" x2="350" y2="155" stroke="#383" stroke-width="2" marker-end="url(#a)"/><text x="296" y="148" font-size="11" fill="#383">はい</text>
+<path d="M500,120 C500,95 120,95 120,72" fill="none" stroke="#383" stroke-dasharray="5,3" marker-end="url(#a)"/>
+<rect x="10" y="240" width="280" height="60" fill="#dff" stroke="#08a"/><text x="20" y="262" font-weight="bold">4. CanInstall が false</text><text x="20" y="280" font-size="12">ログだけ（今まで通り）</text>
+<line x1="100" y1="190" x2="100" y2="240" stroke="#333" marker-end="url(#a)"/><text x="106" y="220" font-size="11" fill="#555">いいえ</text>
+<rect x="350" y="240" width="340" height="60" fill="#dff" stroke="#08a"/><text x="360" y="262" font-weight="bold">5. NotInstalled / Partial / ExeOutdated</text><text x="360" y="280" font-size="12">今まで通りの提案（更新は設定の場所へ）</text>
+<line x1="290" y1="270" x2="350" y2="270" stroke="#333" marker-end="url(#a)"/><text x="296" y="262" font-size="11" fill="#555">true</text>
+<text x="720" y="140" font-size="12" fill="#c05000">※ 受け入れは CanInstall の</text>
+<text x="720" y="156" font-size="12" fill="#c05000">確認より前（同梱が無くても</text>
+<text x="720" y="172" font-size="12" fill="#c05000">受け入れはする）</text>
+</svg>
+<p><code>HookSetup.CheckAtStartup</code> の順番：</p>
+<ol>
+<li><code>GetState()</code> が <code>Unreadable</code> → 今まで通り警告して終わり。</li>
+<li><code>Installed</code> → 終わり。</li>
+<li>それ以外で <code>FindRegisteredElsewhere()</code> が exe のパスを返す → <code>SaveHookDir(ToSettingValue(そのフォルダ))</code>（既定と同じならキーを消す）・<code>app.log</code> に 1 行 → <b>受け入れたフォルダを直接渡して</b> installer を作り直し、1. に戻る（1 回だけ。2 回目は受け入れをしない）。設定を読み直さない：保存に失敗した（<code>SaveHookDir</code> が false）ときに既定の場所で作り直すと、「登録し直します」→ はいで、動いている登録を止められている場所に書き換えてしまうため。保存に失敗したら <code>app.log</code> に「今回だけ使う」と書き、次の起動でもう一度受け入れる。作り直した後は <code>Installed</code> か <code>ExeOutdated</code> になる（<code>GetState</code> の一致は <code>SameRegistration</code> なので、書き方だけの違いでは <code>Partial</code> にならない。受け入れの条件に <code>--agent cursor</code> を含めているので、引数の無い登録は受け入れない）。</li>
+<li><code>CanInstall</code> が false（同梱の exe が無い・開発時）→ 今まで通りログだけ。<b>受け入れは 3. で済んでいる</b>（同梱が無くても受け入れはする）。</li>
+<li><code>NotInstalled</code> / <code>Partial</code> / <code>ExeOutdated</code> → 今まで通りの提案。<code>ExeOutdated</code> の更新は、作り直した installer の場所（＝受け入れた場所）にコピーする。</li>
+</ol>
+<p><code>FindRegisteredElsewhere()</code> の条件（Core。表の行がそのままテストになる）：</p>
+<table><tr><th>hooks.json の Miharikun の登録</th><th>結果</th></tr>
+<tr><td>13 イベント全部が設定の場所（<code>SameRegistration</code>。書き方だけの違いも含む）</td><td>null（受け入れ不要。<code>GetState</code> は <code>Installed</code> か <code>ExeOutdated</code>）</td></tr>
+<tr><td>13 イベント全部が同じ別の場所で、その exe がある（<code>\</code> 区切り・引用符の有無・大文字小文字の違いは問わない）</td><td>その exe のフルパス</td></tr>
+<tr><td>同じ別の場所だが、どれかに <code>--agent cursor</code> が無い</td><td>null（Hook は引数が無いと何も記録しない：<code>HookRunner.cs</code>。<code>Partial</code> で登録し直す）</td></tr>
+<tr><td>どれかのコマンドの exe のパスを読めない（相対パス・不正な文字）</td><td>null（ばらばらと同じ）</td></tr>
+<tr><td>同じ別の場所だが exe が無い</td><td>null</td></tr>
+<tr><td>一部のイベントに登録が無い</td><td>null</td></tr>
+<tr><td>場所がばらばら（2 か所以上）</td><td>null</td></tr>
+<tr><td>1 つのイベントに Miharikun の登録が 2 つ（同じ場所）</td><td>その場所として扱う（Install の重複除去と同じ考え）</td></tr>
+<tr><td>1 つのイベントに Miharikun の登録が 2 つ（違う場所）</td><td>null（ばらばら）</td></tr>
+<tr><td>別アプリの登録が同じイベントに並んでいる</td><td>無視する（<code>IsOurs</code> で Miharikun のものだけ見る）</td></tr>
+<tr><td>登録が無い・hooks.json が無い・壊れている</td><td>null</td></tr></table>
+<ul>
+<li>場所の比較は <code>Path.GetFullPath</code> で正規化し、大文字小文字を無視する。引用符・<code>/</code> 区切りの違いは <code>TryParseExePath</code> で吸収する。</li>
+<li>受け入れるのは「フォルダ」（<code>Path.GetDirectoryName(exe)</code>）。exe の名前は <code>Miharikun.Hook.exe</code> 固定（<code>IsOurs</code> は名前で見ている）。</li>
+</ul>
+
+<h3>7.2 <code>TryParseExePath(command)</code> と <code>SameRegistration(command, exePath)</code></h3>
+<ul>
+<li><code>TryParseExePath</code>：<code>BuildCommand</code> の逆。前後の空白を落とし、先頭が <code>"</code> なら次の <code>"</code> まで、そうでなければ最初の <code> --agent</code> の手前まで（空白を含むパスを引用符なしで書いた手書きも拾うため、「最初の空白まで」にしない）。<code>--agent</code> が無ければ全体。取り出したパスも前後の空白を落とす。</li>
+<li><code>/</code> を <code>\</code> にし、<b><code>Path.IsPathFullyQualified</code> でなければ null</b>（相対の登録を Miharikun のカレントディレクトリで解決しない。Cursor は別の基準で解決する）。<code>Path.GetFullPath</code>。失敗（不正な文字など）→ null。</li>
+<li>末尾が <code>Miharikun.Hook.exe</code>（大文字小文字無視）でなければ null。</li>
+<li><code>SameRegistration(command, exePath)</code>：<code>TryParseExePath(command)</code> が <code>exePath</code> と（<code>GetFullPath</code> して大文字小文字を無視して）同じで、<b>パスの後ろの引数に <code>--agent</code> <code>cursor</code> が続けて並ぶ</b>とき true。空白の数は問わない。<code>GetState</code> の <code>exact</code> の数え方をこれに替える（<code>HookInstaller.cs:118</code>）。<code>Install</code> は今まで通り、<code>BuildCommand</code> と文字列が違えば書き直す（メニューから導入したときに書き方を揃える）。</li>
+</ul>
+
+<h3>7.3 transcript の「変わった分だけ」</h3>
+<ul>
+<li>importer はファイルごとに <code>(Length, LastWriteTimeUtc)</code> を覚える。<code>Scan</code> のたびにフォルダを列挙して、<b>覚えている値と違うものだけ</b>読む（<code>skip</code> が true の ID は読まず、<b>覚えた値も消す</b>＝Hook の記録ができた ID。消しておくと、Hook のファイルが後で消えたときに取り込みに戻れる）。</li>
+<li>値は<b>開く前に、1 ファイルずつ <code>new FileInfo(path)</code> で</b>取り、その値を覚える（列挙の結果の <code>FileInfo</code> は、別のプロセスが開いたまま追記していると古いことがある）。読み終わった後にもう一度取り、開く前と違えば覚えずに次の回にまた読む（読んでいる間の追記を取りこぼさない）。</li>
+<li>返すのは「変わったセッション」だけ。<code>CursorSessionSource</code> は今まで通り <code>Replace</code> で出す（同じキーの丸ごと置き換え）。</li>
+<li>読むのは <code>new FileStream(path, Open, Read, ReadWrite | Delete)</code> ＋ <code>StreamReader(UTF8)</code>。Cursor が書いている途中でも開ける。<code>File.ReadLines</code> では最後の改行の有無が分からないので、行の区切りを自分で見る。<b>最後の行は、改行で終わる、または JSON として最後まで読めるなら使う</b>。どちらでもない（書きかけ）なら使わない（次に長さが変わったときに読み直す。レビュー Q3）。Cursor が最後の行に改行を付けない書き方でも、最後の返事が抜けない。</li>
+<li>読めなかった（<code>IOException</code>）ときは、覚えている値を<b>更新しない</b>（次のポーリングでもう一度読む）。</li>
+<li><code>CursorSessionSource</code> は毎回 <code>Scan</code> を呼ぶので、<code>Scan</code> が例外を投げ続けると 3 秒ごとにログが出る。前回のログの文を覚え、<b>同じ文なら出さない</b>（成功したら忘れる）。</li>
+<li>時刻は今まで通りファイルの更新日時（全イベント同じ）。読み直すたびに「最後の動き」が新しくなる。</li>
+<li>消えた transcript は何もしない（取り込んだセッションは残す。今まで通り）。</li>
+<li><code>subagents\</code> は今まで通り見ない（<code>&lt;id&gt;\&lt;id&gt;.jsonl</code> と旧形式 <code>&lt;id&gt;.jsonl</code> だけ）。ただし Watcher はサブフォルダ込みなので、<code>subagents\</code> の変更でも再読み込みが走る（デバウンスで 1 回にまとまる。中身が変わらなければ何も出ない）。</li>
+<li>監視先のフォルダはポーリングのたびに <code>WatchTargets</code> で取り直される（<code>SessionMonitor.EnsureWatchers</code>）。プロジェクトのフォルダが後からできても、次のポーリングで張られる。<code>CreateIfMissing: false</code> なので作らない。</li>
+<li>Watcher のキーは今の <code>(Directory, Filter)</code> のまま（同じフォルダをサブフォルダの有無だけ違えて張ることは無い）。</li>
+</ul>
+
+<h3>7.4 Hook の登録の時刻（<code>HookRegistration</code>）</h3>
+<p><code>Since()</code>：</p>
+<ol>
+<li>hooks.json を読み（壊れている・無い → null）、Miharikun の登録（<code>HookInstaller.IsOurs</code>）が 1 つも無ければ null。</li>
+<li>候補 A：hooks.json の更新日時。候補 B：<code>events\cursor\*.jsonl</code> の一番古い作成日時（無ければ候補なし。<code>_app.jsonl</code> も Hook の記録なので含める）。</li>
+<li>早いほうを返す。</li>
+</ol>
+<p><code>Stamp()</code>：hooks.json の更新日時（無ければ null）。読まずに stat だけ。</p>
+<ul>
+<li>importer は <code>Scan</code> のたびに <code>Stamp()</code> を見る（stat 1 回）。前回と違えば <code>Since()</code> を取り直し、<b>覚えた値を全部消して、全 transcript を読み直す</b>（レビュー Q2）。⚙ →「hook を削除」・導入・手での書き換えがすぐ反映され、削除の後に帯が残らない。hooks.json が変わるのはまれなので、全部読み直しても重くない。</li>
+<li><code>Stamp()</code> が変わらない回は <code>Since()</code> を呼ばない（3 秒ごとに hooks.json を読まない）。<code>Since()</code> は最初の <code>Scan</code> と、<code>Stamp()</code> が変わった回だけ。</li>
+<li>判定は transcript ごとに <code>更新日時 &gt; Since</code> なら <code>HookMissing</code>。Hook が正しく動いていれば、その ID には events のファイルがあり、取り込み自体がされないので、<code>HookMissing</code> になるのは「Hook が記録していない」ものだけ。</li>
+<li>推測で設計：hooks.json を別のツールが後から書き換えると候補 A が新しくなるが、Hook が一度でも記録していれば候補 B が古いので影響しない。一度も記録していない環境（会社の PC）では候補 A＝手で書き換えた時刻で、それより後の会話が「Hook なし」になる（ねらいどおり）。</li>
+<li>候補 A・B はどちらも本当の登録の時刻より後なので、登録より前の会話を「Hook なし」にすることは無い。誤検知になりうるのは、(a) 導入した直後、Cursor が hooks.json を読み直すまでに続けた会話（Cursor が自動で読み直すかは要確認）、(b) Cursor が古い transcript の更新日時だけを変える操作（開いただけ・形式の移行など。要確認）。Phase 35 の後の確認（10.2。利用者の作業）で、Hook が動いている環境で帯が出ないことを確かめる。README に「導入・置き場所の変更の直後に出たら、まず Cursor を再起動」と書く（帯の文は要件定義 12.11 のまま）。</li>
+</ul>
+
+<h3>7.5 置き場所の保存と導入し直し</h3>
+<ul>
+<li>設定画面の欄の初期値は <code>LoadHookDir() ?? DefaultHookDir</code>。保存は <code>SaveHookDir(ToSettingValue(欄の値))</code>：正規化（<code>GetFullPath</code>＋末尾の <code>\</code> を落とす）して、既定と同じ（大文字小文字を無視）ならキーを消す。7.1 の受け入れの保存も同じ関数を通す。</li>
+<li>存在しないフォルダ・完全なパスでない値は保存できない（「フォルダが見つかりません」「C:\ から始まるフォルダを指定してください」）。検査は <code>LoadHookDir</code> と同じ規則。アプリはフォルダを作らない。</li>
+<li>導入（<code>Install</code> の <code>CopyExe</code>）も、<b>設定した場所（<code>hookDir</code> あり）は作らない</b>。保存の後にフォルダが消えていたら「Hook の置き場所 &lt;フォルダ&gt; が見つかりません（⚙ → 設定… で直してください）」で失敗させ、hooks.json は変えない。既定の <code>bin</code> は今まで通り作る（<code>CreateDefault</code> が「作ってよいか」を渡す）。</li>
+<li>場所が変わって保存 → 「この場所に Hook を導入し直しますか？（hooks.json の Miharikun の登録をこの場所に書き換え、Hook exe をコピーします）」→ はいで <code>InstallFromMenu</code>（作り直した installer で。バックアップ・既存の登録を壊さない、は今まで通り）。</li>
+<li>いいえ → hooks.json は変えない。この場合、次の起動の確認では、hooks.json の登録（元の場所）が「全部同じ別の場所」なら 7.1 の受け入れで<b>元の場所に戻る</b>。利用者が選んだ場所が上書きされて見えるが、「hooks.json の登録が正」とする（動いている場所を優先）。設定画面の説明に「導入し直さないと、次の起動で hooks.json の登録の場所に戻ります」と書く。</li>
+<li>古い場所の exe は消さない。</li>
+</ul>
+
+<h3>7.6 「Hook なし」の扱い（画面）</h3>
+<table><tr><th>場所</th><th>Imported（導入前）</th><th>NoHook（Hook なし）</th></tr>
+<tr><td>状態の名前</td><td>閉じた（導入前）</td><td>Hook なし</td></tr>
+<tr><td>丸の色</td><td>灰（<code>StateIdleBrush</code>）</td><td>灰（同じ。警告は帯で出す）</td></tr>
+<tr><td>件数（<code>Counts</code>）</td><td>「閉じた」に入る</td><td><b>どこにも入らない</b></td></tr>
+<tr><td>詳細（時刻・ターン・ツール・git）</td><td>「—」</td><td>「—」</td></tr>
+<tr><td>チェック欄の文</td><td>導入前のセッションなので不明</td><td>Hook の記録が無いセッションなので不明</td></tr>
+<tr><td>最近の入力</td><td>出さない</td><td>出さない</td></tr>
+<tr><td>警告の帯</td><td>数えない</td><td>数える</td></tr></table>
+<ul>
+<li>画面側は <code>state == Imported</code> を直接見ずに <code>SessionText.IsTranscriptOnly(state)</code> を使う（<code>SessionDetailViewModel.cs:134,202</code>、<code>RecentActivity.cs:20</code>）。<code>MainViewModel.UpdateCounts</code> の「閉じた」は <code>Closed, Imported</code> のまま。</li>
+<li>帯の件数は <code>Cards</code> から数える（フィルタ・検索に関係なく全体）。<code>UpdateCounts</code> と同じ所（<code>Apply</code> の後）で数え直す。</li>
+<li><code>SessionState.NoHook</code> は列挙の<b>最後</b>に足す。<code>SessionAnalyzer</code> の <code>imported</code>（<code>SessionAnalyzer.cs:150-159</code>）は NoHook でも true のまま使う（開いたターンを閉じる・<code>TurnInProgress</code> を false にするため）。状態だけを <code>imported &amp;&amp; 1 つでも HookMissing ? NoHook : Imported</code> にする。</li>
+<li>レビューで <code>src</code> 全体を grep 済み：状態の <code>Imported</code> を直接見ているのは上の 3 か所と <code>MainViewModel.cs:387</code>・<code>SessionText.cs:26</code> だけ。<code>Timeline.cs</code>・<code>SessionAnalyzer.cs:150</code> はイベントの <code>Imported</code> なので変えない。丸の色は <code>MainWindow.xaml</code> の既定（<code>StateIdleBrush</code>）で灰色になる。</li>
+</ul>
+
+<h2>8. リスクと対策</h2>
+<table><tr><th>リスク</th><th>対策</th></tr>
+<tr><td>置き場所の変更で、Hook の記録先まで変わったと誤解する</td><td>記録先は変えない（Hook exe は <code>AppPaths.Default()</code>）。設定画面の説明に「記録先は変わりません」</td></tr>
+<tr><td>受け入れで、利用者が意図しない場所を採用する</td><td>13 イベント全部が同じ場所・<code>--agent cursor</code> あり・完全なパス・exe が実在、のときだけ。<code>app.log</code> に残す。設定画面で見える</td></tr>
+<tr><td>受け入れの保存に失敗して、動いている登録を既定の場所に書き換える</td><td>作り直す installer には受け入れたフォルダを直接渡す（設定を読み直さない）。保存の失敗は <code>app.log</code> に残し、次の起動でもう一度受け入れる（7.1）</td></tr>
+<tr><td>settings.json の <code>hookDir</code> が手で壊される（相対パス・不正な文字）</td><td><code>LoadHookDir</code> で null にして既定を使う（起動時に例外で落ちない）。ログに 1 行</td></tr>
+<tr><td>transcript の監視で、Cursor の書き込みのたびに読み直して重い</td><td>変わったファイルだけ読む。デバウンス 300ms。大きい transcript（数 MB）の読み直しの時間を <code>PerfFact</code> で測る（目安：1 回 100ms 以下）。読み直しは監視のロックの中なので、その間は詳細のタイムラインの表示も待つ。目安を超えたら、ロックの外で読んで差分だけ渡す形を検討する</td></tr>
+<tr><td>Cursor の書き込み中に開けない／書きかけの行／読む途中の追記</td><td>共有モードで開く。最後の行は改行か JSON として読めるときだけ使う。値は開く前に取り、読み終わりと違えば次の回に読み直す。読めなければ次のポーリングで読み直す</td></tr>
+<tr><td>Hook が正しく動いているのに「Hook なし」と出る</td><td>events のファイルがある ID は取り込まない。導入直後（Cursor が読み直す前）と、古い会話の transcript だけが更新された場合は「Hook なし」になりうる（その会話で依頼を送れば Hook の記録に切り替わる）。10.2 の確認で、Hook が動いている環境で帯が出ないことを確かめる。README に「Hook なし」の意味と「まず Cursor を再起動」を書く</td></tr>
+<tr><td>Hook を削除しても「Hook なし」と帯が残る</td><td>hooks.json の更新日時が変わったら、全 transcript を判定し直す（7.4）</td></tr>
+<tr><td>Issue #22（Avalonia へ移す）と画面の変更がぶつかる</td><td>この Issue を先に main に入れる。#22 側の Phase 28 の前に、利用者からそのセッションに伝えてもらう（35 の変更点：設定画面の欄・警告の帯・HookSetup）</td></tr>
+<tr><td>要件定義の衝突（#22 も同じファイルの 15 章・8 章を変えている）</td><td>Phase 番号は 34〜36、節は 8.2（#22 は 8.1 を使う）にして、番号の衝突は避けた。マージ時の文の衝突は手で直す</td></tr></table>
+
+<h2>9. 決定事項（確認済み。設計の質問 Q1〜Q5）</h2>
+<ol>
+<li>Q1：まず切り分け → 原因を直す → 保険（#1・#2）。→ 切り分け済み（会社の PC で <code>%LOCALAPPDATA%</code> 配下の exe が動かない。<code>C:\dev</code> なら動く）。</li>
+<li>Q2：transcript をリアルタイムに取り込む＋警告。「Hook なし」と分かる表示にする。</li>
+<li>Q3：会社の PC の <code>C:\dev</code> の登録は、hooks.json を手で書き換えた。→ 7.1 の受け入れの対象。</li>
+<li>Q4：A（設定画面で置き場所を選べる＋既存の登録を自動で受け入れる）。</li>
+<li>Q5：導入ダイアログに「今後表示しない」は足さない。</li>
+</ol>
+<p>計画で決めたこと（仕様にない細部）：</p>
+<ul>
+<li>Phase 番号は 34〜36（27〜33 は Issue #22）。要件定義の節は 8.2・12.11。</li>
+<li><code>settings.json</code> のキー名は <code>hookDir</code>。既定と同じなら保存しない（キーを消す）。</li>
+<li>受け入れの条件（7.1 の表）と、起動時の確認の順番（受け入れは <code>CanInstall</code> の確認より前）。</li>
+<li>導入し直さずに保存したら、次の起動で hooks.json の登録の場所に戻る（hooks.json が正）。</li>
+<li>Hook の登録の時刻 ＝ hooks.json の更新日時と events の一番古いファイルの早いほう（7.4）。</li>
+<li>「Hook なし」は灰色の丸で、状態の件数には入れない。警告の帯は閉じられない。</li>
+<li>transcript が消えてもセッションは消さない。書きかけの最後の行は使わない。</li>
+</ul>
+<p>計画のレビュー（<code>docs/issue17/issue17-cursor-hook-review.html</code>）で決めたこと（すべて推奨の A）：</p>
+<ul>
+<li>レビュー Q1：<code>GetState</code> の「一致」は、exe のパスの正規化した一致＋<code>--agent cursor</code> あり（<code>SameRegistration</code>）。手で書いた動く登録は書き換えず、ダイアログも出さない。引数の無い登録は今まで通り <code>Partial</code>。</li>
+<li>レビュー Q2：hooks.json の更新日時が変わったら、読み済みの transcript も全部判定し直す。</li>
+<li>レビュー Q3：最後の行は「改行で終わる、または JSON として読める」なら使う。</li>
+<li>要件定義との食い違いは無い（8.2 の「同じ 1 つの別の場所」、11 章の「書きかけなら飛ばす」・登録の時刻の定義のまま）。要件定義は変えていない。</li>
+</ul>
+
+<h2>10. 実装するセッションへの注意（必ず読む）</h2>
+<h3>10.1 始める前に</h3>
+<ul>
+<li><b>この計画・設計の資料・要件定義の変更が見えることを確かめる</b>。作業フォルダは worktree <code>C:\zDev\repo\Miharikun-issue17</code>（ブランチ <code>feature/issue17-cursor-hook</code>）。元のフォルダ <code>C:\zDev\repo\Miharikun</code> は Issue #22 の作業中なので、<b>そちらで作業しない</b>。計画・要件定義の変更が未コミットなら、この worktree で開くこと。見つからなければ、推測で進めずに利用者に聞く。</li>
+<li>計画と仕様に食い違いが無いか確かめる。あれば仕様が正。判断がつかなければ聞く。</li>
+<li><code>CLAUDE.md</code> の決まり：<code>git add</code> はパスを指定、コミットは頼まれたときだけ、本物の <code>~\.cursor\hooks.json</code> と <code>%LOCALAPPDATA%\Miharikun\</code> を書き換えない（確認は <code>MIHARIKUN_DATA_DIR</code>・<code>MIHARIKUN_CURSOR_DIR</code> で一時フォルダに向ける。UI の確認では、本物の hooks.json をコピーした一時フォルダを使う）、<code>dotnet build</code>／<code>test</code> の前にアプリを止める。</li>
+<li>テストのフィクスチャは手書き（実際の transcript をコピーしない）。</li>
+</ul>
+<h3>10.2 各フェーズの終わり</h3>
+<ul>
+<li>隔離環境で確かめ、要件定義の <code>[x]</code> と「状況」を更新する（その Phase のコミットに入れる）。</li>
+<li>報告には、変えたこと、テスト結果（件数）、ビルドしたかと出力先、できなかった確認を書く。<b>次のフェーズに進む前に止まって報告する</b>。</li>
+<li>Phase 35 の後、会社の PC での確認（利用者の作業）：設定画面で <code>C:\dev</code> 側を選ぶ／起動時の受け入れでダイアログが出ないこと、Cursor の新しいチャットが起動中に出ること。</li>
+<li>Phase 35 の後、Hook が動いている PC での確認（利用者の作業。本物の Cursor を使う）：新しいチャットを始める・古いチャットを開くだけ → 帯が一瞬も出ない（7.4 の誤検知の確認。出たら報告）。Cursor に長い返事を書かせ、止まった後に最後の返事まで出る（7.3）。</li>
+</ul>
+<p><b>状態：レビュー反映済み</b>（指摘 #1〜#13・Q1〜Q3 を反映。実装に進める）。</p>
+</body></html>

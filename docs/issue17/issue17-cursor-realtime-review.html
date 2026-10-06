@@ -10,7 +10,7 @@ code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #
 svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
 </style></head><body>
 <h1>Issue #17「Cursor はリアルタイムでセッション表示ができない？」レビュー</h1>
-<p><b>結論：直してから進める（Q1・Q2 とも A に決定。いまは会社の PC での切り分け待ち → 5.2 章）</b></p>
+<p><b>結論：直してから進める。原因は確定（会社の PC で <code>%LOCALAPPDATA%</code> 配下の exe が動かない）→ 5.3 章。Q1〜Q5 すべて決定 → 実装計画 <code>issue17-cursor-hook-plan.md</code>（図解は <code>issue17-cursor-hook-plan.html</code>）</b></p>
 <p>Cursor も<b>設計上はリアルタイムに出ます</b>（Hook の記録ファイルを、ファイル監視 300ms ＋ 3 秒ごとのポーリングで読む。Claude Code と同じ経路）。
 「再起動すると追加されている」という症状は、<b>Hook が記録できていないときに、起動時に 1 回だけ行う transcript の取り込み（導入前の過去セッション用）でセッションが出ている</b>状態とぴったり一致します。
 つまり問題は 2 つ：<span class="ng">① Hook が記録していない（原因は要確認）</span>、<span class="ng">② それに気づけず、取り込みも起動時 1 回だけなので、再起動まで出ない</span>。</p>
@@ -200,7 +200,7 @@ c) なら：導入ダイアログの完了文に「Cursor を再起動してく�
 <tr><td>この PC ではリアルタイムに出た</td><td>1 章の実データと合う。<b>アプリの読み込みの経路は正しく動いている</b>（事実）</td></tr>
 <tr><td>会社の PC：リアルタイムに出ず、再起動すると「閉じた」で出る</td><td>表示が<b>「閉じた（導入前）」か「閉じた」か</b>で原因がまったく違う（下の表）。<b>要確認</b></td></tr>
 <tr><td>会社の PC：初回起動のダイアログで導入済み。hooks.json の各イベントに、<b>別アプリの Hook と Miharikun の Hook の 2 つ</b>が並んでいる</td><td>Cursor の公式ドキュメント（Hooks）では「一致する Hook はすべて実行され、応答はまとめられる」「落ちた・時間切れ・0 以外の終了コード（2 を除く）でも先に進む（fail-open）」とされている。<b>ドキュメントどおりなら、1 つ目の Hook が失敗しても Miharikun の Hook は動く</b>。<br>
-ただし、①会社の PC の Cursor が古い版で動きが違う、②1 つ目の exe が無い・止まって毎回 5 秒待つ、は<b>未確認</b>。Miharikun の導入処理は既存のエントリを残して足しているので、<b>登録の形は正しい</b>（利用者の貼った例で確認）。</td></tr>
+1 つ目の exe が見つからない場合はドキュメントに名指しは無いが、起動の失敗（0 以外の終了）として同じく先に進むと読める。<b>未確認なのは「会社の PC の Cursor が、実際にドキュメントどおり動くか」の 1 点</b>（古い版で動きが違う可能性）。Miharikun の導入処理は既存のエントリを残して足しているので、<b>登録の形は正しい</b>（利用者の貼った例で確認）。</td></tr>
 </table>
 
 <h3>「閉じた」の 2 通りの意味（コードで確認）</h3>
@@ -225,6 +225,86 @@ c) なら：導入ダイアログの完了文に「Cursor を再起動してく�
 <tr><td>events に今のファイルが無い／「閉じた（導入前）」</td><td>Hook が動いていない。hook-error.log が更新されていれば例外の種類（1 行目の例外名だけ）を教えてもらう。更新も無ければ、試しに hooks.json の別アプリの行を一時的に外して（バックアップを取って）再確認 → 出るようになれば「2 つ並び」が原因</td></tr>
 <tr><td>events に今のファイルがある／「閉じた」</td><td>アプリ側。<code>%LOCALAPPDATA%</code> の実際の場所と、起動中の一覧に出るまで何秒かかるか（数分待って出るか）を教えてもらう</td></tr>
 </table>
+
+<h2>5.3 会社の PC での結果（原因の確定）</h2>
+<table>
+<tr><th>分かったこと（利用者の確認）</th><th>意味</th></tr>
+<tr><td><code>%LOCALAPPDATA%</code> 配下の exe は動かない（監視されている様子）。<code>C:\dev</code> のようなフォルダに置くと動いた</td><td><b>問題 #3-b で確定</b>。Hook exe が起動できないので、何も記録されず、<code>hook-error.log</code> も残らない。再起動時に transcript から取り込まれて「閉じた（導入前）」で出ていた（問題 #1・#2 の状態）</td></tr>
+<tr><td><code>C:\dev</code> に AOT 版を置いて動かすと、hook は登録済みなのに<b>起動のたびに導入ダイアログが出る</b>（いまは無視している）</td><td>下の問題 #4</td></tr>
+</table>
+
+<h3>問題（追加）</h3>
+<table>
+<tr><th>#</th><th>重大度</th><th>何が問題か（根拠）</th><th>どう解決するか</th></tr>
+<tr><td>4</td><td class="ng">高</td>
+<td><b>Hook の置き場所が <code>%LOCALAPPDATA%\Miharikun\bin\</code> に固定</b>（<code>HookInstaller.cs:66-75</code> の <code>CreateDefault</code>）。会社の PC のように、そこで exe を動かせない環境では使えない。<br>
+さらに起動時の確認は「全イベントのコマンドが、その固定の場所と<b>完全に一致</b>するか」で判定している（<code>HookInstaller.cs:108-125</code>、<code>expected = BuildCommand(_installedExePath)</code>）。hooks.json が <code>C:/dev/…/Miharikun.Hook.exe</code> を指していると <code>Partial</code> になり、<code>HookSetup.cs:39-41</code> の「登録先が現在の場所と違います。登録し直します。」が<b>毎回出る</b>。<br>
+<span class="ng">注意</span>：このダイアログで「はい」を押すと、登録が <code>%LOCALAPPDATA%</code> の場所に<b>書き戻され、また動かなくなる</b>（<code>Install()</code> は既存のエントリのパスを今の場所に直す。<code>HookInstaller.cs:166-170</code>）。</td>
+<td><b>① 置き場所を設定にする</b>：アプリの設定に「Hook exe の置き場所（フォルダ）」を持つ。既定は今までどおり <code>%LOCALAPPDATA%\Miharikun\bin</code>。導入（コピー・hooks.json への登録）も起動時の確認も、この設定の場所を使う。<br>
+<b>② 既存の登録を受け入れる</b>：hooks.json の Miharikun の登録が<b>全イベントで同じ別の場所</b>を指し、その exe が実在するなら、ダイアログを出さずに、その場所を設定として採用する（ログに 1 行）。中身が同梱と違うときだけ「更新」を提案し、更新は<b>その場所に</b>コピーする。<br>
+<b>③ 動かないことに気づける</b>：問題 #1 の警告の文に「会社の PC などで、この場所の exe が実行を止められている可能性があります。⚙ から置き場所を変えてください」を足す。<br>
+※ 判定（どの場所を採用するか）は Core（<code>HookInstaller</code>）に置いてテストを先に書く。mac（Issue #22）の置き場所にも同じ仕組みを使う。</td></tr>
+<tr><td>5</td><td>低</td>
+<td>導入ダイアログを断っても、次の起動でまた出る（「今後表示しない」が無い。<code>HookSetup.cs:18-47</code>）。</td>
+<td>#4 の②で今回の「毎回出る」は消えるので、まずは足さない（Q5）。</td></tr>
+</table>
+
+<h3>変更後の判定（#4）</h3>
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="180" height="70" fill="#ffe9c8" stroke="#a70"/>
+<text x="20" y="42" font-weight="bold">hooks.json</text>
+<text x="20" y="60" font-size="12">Miharikun の登録の</text>
+<text x="20" y="76" font-size="12">command のパス</text>
+<rect x="240" y="20" width="200" height="70" fill="#dfd" stroke="#383"/>
+<text x="250" y="42" font-weight="bold">設定の置き場所と同じ？</text>
+<text x="250" y="60" font-size="12">（既定は %LOCALAPPDATA%</text>
+<text x="250" y="76" font-size="12">\Miharikun\bin）</text>
+<line x1="190" y1="55" x2="240" y2="55" stroke="#333" marker-end="url(#b)"/>
+<rect x="500" y="10" width="200" height="50" fill="#efe" stroke="#383"/>
+<text x="510" y="32" font-weight="bold">今までどおり</text>
+<text x="510" y="50" font-size="12">導入済み／更新の提案</text>
+<line x1="440" y1="40" x2="500" y2="35" stroke="#383" stroke-width="2" marker-end="url(#b)"/>
+<text x="452" y="30" font-size="11" fill="#383">同じ</text>
+<rect x="240" y="140" width="200" height="80" fill="#dfd" stroke="#383"/>
+<text x="250" y="162" font-weight="bold">全イベントが同じ別の場所</text>
+<text x="250" y="180" font-size="12">を指し、その exe がある？</text>
+<line x1="340" y1="90" x2="340" y2="140" stroke="#333" marker-end="url(#b)"/>
+<text x="346" y="120" font-size="11" fill="#555">違う</text>
+<rect x="500" y="130" width="210" height="60" fill="#efe" stroke="#383"/>
+<text x="510" y="152" font-weight="bold">その場所を設定に採用</text>
+<text x="510" y="170" font-size="12">ダイアログは出さない ← 新規</text>
+<line x1="440" y1="160" x2="500" y2="160" stroke="#383" stroke-width="2" marker-end="url(#b)"/>
+<text x="452" y="152" font-size="11" fill="#383">はい</text>
+<rect x="500" y="200" width="210" height="44" fill="#eee" stroke="#888"/>
+<text x="510" y="220" font-weight="bold">今までどおり</text>
+<text x="510" y="237" font-size="12">「登録し直します」を提案</text>
+<line x1="440" y1="205" x2="500" y2="220" stroke="#333" marker-end="url(#b)"/>
+<text x="452" y="228" font-size="11" fill="#555">いいえ</text>
+<text x="740" y="40" font-size="12" fill="#c05000">※ 中身が同梱と違えば</text>
+<text x="740" y="56" font-size="12" fill="#c05000">「更新」を提案し、</text>
+<text x="740" y="72" font-size="12" fill="#c05000">設定の場所にコピー</text>
+</svg>
+
+<h3>決めたこと（追加。確定）</h3>
+<table><tr><th>問い</th><th>決定</th></tr><tr><td>Q3. <code>C:\dev</code> の登録の入れ方</td><td>hooks.json を手で書き換えた（#4 ② の受け入れの対象）</td></tr><tr><td>Q4. 置き場所の決め方</td><td><b>A</b>：設定画面で選べる＋既存の登録を自動で受け入れる</td></tr><tr><td>Q5. 「今後表示しない」</td><td>足さない</td></tr></table>
+<p>（以下は回答前の選択肢。記録として残す）</p>
+<div class="q"><b>Q3.</b> いまの <code>C:\dev</code> の登録は、どうやって入れましたか？（hooks.json を手で書き換えた／別の方法）<br>
+→ #4 の②（既存の登録を受け入れる）がその形で効くかの確認。<b>それまで、起動時のダイアログは「いいえ」で閉じてください</b>（「はい」だと <code>%LOCALAPPDATA%</code> に戻されます）。</div>
+<div class="q"><b>Q4.</b> 置き場所をどう決められるようにするか<br>
+A) ⚙ の設定ダイアログに「Hook exe の置き場所」（フォルダ選択）＋ 既存の登録を自動で受け入れ（#4 ①＋②）… 利点：手で hooks.json を触らずに済む／欠点：設定項目が 1 つ増える<br>
+B) 既存の登録の受け入れだけ（#4 ②）… 利点：小さい／欠点：最初の 1 回は hooks.json を手で書く必要がある<br>
+C) 導入先にコピーせず、アプリと同じフォルダの exe をそのまま登録 … 利点：設定不要／欠点：アプリのフォルダを移す・版ごとに展開すると登録が切れる。実行中の上書きにも弱い（今の設計がコピーしている理由）<br>
+<span class="rec">推奨：A</span></div>
+<div class="q"><b>Q5.</b> 導入ダイアログに「今後表示しない」を足すか（#5）<br>
+<span class="rec">推奨：今回は足さない</span>（#4 で毎回出る原因が消えるため。必要なら別 Issue）</div>
+
+<h3>進める順番（Q1=A の続き）</h3>
+<ol>
+<li>原因の対策：#4（置き場所）＋ #1 の警告の文</li>
+<li>保険：#1（Hook の受信状況・警告）、#2（transcript のリアルタイム取り込み）、「閉じた（導入前）」の呼び方</li>
+<li>要件定義（8・11 章）を更新 → 実装計画（md と HTML の対）→ 別セッションのレビュー → 実装。<b>今のブランチは Issue #22 の作業中なので、main から別のブランチを切る</b></li>
+</ol>
 
 <h2>6. リスクと対策</h2>
 <table>

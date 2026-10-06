@@ -6,6 +6,10 @@
     <SolidColorBrush x:Key="StateOkBrush" Color="#1A7F37" />
     <SolidColorBrush x:Key="StateWarnBrush" Color="#9A6700" />
     <SolidColorBrush x:Key="StateErrorBrush" Color="#CF222E" />
+    <!-- 「Hook が記録していません」の警告の帯（Issue #17） -->
+    <SolidColorBrush x:Key="HookWarningBackgroundBrush" Color="#FFF4C2" />
+    <SolidColorBrush x:Key="HookWarningBorderBrush" Color="#D4A72C" />
+    <SolidColorBrush x:Key="HookWarningTextBrush" Color="#3B2F00" />
     <!-- カードの概要・メモ -->
     <SolidColorBrush x:Key="SummaryTextBrush" Color="#0E7A5A" />
     <SolidColorBrush x:Key="MemoBackgroundBrush" Color="#FFF1B8" />

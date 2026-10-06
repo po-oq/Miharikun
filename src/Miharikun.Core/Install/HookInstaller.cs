@@ -50,28 +50,48 @@ public sealed class HookInstaller
     private readonly string _installedExePath;
     private readonly string? _bundledExePath;
     private readonly Func<DateTimeOffset> _clock;
+    private readonly bool _createExeDirectory;
 
-    public HookInstaller(string hooksJsonPath, string installedExePath, string? bundledExePath, Func<DateTimeOffset>? clock = null)
+    /// <param name="createExeDirectory">導入先のフォルダが無いときに作るか。設定した置き場所（hookDir）は作らない（要件 8.2）。</param>
+    public HookInstaller(string hooksJsonPath, string installedExePath, string? bundledExePath, Func<DateTimeOffset>? clock = null,
+        bool createExeDirectory = true)
     {
         _hooksJsonPath = hooksJsonPath;
         _installedExePath = installedExePath;
         _bundledExePath = bundledExePath;
         _clock = clock ?? (() => DateTimeOffset.Now);
+        _createExeDirectory = createExeDirectory;
     }
 
     /// <summary>
     /// 既定の場所：hooks.json は %USERPROFILE%\.cursor\（MIHARIKUN_CURSOR_DIR で上書き可）、
-    /// 導入先は %LOCALAPPDATA%\Miharikun\bin\、同梱の Hook exe は App と同じフォルダ。
+    /// 導入先は <paramref name="hookDir"/>（settings.json の hookDir。null なら %LOCALAPPDATA%\Miharikun\bin\）、
+    /// 同梱の Hook exe は App と同じフォルダ。設定した置き場所はフォルダを作らない。
     /// </summary>
-    public static HookInstaller CreateDefault(AppPaths paths, string appDirectory)
+    public static HookInstaller CreateDefault(AppPaths paths, string appDirectory, string? hookDir = null)
     {
         var cursorDir = ResolveCursorDir();
 
         var bundled = Path.Combine(appDirectory, HookExeName);
         return new HookInstaller(
             Path.Combine(cursorDir, "hooks.json"),
-            Path.Combine(paths.Root, "bin", HookExeName),
-            File.Exists(bundled) ? bundled : null);
+            Path.Combine(hookDir ?? DefaultHookDir(paths), HookExeName),
+            File.Exists(bundled) ? bundled : null,
+            createExeDirectory: hookDir is null);
+    }
+
+    /// <summary>Hook exe の既定の置き場所（%LOCALAPPDATA%\Miharikun\bin）。</summary>
+    public static string DefaultHookDir(AppPaths paths) => Path.Combine(paths.Root, "bin");
+
+    /// <summary>
+    /// settings.json の hookDir に保存する値。正規化（<c>GetFullPath</c> ＋末尾の区切りを落とす）して、
+    /// 既定の場所と同じ（大文字小文字は無視）なら null（キーを消す）。起動時の受け入れと設定画面の保存で共通。
+    /// </summary>
+    public static string? ToSettingValue(string dir, AppPaths paths)
+    {
+        var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir));
+        var defaultDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(DefaultHookDir(paths)));
+        return normalized.Equals(defaultDir, StringComparison.OrdinalIgnoreCase) ? null : normalized;
     }
 
     /// <summary>Cursor の設定フォルダ。既定は %USERPROFILE%.cursor（MIHARIKUN_CURSOR_DIR で上書き可）。</summary>
@@ -100,6 +120,115 @@ public sealed class HookInstaller
     public static bool IsOurs(string? command) =>
         command is not null && command.Contains(HookExeName, StringComparison.OrdinalIgnoreCase);
 
+    // ---------------------------------------------------------------- 登録の読み取り（Issue #17。要件 8.2）
+
+    /// <summary>
+    /// hooks.json のコマンドから Hook exe のフルパスを取り出す（<see cref="BuildCommand"/> の逆）。
+    /// 先頭が引用符なら次の引用符まで、そうでなければ最初の「 --agent」の手前まで（空白入りのパスを引用符なしで手書きしても拾う）。
+    /// 完全なパスでない（相対パス）・使えない文字・末尾が Hook exe の名前でないときは null。
+    /// </summary>
+    public static string? TryParseExePath(string? command) => TrySplit(command, out var path, out _) ? path : null;
+
+    /// <summary>
+    /// コマンドが <paramref name="exePath"/> を指し、パスの後ろに <c>--agent cursor</c> が続けて並ぶか。
+    /// 区切り（/ と \）・引用符・大文字小文字・空白の数の違いは問わない（Hook は引数が無いと何も記録しない）。
+    /// </summary>
+    public static bool SameRegistration(string? command, string exePath)
+    {
+        if (!TrySplit(command, out var path, out var args))
+            return false;
+        if (!path.Equals(NormalizeFull(exePath), StringComparison.OrdinalIgnoreCase))
+            return false;
+        return HasAgentCursor(args);
+    }
+
+    private static bool HasAgentCursor(string args)
+    {
+        var tokens = args.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i + 1 < tokens.Length; i++)
+        {
+            if (tokens[i] == "--agent" && tokens[i + 1] == "cursor")
+                return true;
+        }
+        return false;
+    }
+
+    private static string? NormalizeFullOrNull(string path)
+    {
+        try { return NormalizeFull(path); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
+    }
+
+    private static string NormalizeFull(string path) => Path.GetFullPath(path.Replace('/', Path.DirectorySeparatorChar));
+
+    private static bool TrySplit(string? command, out string path, out string args)
+    {
+        path = args = "";
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+
+        var text = command.Trim();
+        string rawPath;
+        if (text[0] == '"')
+        {
+            var close = text.IndexOf('"', 1);
+            if (close < 0)
+                return false;
+            rawPath = text[1..close];
+            args = text[(close + 1)..];
+        }
+        else
+        {
+            var agent = text.IndexOf(" --agent", StringComparison.Ordinal);
+            rawPath = agent < 0 ? text : text[..agent];
+            args = agent < 0 ? "" : text[agent..];
+        }
+
+        rawPath = rawPath.Trim().Replace('/', Path.DirectorySeparatorChar);
+        if (rawPath.Length == 0 || rawPath.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || !Path.IsPathFullyQualified(rawPath))
+            return false;
+        if (NormalizeFullOrNull(rawPath) is not { } full
+            || !Path.GetFileName(full).Equals(HookExeName, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        path = full;
+        return true;
+    }
+
+    /// <summary>
+    /// hooks.json の Miharikun の登録が、登録する全イベントで同じ 1 つの別の場所を指し、その exe が実在するときの exe のフルパス
+    /// （要件 8.2 の受け入れ。条件は計画 7.1 の表）。設定の場所と同じ・条件に合わない（引数なし・場所がばらばら・exe なし・一部だけ）ときは null。
+    /// </summary>
+    public string? FindRegisteredElsewhere()
+    {
+        if (!TryLoad(out var root, out _))
+            return null;
+
+        string? found = null;
+        foreach (var evt in Events)
+        {
+            if (FindArray(root, evt) is not { } array)
+                return null;
+            var mine = array.OfType<JsonObject>().Where(IsOurEntry).ToList();
+            if (mine.Count == 0)
+                return null;
+
+            foreach (var entry in mine)
+            {
+                var command = (string?)entry["command"];
+                if (!TrySplit(command, out var path, out var args) || !HasAgentCursor(args))
+                    return null;
+                if (found is not null && !found.Equals(path, StringComparison.OrdinalIgnoreCase))
+                    return null;
+                found = path;
+            }
+        }
+
+        if (found is null || found.Equals(NormalizeFullOrNull(_installedExePath), StringComparison.OrdinalIgnoreCase))
+            return null;
+        return File.Exists(found) ? found : null;
+    }
+
     // ---------------------------------------------------------------- 状態
 
     public HookInstallState GetState()
@@ -107,7 +236,6 @@ public sealed class HookInstaller
         if (!TryLoad(out var root, out _))
             return HookInstallState.Unreadable;
 
-        var expected = BuildCommand(_installedExePath);
         int exact = 0, ours = 0;
         foreach (var evt in Events)
         {
@@ -115,7 +243,7 @@ public sealed class HookInstaller
                 continue;
             var mine = array.OfType<JsonObject>().Where(IsOurEntry).ToList();
             if (mine.Count > 0) ours++;
-            if (mine.Any(e => (string?)e["command"] == expected)) exact++;
+            if (mine.Any(e => SameRegistration((string?)e["command"], _installedExePath))) exact++;
         }
 
         if (ours == 0) return HookInstallState.NotInstalled;
@@ -137,6 +265,8 @@ public sealed class HookInstaller
     {
         if (_bundledExePath is null)
             return new(false, $"{HookExeName} が見つかりません（Miharikun.exe と同じフォルダに置いてください）。");
+        if (!_createExeDirectory && Path.GetDirectoryName(_installedExePath) is { } exeDir && !Directory.Exists(exeDir))
+            return new(false, $"Hook の置き場所 {exeDir} が見つかりません（⚙ → 設定… で直してください）。");
         if (!TryLoad(out var root, out var error))
             return new(false, $"hooks.json を読めないため、何も変更しませんでした。\n{error}");
 
@@ -332,7 +462,8 @@ public sealed class HookInstaller
         if (_bundledExePath is null || (File.Exists(_installedExePath) && SameContent(_bundledExePath, _installedExePath)))
             return false;
 
-        Directory.CreateDirectory(Path.GetDirectoryName(_installedExePath)!);
+        if (_createExeDirectory)
+            Directory.CreateDirectory(Path.GetDirectoryName(_installedExePath)!);
         // Cursor が hook を実行している最中は上書きできないことがあるので、少し待ってやり直す。
         for (var attempt = 1; ; attempt++)
         {

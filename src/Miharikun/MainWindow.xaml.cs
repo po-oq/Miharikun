@@ -143,14 +143,18 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    /// <summary>アプリ全体の設定（12.9）。今は「停止とみなす時間」だけ。保存するとすぐ効く。</summary>
+    /// <summary>アプリ全体の設定（12.9）：「停止とみなす時間」と「Hook exe の置き場所」。保存するとすぐ効く。置き場所が変わったら、導入し直すかを聞く（8.2）。</summary>
     private void OnSettingsClick(object sender, System.Windows.RoutedEventArgs e)
     {
-        var dialog = new Views.AppSettingsDialog(_viewModel.RunningTimeoutMinutes) { Owner = this };
+        var before = _hookSetup.CurrentHookDir;
+        var dialog = new Views.AppSettingsDialog(_viewModel.RunningTimeoutMinutes, before, _hookSetup.DefaultHookDir) { Owner = this };
         if (dialog.ShowDialog() != true)
             return;
         _settings.SaveRunningTimeoutMinutes(dialog.RunningTimeoutMinutes);
         _viewModel.SetRunningTimeout(dialog.RunningTimeoutMinutes);
+
+        if (!string.Equals(dialog.HookDir, System.IO.Path.TrimEndingDirectorySeparator(before), StringComparison.OrdinalIgnoreCase))
+            _hookSetup.ChangePlacement(this, dialog.HookDir);
     }
 
     private void OnDocumentSettingsClick(object sender, System.Windows.RoutedEventArgs e)
