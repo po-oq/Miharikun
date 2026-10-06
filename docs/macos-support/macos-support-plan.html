@@ -263,7 +263,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 <ul>
 <li><code>MainViewModel.VisibleCards</code>：<code>Cards</code> を <code>Visible(c)</code> で絞り、<code>LastActivityAt</code> の新しい順（同じ時刻は <code>Cards</code> に入った順。LINQ の <code>OrderByDescending</code> は安定。今の <code>ListCollectionView</code> の並べ替えは安定でないので、同じ時刻のときだけ並びが変わることがある：実害は無い）に並べたものを、<code>pinned = Selected</code> で <code>SyncTo</code> する。今 <code>CardsView.Refresh()</code> を呼んでいる箇所（11 か所）で同じように呼ぶ。
 </li>
-<li><b>保険</b>：<code>SyncTo</code> の間（<code>_syncingCards</code>）に <code>ListBox</code> から来た <code>Selected = null</code> は無視し、終わったら選び直す（<code>OnPropertyChanged(nameof(Selected))</code>）。<code>DocumentsViewModel</code> の <code>_syncing</code> と同じ考え方。<code>[ObservableProperty]</code> のままでは null を止められないので、<code>Selected</code> は手書きのプロパティにする。
+<li><b>保険</b>：<code>SyncTo</code> の間（<code>_syncingCards</code>）に <code>ListBox</code> から来た <code>Selected = null</code> はいったん無視し、終わったら、選んでいたカードが <code>VisibleCards</code> に<b>残っていれば</b>選び直す（<code>OnPropertyChanged(nameof(Selected))</code>）。<b>残っていなければ</b>（隠れた）<code>Selected = null</code> にする（今と同じく選択が外れる。要件 12.2。ここで選び直すと、隠れたカードが選ばれたままになってしまう）。<code>DocumentsViewModel</code> の <code>_syncing</code> と同じ考え方。<code>[ObservableProperty]</code> のままでは null を止められないので、<code>Selected</code> は手書きのプロパティにする。
 </li>
 <li><b>確かめ方</b>：<code>ViewListTests</code>（28-1。表の行ごと。<code>pinned</code> に <code>Move</code>・<code>Remove</code> が出ないこと）と、Avalonia の <code>ListBox</code> を画面なしで動かす <code>tests/Miharikun.UiTests</code>（30-3。Avalonia.Headless。並べ替え・追加・絞り込みで <code>SelectedItem</code> が保たれる／隠れたら null）。WPF（Phase 28）は <code>Move</code> でも選択を保つので、<code>pinned</code> があっても無くても今と同じ動きになる（28 の品質ゲートで確かめる）。
 </li>
@@ -667,7 +667,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 </ol>
 <p>計画のレビュー（<code>macos-support-review.html</code>）の決定（2026-10-06。すべて推奨どおり）：</p>
 <ol>
-<li>Q1：並べ替えても選択を外さない。<code>ViewList.SyncTo</code> は選択中の要素を動かさず、周りを動かして並べる。VM の保険（同期中に来た null は無視して選び直す）も入れる。Avalonia.Headless のテストで確かめる（7.3。要件 12.2）。
+<li>Q1：並べ替えても選択を外さない。<code>ViewList.SyncTo</code> は選択中の要素を動かさず、周りを動かして並べる。VM の保険（同期中に来た null はいったん無視し、選んでいたカードが一覧に残っていれば選び直す。隠れていれば外す）も入れる。Avalonia.Headless のテストで確かめる（7.3。要件 12.2）。
 </li>
 <li>Q2：OS のサインアウト・ログアウト・シャットダウンでも、未保存のメモの確認を出す（Avalonia の既定のまま。OS の終了は止まる。7.6。要件 12.10）。
 </li>

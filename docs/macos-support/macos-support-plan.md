@@ -243,7 +243,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 | `pinned` が `desired` に無い（隠れた） | `pinned` を `Remove`（今と同じく選択が外れる） |
 
 - `MainViewModel.VisibleCards`：`Cards` を `Visible(c)` で絞り、`LastActivityAt` の新しい順（同じ時刻は `Cards` に入った順。LINQ の `OrderByDescending` は安定。今の `ListCollectionView` の並べ替えは安定でないので、同じ時刻のときだけ並びが変わることがある：実害は無い）に並べたものを、`pinned = Selected` で `SyncTo` する。今 `CardsView.Refresh()` を呼んでいる箇所（11 か所）で同じように呼ぶ。
-- **保険**：`SyncTo` の間（`_syncingCards`）に `ListBox` から来た `Selected = null` は無視し、終わったら選び直す（`OnPropertyChanged(nameof(Selected))`）。`DocumentsViewModel` の `_syncing` と同じ考え方。`[ObservableProperty]` のままでは null を止められないので、`Selected` は手書きのプロパティにする。
+- **保険**：`SyncTo` の間（`_syncingCards`）に `ListBox` から来た `Selected = null` はいったん無視し、終わったら、選んでいたカードが `VisibleCards` に**残っていれば**選び直す（`OnPropertyChanged(nameof(Selected))`）。**残っていなければ**（隠れた）`Selected = null` にする（今と同じく選択が外れる。要件 12.2。ここで選び直すと、隠れたカードが選ばれたままになってしまう）。`DocumentsViewModel` の `_syncing` と同じ考え方。`[ObservableProperty]` のままでは null を止められないので、`Selected` は手書きのプロパティにする。
 - **確かめ方**：`ViewListTests`（28-1。表の行ごと。`pinned` に `Move`・`Remove` が出ないこと）と、Avalonia の `ListBox` を画面なしで動かす `tests/Miharikun.UiTests`（30-3。Avalonia.Headless。並べ替え・追加・絞り込みで `SelectedItem` が保たれる／隠れたら null）。WPF（Phase 28）は `Move` でも選択を保つので、`pinned` があっても無くても今と同じ動きになる（28 の品質ゲートで確かめる）。
 - **選択中のカードが隠れたとき**：`VisibleCards` から消える → `ListBox` が選択を外し、`Selected = null`（入力途中のメモを保存・タイムラインを空・検索語を消す・拡大を戻す・詳細を空：`MainViewModel.OnSelectedChanged`）。今の WPF も同じ（`ICollectionView.Refresh()` の Reset で、WPF の `ListBox` は無くなった選択を外す。WPF のソースで確認）。最近の入力・閉じたセッションのクリック（`SelectSession`）は、隠れていればフィルタを外す（今のまま）。
 - **28-2 の前の記録**（WPF 版・隔離環境。結果を「変えない」と「変わってよい（良い方向）」に分けて書き、品質ゲートで照らす）：
@@ -480,7 +480,7 @@ Miharikun-v{版}-osx-arm64.zip
 7. Q7：見た目のテーマは、**FluentTheme と SukiUI の 2 つで試作し、見比べて利用者が決める**（2026-10-06。30-2。配置・項目は変えない）。
 
 計画のレビュー（`macos-support-review.html`）の決定（2026-10-06。すべて推奨どおり）：
-1. Q1：並べ替えても選択を外さない。`ViewList.SyncTo` は選択中の要素を動かさず、周りを動かして並べる。VM の保険（同期中に来た null は無視して選び直す）も入れる。Avalonia.Headless のテストで確かめる（7.3。要件 12.2）。
+1. Q1：並べ替えても選択を外さない。`ViewList.SyncTo` は選択中の要素を動かさず、周りを動かして並べる。VM の保険（同期中に来た null はいったん無視し、選んでいたカードが一覧に残っていれば選び直す。隠れていれば外す）も入れる。Avalonia.Headless のテストで確かめる（7.3。要件 12.2）。
 2. Q2：OS のサインアウト・ログアウト・シャットダウンでも、未保存のメモの確認を出す（Avalonia の既定のまま。OS の終了は止まる。7.6。要件 12.10）。
 3. Q3：タブの中身は載せたまま `IsVisible` で切り替え、WebView を作り直さない（7.17。要件 12.7）。
 4. Q4：WKWebView で読めなければ、`TryGetPlatformHandle()` と `loadFileURL:allowingReadAccessToURL:` で読める範囲を指定して開く。独自のスキームは使わない（7.11。要件 12.7）。
