@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using Miharikun.Core.Install;
 using Miharikun.Core.Projects;
 
 namespace Miharikun.Core.Agents;
@@ -11,12 +12,22 @@ public sealed record ImportedSession(SessionKey Key, string TranscriptPath, IRea
 /// Cursor が保存している会話ログ <c>%USERPROFILE%\.cursor\projects\&lt;slug&gt;\agent-transcripts\</c> から、
 /// hook を入れる前のセッションを共通イベントとして取り込む。入力と返事の本文だけを取り出す（ツール呼び出しは対象外）。
 /// transcript には行ごとの時刻がないので、すべてファイルの更新日時にする。
+/// <paramref name="registration"/> があるとき、transcript の最後の更新が Hook の登録より後なら、そのイベントを
+/// <c>HookMissing</c>（Hook が記録していない）にする（Issue #17。null なら常に false）。
 /// </summary>
-public class CursorTranscriptImporter(string cursorDir, Action<string>? log = null)
+public class CursorTranscriptImporter(string cursorDir, Action<string>? log = null, HookRegistration? registration = null)
 {
     private const string AgentId = "cursor";
 
     private readonly string _cursorDir = cursorDir;
+
+    /// <summary>Hook の登録の時刻（hooks.json の更新日時が変わるまで使い回す）。</summary>
+    private DateTimeOffset? _since;
+    private DateTimeOffset? _stamp;
+    private bool _stampKnown;
+
+    /// <summary>読み済みの transcript の（長さ, 更新日時）。conversation_id ごと。</summary>
+    private readonly Dictionary<string, (long Length, DateTime LastWriteUtc)> _seen = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// プロジェクトのパスから、projects 配下のフォルダ名（slug）に当たる形を作る。実機では
@@ -42,22 +53,43 @@ public class CursorTranscriptImporter(string cursorDir, Action<string>? log = nu
         return sb.ToString().TrimEnd('-');
     }
 
-    /// <param name="skip">取り込まない conversation_id（hook のイベントがあるもの）なら true を返す。</param>
+    /// <summary>
+    /// 前回の Scan から変わった transcript だけを読み、そのセッションを丸ごと返す（初回は全部。要件 11章・計画 7.3）。
+    /// 長さと更新日時をファイルごとに覚えて比べる。覚える値は開く前に取り、読み終わったあとにもう一度取って違えば
+    /// （読んでいる間に追記された）覚えない＝次の Scan でまた読む。読めなかったときも覚えない。
+    /// </summary>
+    /// <param name="skip">取り込まない conversation_id（hook のイベントがあるもの）なら true を返す。覚えた値も消す（hook のファイルが後で消えたとき、取り込みに戻れるように）。</param>
     public virtual IReadOnlyList<ImportedSession> Scan(string projectFolder, Func<string, bool>? skip)
     {
         var result = new List<ImportedSession>();
-        var wanted = SlugFor(projectFolder);
+        RefreshRegistration();
 
-        foreach (var transcriptsDir in FindTranscriptDirs(wanted))
+        foreach (var transcriptsDir in TranscriptDirs(projectFolder))
         {
             foreach (var (id, path) in ListTranscripts(transcriptsDir))
             {
                 if (skip?.Invoke(id) == true)
+                {
+                    _seen.Remove(id);
                     continue;
+                }
 
                 try
                 {
-                    var events = ReadEvents(new SessionKey(AgentId, id), path);
+                    var before = new FileInfo(path);
+                    if (!before.Exists)
+                        continue;
+                    var stamp = (before.Length, before.LastWriteTimeUtc);
+                    if (_seen.TryGetValue(id, out var known) && known == stamp)
+                        continue;
+
+                    var hookMissing = _since is { } since && before.LastWriteTimeUtc > since.UtcDateTime;
+                    var events = ReadEvents(new SessionKey(AgentId, id), path, new DateTimeOffset(before.LastWriteTime), hookMissing);
+                    OnTranscriptRead(path);
+
+                    var after = new FileInfo(path);
+                    if (after.Exists && (after.Length, after.LastWriteTimeUtc) == stamp)
+                        _seen[id] = stamp;
                     if (events.Count > 0)
                         result.Add(new ImportedSession(new SessionKey(AgentId, id), path, events));
                 }
@@ -69,6 +101,34 @@ public class CursorTranscriptImporter(string cursorDir, Action<string>? log = nu
         }
         return result;
     }
+
+    /// <summary>
+    /// hooks.json の更新日時（stat だけ）が前回と違えば、登録の時刻を取り直して、覚えた値を全部消す
+    /// （＝全 transcript を読み直して、Hook なしかどうかを判定し直す）。導入・削除・手での書き換えがすぐ反映される。
+    /// 変わらない回は hooks.json を読まない。最初の Scan でも取る。
+    /// </summary>
+    private void RefreshRegistration()
+    {
+        if (registration is null)
+            return;
+
+        var stamp = registration.Stamp();
+        if (_stampKnown && stamp == _stamp)
+            return;
+
+        _stamp = stamp;
+        _stampKnown = true;
+        _since = registration.Since();
+        _seen.Clear();
+    }
+
+    /// <summary>transcript を読み終えた直後（もう一度大きさを見る前）に呼ばれる。テストで「読んでいる最中の追記」を作るための差し込み口。</summary>
+    protected virtual void OnTranscriptRead(string path)
+    {
+    }
+
+    /// <summary>プロジェクトに当たる <c>agent-transcripts\</c> フォルダ（実在するものだけ）。監視先にも使う。</summary>
+    public IReadOnlyList<string> TranscriptDirs(string projectFolder) => [.. FindTranscriptDirs(SlugFor(projectFolder))];
 
     private IEnumerable<string> FindTranscriptDirs(string wantedSlug)
     {
@@ -118,12 +178,53 @@ public class CursorTranscriptImporter(string cursorDir, Action<string>? log = nu
         return found.Select(kv => (kv.Key, kv.Value));
     }
 
-    private List<AgentEvent> ReadEvents(SessionKey key, string path)
+    /// <summary>
+    /// Cursor が書き込み中でも開けるよう共有して読む。最後の行は、改行で終わる、または JSON として最後まで読めるなら使い、
+    /// どちらでもない（書きかけ）なら飛ばす（次に長さが変わったときに読み直す）。
+    /// </summary>
+    private static IEnumerable<string> ReadLines(string path)
     {
-        var at = new DateTimeOffset(File.GetLastWriteTime(path));
+        string text;
+        using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        using (var reader = new StreamReader(stream, Encoding.UTF8))
+            text = reader.ReadToEnd();
+
+        var start = 0;
+        while (start < text.Length)
+        {
+            var end = text.IndexOf('\n', start);
+            if (end < 0)
+            {
+                var last = text[start..];
+                if (IsCompleteJson(last))
+                    yield return last;
+                yield break;   // 書きかけの最後の行は使わない
+            }
+            yield return text[start..end].TrimEnd('\r');
+            start = end + 1;
+        }
+    }
+
+    private static bool IsCompleteJson(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+        try
+        {
+            JsonNode.Parse(line);
+            return true;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
+    private List<AgentEvent> ReadEvents(SessionKey key, string path, DateTimeOffset at, bool hookMissing)
+    {
         var events = new List<AgentEvent>();
 
-        foreach (var line in File.ReadLines(path, Encoding.UTF8))
+        foreach (var line in ReadLines(path))
         {
             if (string.IsNullOrWhiteSpace(line))
                 continue;
@@ -160,7 +261,7 @@ public class CursorTranscriptImporter(string cursorDir, Action<string>? log = nu
             }
 
             events.Add(new AgentEvent(key, events.Count + 1, at, kind.Value, Text: text.Trim(),
-                TranscriptPath: path, Imported: true));
+                TranscriptPath: path, Imported: true, HookMissing: hookMissing));
         }
         return events;
     }

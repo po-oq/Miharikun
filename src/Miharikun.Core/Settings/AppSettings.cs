@@ -51,6 +51,43 @@ public sealed class AppSettingsStore(AppPaths paths, Action<string>? log = null)
 
     public void SaveRunningTimeoutMinutes(int minutes) => Save("runningTimeoutMinutes", minutes);
 
+    /// <summary>
+    /// Cursor の Hook exe を置くフォルダ（要件 6章・8.2。Issue #17）。欠けている・空のときは null（既定の場所）。
+    /// 文字列でない・完全なパスでない・使えない文字を含むときも null で、ログに 1 行残す。返す値は正規化済み
+    /// （<c>GetFullPath</c> ＋末尾の区切りを落とす）。
+    /// </summary>
+    public string? LoadHookDir()
+    {
+        if (ReadRoot() is not { } root || root["hookDir"] is not { } node)
+            return null;
+
+        if (node is not JsonValue v || !v.TryGetValue<string>(out var raw))
+        {
+            log?.Invoke($"{FilePath} の hookDir が文字列ではない（既定の置き場所を使う）");
+            return null;
+        }
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        try
+        {
+            if (raw.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || !Path.IsPathFullyQualified(raw))
+            {
+                log?.Invoke($"{FilePath} の hookDir が完全なパスではない（既定の置き場所を使う）");
+                return null;
+            }
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(raw));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            log?.Invoke($"{FilePath} の hookDir を読めない（既定の置き場所を使う）: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>置き場所を保存する。null は既定に戻す（キーを消す。ファイルもキーも無ければ何も書かない）。読めない・書けないときは false。</summary>
+    public bool SaveHookDir(string? dir) => Save("hookDir", dir is null ? null : JsonValue.Create(dir));
+
     private JsonObject? ReadRoot() => ReadRoot(out _);
 
     /// <summary>ファイルがない・壊れている・オブジェクトでない・読めないときは null（壊れている・読めないときはログに残す）。</summary>
@@ -84,25 +121,32 @@ public sealed class AppSettingsStore(AppPaths paths, Action<string>? log = null)
         return null;
     }
 
-    /// <summary>全体を読んで、1 つのキーだけを書き換えて保存する。壊れているファイルは .bad に退避してから、新しく書く。</summary>
-    private void Save(string key, JsonNode value)
+    /// <summary>全体を読んで、1 つのキーだけを書き換えて（value が null ならキーを消して）保存する。壊れているファイルは .bad に退避してから、新しく書く。</summary>
+    private bool Save(string key, JsonNode? value)
     {
         try
         {
             var root = ReadRoot(out var state);
             if (state == ReadState.Unreadable)
-                return;   // 一時的に読めないだけかもしれない。上書きして他のキーを消さない（読めない理由はログに出ている）
+                return false;   // 一時的に読めないだけかもしれない。上書きして他のキーを消さない（読めない理由はログに出ている）
+            if (value is null && (root is null || !root.ContainsKey(key)))
+                return true;    // 消すキーが無い。何も書かない（壊れたファイルも退避しない）
             if (state == ReadState.Broken)
             {
                 try { File.Copy(FilePath, FilePath + ".bad", overwrite: true); } catch (IOException) { }
             }
             root ??= new JsonObject();
-            root[key] = value;
+            if (value is null)
+                root.Remove(key);
+            else
+                root[key] = value;
             AtomicFile.WriteAllText(FilePath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             log?.Invoke($"{FilePath} に書けない: {ex.Message}");
+            return false;
         }
     }
 }

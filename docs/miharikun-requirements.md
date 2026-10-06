@@ -230,7 +230,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 | `projects\{slug}-{hash8}.memo.md` | プロジェクトメモ（12.10）。中身はただの Markdown（UTF-8・BOM なし）。名前の `{slug}-{hash8}` はプロジェクト設定と同じ。無ければ「メモなし」 | App |
 | `webview2\` | WebView2 の作業フォルダ（キャッシュ・Cookie 等。消してよい。自動掃除しない） | WebView2 |
 | `preview\` | md を HTML にした一時ファイル（1 md＝1 ファイル。起動時に 1 日より古いものを削除） | App |
-| `settings.json` | アプリ全体の設定（テーマ、実行中の停止判定の時間。将来はテストコマンドのパターン等） | App |
+| `settings.json` | アプリ全体の設定（テーマ、実行中の停止判定の時間、Cursor の Hook exe の置き場所。将来はテストコマンドのパターン等） | App |
 | `logs\hook-error.log` | Hook の例外ログ | Hook |
 
 ### イベント行スキーマ（Hook が書く）
@@ -274,8 +274,9 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 
 ### settings.json
 ```json
-{ "theme": "system", "runningTimeoutMinutes": 10 }
+{ "theme": "system", "runningTimeoutMinutes": 10, "hookDir": "C:\\dev\\miharikun-hook" }
 ```
+- `hookDir`：Cursor の Hook exe を置くフォルダ（8 章。Issue #17）。欠けている・空・文字列でないときは既定の `%LOCALAPPDATA%\Miharikun\bin`。⚙ メニューの「設定…」で変える（12.9）。起動時に hooks.json の登録から受け入れたときも、ここに書く
 - `theme`：`"system"`（OS のライト/ダークに追従。既定）/ `"light"` / `"dark"`。ファイルなし・壊れている・知らない値は `system`
 - `runningTimeoutMinutes`：「実行中」のまま新しい記録が来ない時間（分）。超えると「停止」と表示する（10.1）。既定 `10`。`0` 以下で無効。整数以外・壊れている・欠けているときは既定値。⚙ メニューの「設定…」の画面で変える（12.9）。保存するとすぐ効く
 - 書き込みは、**ファイル全体を読み、変えるキーだけを書き換えて保存する**（知らないキーも残す）。テーマ（⚙ メニュー）と設定画面が同じファイルに書くため、片方の保存で他方の値を消さない
@@ -317,12 +318,18 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 
 - 起動時に `%USERPROFILE%\.cursor\hooks.json` を確認し、Miharikun の hook が未登録なら導入ダイアログを出す
 - 導入処理：
-  1. 同梱の `Miharikun.Hook.exe` を `%LOCALAPPDATA%\Miharikun\bin\` にコピー
+  1. 同梱の `Miharikun.Hook.exe` を **Hook の置き場所**（既定 `%LOCALAPPDATA%\Miharikun\bin\`。`settings.json` の `hookDir` で変更可）にコピー
   2. 既存 `hooks.json` を `hooks.json.bak-{日時}` にバックアップ
   3. 既存設定を**壊さずにマージ**（各イベントの配列に自分のエントリを追加。重複は追加しない）
   4. `version` がなければ `1` を設定
 - コマンドはフルパス（`/` 区切り）。スペースを含む場合の扱いは Step 0 で確定
 - 「hook を削除」メニューも用意（自分のエントリだけ取り除く）
+
+### 8.2 Hook の置き場所（Issue #17）
+会社の PC などでは、`%LOCALAPPDATA%` 配下の exe の実行が止められることがある（実機で確認。`C:\dev` のようなフォルダなら動いた）。Hook exe が起動できないと何も記録されず、`hook-error.log` も残らない。
+- **置き場所を設定にする**：⚙ →「設定…」に「Cursor の Hook exe の置き場所」（フォルダ）。既定は `%LOCALAPPDATA%\Miharikun\bin`。導入（コピーと hooks.json への登録）も、起動時の確認も、この場所を使う。変えて保存したら、その場所に導入し直すかを聞く（「はい」で導入。古い場所の exe は消さない）
+- **既存の登録を受け入れる**：起動時の確認で、hooks.json の Miharikun の登録が、**登録する全イベントで同じ 1 つの別の場所**を指し、その exe が実在するときは、ダイアログを出さずにその場所を置き場所の設定として採用する（`app.log` に 1 行）。そのうえで中身が同梱と違えば、従来どおり「更新」を提案し、更新は**その場所に**コピーする。場所がばらばら・exe が無いときは、従来どおり「登録し直します」を提案する
+- 導入ダイアログの「今後表示しない」は付けない（Issue #17 の Q5）
 
 ## 9. App：起動とプロジェクト判定
 
@@ -333,6 +340,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 
 ### ファイル監視
 - `FileSystemWatcher` で `events\` を監視（Cursor。Claude Code は 9.1）、300ms デバウンス。取りこぼし対策で 3 秒ごとのポーリングも併用
+- Cursor は、対象プロジェクトの `agent-transcripts\` も監視する（サブフォルダ込み。読むだけで、無ければ作らない。11 章。Issue #17）
 - ファイルごとに読み取り済みオフセットを保持し、追記分だけ読む（末尾の不完全な行は次回に回す）
 - 初回起動時は全ファイルを読み、`workspace_roots` が一致するものだけをメモリに保持
 
@@ -356,7 +364,8 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 | Aborted | 🟡 停止 | 最後の `stop.status == "aborted"` |
 | Error | 🔴 エラー | 最後の `stop.status == "error"` |
 | Closed | ⚪ 閉じた | 最後のイベントが `sessionEnd`（reason 問わず） |
-| Imported | ⚪ 閉じた（導入前） | transcript からの取り込み（11章） |
+| Imported | ⚪ 閉じた（導入前） | transcript からの取り込み（11章）。transcript の最後の更新が、Hook の登録より前 |
+| NoHook | ⚪ Hook なし | transcript からの取り込み（11章）で、transcript の最後の更新が Hook の登録より後（＝Hook が記録していない。Issue #17）。状態の件数（実行中・閉じた など）には数えない |
 
 - `sessionEnd` の後に `beforeSubmitPrompt` 等が来たら（再開）その時点の状態に戻す
 - 呼び名：自動判定の Aborted は「**停止**」（ユーザーが Stop した）。ユーザーが設定するステータスの「中断」（やりかけで置いてある）と混ざらないよう分ける。ターンの状態（12.3 の 7）も同じ
@@ -422,6 +431,12 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
   - 取り込むのは入力（`<user_query>` の中身）と、assistant の本文だけ。ツール呼び出しは対象外。時刻はすべてファイルの更新日時なので、タイムラインでは時刻を出さない。
   - 「最近の入力」には出さない（時刻が実際のものではないため）。「最近閉じたセッション」にも出ない（`sessionEnd` がない）。
   - 取り込んだ後に同じ conversation_id の hook イベントが現れたら（導入後に再開したなど）、hook のイベントに切り替える。化けて記録済みの本文の補正は未実装。
+- **Issue #17 で変更（Hook が動かないときの代わり）**：取り込みは起動時の 1 回だけでなく、**transcript が変わるたび**に行う。
+  - `agent-transcripts\` を監視し（9 章）、ポーリングのたびに、長さか更新日時が変わった transcript だけを読み直して、そのセッションを丸ごと置き換える（全件を読み直さない）。Cursor が書き込み中でも読めるように開く。最後の行が書きかけなら、その行は飛ばす（次の変化で読み直す）
+  - hook のイベントがある conversation_id は、これまでどおり取り込まない（現れたら切り替える）
+  - transcript の最後の更新が **Hook の登録より後**なら状態は `NoHook`（「Hook なし」）、前なら `Imported`（「閉じた（導入前）」）。Hook の登録の時刻は、hooks.json に Miharikun の登録があるときの「hooks.json の更新日時」と「`events\cursor\` の一番古いファイルの作成日時」の早いほう。登録が無ければ、すべて `Imported`
+  - `NoHook` のセッションが 1 件以上あれば、一覧の上に警告を出す（12 章の 12.11）
+  - transcript が消えても、取り込んだセッションは消さない（これまでどおり）
 
 ### 11.1 Claude Code の会話ログ（Issue #11）
 Cursor の transcript の取り込み（上）とは違い、Claude Code の会話ログは**主なデータ源**（導入前の過去分ではなく、現在のセッションも読む）。時刻は実際の `timestamp` なので、`Imported` にはしない。
@@ -555,6 +570,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 項目は「実行中のまま動きなし → 停止とみなす時間（分）」（`runningTimeoutMinutes`。0 で無効）だけから始める。今後のアプリ全体の設定（テストコマンドのパターンなど）は、この画面に足す
 - 保存は `settings.json`（6 章。他のキーを残す）。保存するとすぐ効く（再起動は要らない）。数字以外・負の数は、保存できないようにする
 - テーマは、これまでどおり ⚙ メニューの「テーマ」で選ぶ（設定画面には移さない）
+- **Issue #17**：「Cursor の Hook exe の置き場所」（フォルダ。`hookDir`）を足す。入力欄＋「参照…」（フォルダ選択）＋「既定に戻す」。存在しないフォルダは保存できない（作るかは聞かない）。保存して場所が変わったら、その場所に導入し直すかを聞く（8.2）
 
 ### 12.10 メモタブ（プロジェクトメモ）
 プロジェクトのメモ帳。Markdown で書き、ふだんはドキュメントタブの md と同じ見た目で読む。設計イメージ：`docs/memo-tab/memo-tab-design.html`。
@@ -584,6 +600,11 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 
 **そのほか**
 - ダッシュボードの全文検索の対象にはしない（検索はセッションを探すためのもの）
+
+### 12.11 Hook が記録していないときの警告（Issue #17）
+- 状態が `NoHook` のセッションが 1 件以上あるとき、左の一覧の上（状態の件数の上）に黄色の帯を出す：「⚠ Cursor の Hook が記録していません（Hook なし N 件）。この PC で Hook exe の実行が止められている可能性があります。⚙ →「設定…」で置き場所を変えてください。」と、ボタン「hook-error.log を開く」（ファイルが無ければ押せない）
+- 帯は閉じられない（原因が直り、`NoHook` が 0 件になれば消える）
+- `NoHook` のセッションの詳細は、`Imported` と同じく、時刻・ターン・ツール・git の情報を「—」にする。チェック欄の文は「Hook の記録が無いセッションなので不明」
 
 ## 13. 非機能要件
 
@@ -815,6 +836,20 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## [x] Phase 26: メモタブの仕上げ
 - ライト/ダーク、WebView2 未導入時（コードと案内）、配布 zip の `README.txt`・`docs/release.md`、本書の状況の更新
 - 状況：実施済み。配布 zip の `README.txt`（`scripts/publish.ps1`）に「メモ」タブ（書く・保存・保存先・未保存の確認・リンク）を追記、`docs/release.md` の出す前のチェックにメモタブの確認を追加。ライト/ダークは Phase 25 で確認済み。WebView2 未導入の案内はコードのみ（実機では未確認）。`CLAUDE.md` は変えていない（守ることに変化なし）。**Issue #14 の実装は、これで 23〜26 がすべて完了**。リリースはしていない
+
+※ Phase 27〜33 は Issue #22（macOS 対応。別ブランチ）で使う。Issue #17 は 34 から。
+
+## [x] Phase 34: Cursor の Hook の置き場所・Hook なしの判定 Core（Issue #17）
+- `settings.json` の `hookDir`、`HookInstaller` の置き場所の受け取りと「別の場所の登録」の検出、transcript の変わった分だけの取り込み、`NoHook` の判定（8.2・10・11 章）。テスト先行。計画：`docs/issue17/issue17-cursor-hook-plan.md`
+- 状況：実装済み（34-1〜34-4）。`AppSettingsStore.LoadHookDir/SaveHookDir`、`HookInstaller`（`CreateDefault(…, hookDir)`・`DefaultHookDir`・`ToSettingValue`・`TryParseExePath`・`SameRegistration`・`FindRegisteredElsewhere`。設定した置き場所はフォルダを作らない。`GetState` の一致は `SameRegistration`）、`Install/HookRegistration`（`Stamp`・`Since`）、`CursorTranscriptImporter`（変わった分だけ・共有して読む・書きかけの最後の行は飛ばす・`HookMissing`・hooks.json が変わったら全部読み直す）、`CursorSessionSource`（毎回 Scan・同じ失敗のログは 1 回・transcript を監視先に）、`WatchTarget.IncludeSubdirectories`、`SessionState.NoHook`（「Hook なし」）・`SessionText.IsTranscriptOnly`。`App.xaml.cs` で組み立て済み（画面はまだ。NoHook は灰色の丸で出るだけ）。テスト 950 件合格（スキップ 5。Phase 34 の前は 842 件）。Core の `--no-incremental` ビルドは警告 0。起動中の流れ（登録あり・events なし・新しい transcript → Hook なし → 追記で増える → 登録を外すと導入前に戻る）は、`SessionMonitor` を使うテストで確認（画面での確認は Phase 35）。本物の transcript（この PC の 6 件）の末尾は、すべて改行で終わっていた（最後の 1 バイトだけ読んで数えた。中身は見ていない）。コミットはまだしていない
+
+## [x] Phase 35: Cursor の Hook の置き場所・警告の画面（Issue #17）
+- 起動時の受け入れ、設定画面の置き場所、`NoHook` の表示と一覧の上の警告（8.2・12.9・12.11）
+- 状況：実装済み（35-1・35-2）。`HookSetup`（置き場所を受け取って installer を作る。起動時の受け入れ→`CanInstall` の確認→提案の順。受け入れたフォルダを直接渡して作り直す。`ChangePlacement`＝保存→導入し直すかを聞く）、`AppSettingsDialog`（置き場所の欄・「参照…」・「既定に戻す」。分と置き場所をまとめて検査する `Revalidate`）、Core の `HookDirInput`（存在しないフォルダ・完全なパスでない値は保存できない。既定の置き場所はまだ無くてもよい）、`MainViewModel`（`NoHookCount`・`HookWarningText`・`OpenHookErrorLogCommand`）、左ペイン最上段の黄色の帯（ライト/ダークの色を追加）、`SessionDetailViewModel` は `IsTranscriptOnly`。テスト 961 件合格（スキップ 5）。隔離環境（一時フォルダ・UI Automation）で確認：hooks.json を `\` 区切りの別の場所に書き換えて起動 → ダイアログなし・`hookDir` が入り・`app.log` に 1 行・次の起動でも出ない／引数なし → 「登録し直します」／別の場所の exe が同梱と違う → 「更新」→ はいで**その場所に**コピー（`data\bin` は作られない）／settings.json を排他で開いている間 → 受け入れは今回だけ（ダイアログなし・hooks.json は変わらない）／設定画面：存在しないフォルダ・相対パス・空は保存できない（分を打ち直しても保存できないまま）・既定に戻す・保存 → 導入し直す？ → いいえ（hooks.json は変わらず、次の起動で元の場所に戻る）・はい（13 件が新しい場所・exe コピー・バックアップあり・古い exe は残る）／帯：登録あり＋events なし＋新しい transcript 2 件 → 「Hook なし 2 件」・カードは灰色の丸「Hook なし」・hook-error.log は無ければ押せず、できると押せる・Hook の記録を置くと件数が減る・hooks.json から登録を外すと帯が消えて「閉じた（導入前）」に戻る。ライト/ダークの画面を確認。**未確認**：「hook を削除」メニューの実クリック（hooks.json の書き換えで代替）、「参照…」のフォルダ選択ダイアログ、「hook-error.log を開く」の実際の起動、詳細ペインの「—」の目視、本物の Cursor での確認（10.2。利用者の作業）。コミットはまだしていない
+
+## [x] Phase 36: 仕上げ（Issue #17）
+- 配布 zip の `README.txt`・`docs/release.md`、本書の状況の更新
+- 状況：実施済み。配布 zip の `README.txt`（`scripts/publish.ps1`）に、会社の PC などで Hook が動かないとき（⚙ → 設定… → Hook exe の置き場所・hooks.json の登録の自動採用・記録先は変わらない）と、「Hook なし」の帯の意味（導入・置き場所の変更の直後に出たら、まず Cursor を再起動。hook-error.log を開くボタン）を追記。`docs/release.md` の出す前のチェックに、置き場所（受け入れ・設定画面・導入し直し）と「Hook なし」の警告の確認を追加。`CLAUDE.md` は変えていない（守ることに変化なし）。**Issue #17 の実装は、これで 34〜36 がすべて完了**（本物の Cursor での確認は利用者の作業。計画 10.2）。リリースはしていない。コミットはまだしていない
 
 ## 16. テスト方針
 

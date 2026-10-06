@@ -11,13 +11,23 @@ public sealed class CursorSessionSourceFailureTests : IDisposable
     /// <summary>最初の何回かの Scan で例外を投げ、そのあとは何も取り込まない。</summary>
     private sealed class ThrowingImporter(int failTimes, Exception error) : CursorTranscriptImporter("unused")
     {
+        private int _failUntil = failTimes;
+        private Exception _error = error;
+
         public int Calls { get; private set; }
+
+        /// <summary>次の 1 回だけ、この例外を投げる。</summary>
+        public void FailAgain(Exception next)
+        {
+            _error = next;
+            _failUntil = Calls + 1;
+        }
 
         public override IReadOnlyList<ImportedSession> Scan(string projectFolder, Func<string, bool>? skip)
         {
             Calls++;
-            if (Calls <= failTimes)
-                throw error;
+            if (Calls <= _failUntil)
+                throw _error;
             return [];
         }
     }
@@ -66,8 +76,44 @@ public sealed class CursorSessionSourceFailureTests : IDisposable
         source.ReadNew();
         Assert.Equal(2, importer.Calls);   // 失敗したので、また試す
 
+        // Issue #17：成功した後も毎回呼ぶ（transcript の変わった分を拾うため。差分は importer が絞る）
+        var deltas = source.ReadNew();
+        Assert.Equal(3, importer.Calls);
+        Assert.Empty(deltas);
+    }
+
+    [Fact]
+    public void The_same_scan_failure_is_logged_only_once_until_a_scan_succeeds()
+    {
+        var importer = new ThrowingImporter(3, new InvalidOperationException("取り込みの失敗"));
+        var source = new CursorSessionSource(new CursorAgent(), _paths, Root, log: _logs.Add, importer: importer);
+
         source.ReadNew();
-        Assert.Equal(2, importer.Calls);   // 成功したので、もう試さない
+        source.ReadNew();
+        source.ReadNew();
+
+        Assert.Equal(3, importer.Calls);
+        Assert.Single(_logs, l => l.Contains("取り込みの失敗"));
+
+        source.ReadNew();   // 成功
+        importer.FailAgain(new InvalidOperationException("取り込みの失敗"));
+        source.ReadNew();   // 成功の後の同じ失敗は、また 1 回出す
+
+        Assert.Equal(2, _logs.Count(l => l.Contains("取り込みの失敗")));
+    }
+
+    [Fact]
+    public void A_different_scan_failure_is_logged_again()
+    {
+        var importer = new ThrowingImporter(1, new InvalidOperationException("最初の失敗"));
+        var source = new CursorSessionSource(new CursorAgent(), _paths, Root, log: _logs.Add, importer: importer);
+
+        source.ReadNew();
+        importer.FailAgain(new InvalidOperationException("別の失敗"));
+        source.ReadNew();
+
+        Assert.Single(_logs, l => l.Contains("最初の失敗"));
+        Assert.Single(_logs, l => l.Contains("別の失敗"));
     }
 
     [Fact]

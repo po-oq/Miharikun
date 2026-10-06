@@ -153,6 +153,50 @@ public sealed class SessionMonitorWatchTests : IDisposable
         Assert.True(WaitFor(() => Seen("b")));
     }
 
+    /// <summary>監視先の下を再帰的に探して *.txt をファイル名のセッションとして出す（1 回だけ）。</summary>
+    private sealed class TreeSource(string dir, bool includeSubdirectories) : ISessionSource
+    {
+        private readonly HashSet<string> _seen = [];
+        public string AgentId => "tree";
+        public IReadOnlyList<WatchTarget> WatchTargets =>
+            [new WatchTarget(dir, "*.txt", CreateIfMissing: false, IncludeSubdirectories: includeSubdirectories)];
+
+        public IReadOnlyList<SessionDelta> ReadNew() =>
+        [
+            .. Directory.GetFiles(dir, "*.txt", SearchOption.AllDirectories)
+                .Where(f => _seen.Add(f))
+                .Select(f => new SessionDelta(new SessionKey(AgentId, Path.GetFileNameWithoutExtension(f)),
+                    SessionDeltaKind.Append, Events(E("beforeSubmitPrompt", 0, "\"prompt\":\"a\"")))),
+        ];
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Subfolder_changes_notify_only_when_IncludeSubdirectories_is_set(bool includeSubdirectories)
+    {
+        var root = Path.Combine(_dir, "tree");
+        var sub = Path.Combine(root, "sub");
+        Directory.CreateDirectory(sub);
+        var seen = new List<string>();
+        var gate = new object();
+        // ポーリングは 1 時間に 1 回（最初の 1 回だけ）なので、Watcher の通知だけで読み込みが起きる。
+        using var monitor = new SessionMonitor(new ProjectEventStore([new TreeSource(root, includeSubdirectories)]),
+            debounce: TimeSpan.FromMilliseconds(50), pollInterval: TimeSpan.FromHours(1));
+        monitor.Updated += u =>
+        {
+            lock (gate)
+                seen.AddRange(u.Upserts.Select(s => s.Summary.Key.SessionId));
+        };
+        monitor.Start();
+        Thread.Sleep(500);   // 最初の読み込みと Watcher の準備
+
+        File.WriteAllText(Path.Combine(sub, "deep.txt"), "x");
+
+        var notified = WaitFor(() => { lock (gate) return seen.Contains("deep"); }, timeoutMs: 3000);
+        Assert.Equal(includeSubdirectories, notified);
+    }
+
     [Fact]
     public void Dispose_releases_the_watched_folder()
     {
