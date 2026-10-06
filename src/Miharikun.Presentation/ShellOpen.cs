@@ -5,7 +5,7 @@ using System.IO;
 namespace Miharikun;
 
 /// <summary>既定のアプリ・ブラウザ・エクスプローラーで開く。失敗してもアプリは止めない（ログに残す）。</summary>
-internal static class ShellOpen
+public static class ShellOpen
 {
     /// <summary>URL・ファイル・フォルダを、関連付けられたアプリで開く。</summary>
     public static void Open(string target)
@@ -20,8 +20,8 @@ internal static class ShellOpen
         }
     }
 
-    /// <summary>エクスプローラーでファイルを選んだ状態で開く。</summary>
-    public static void RevealInExplorer(string file)
+    /// <summary>ファイラーでファイルを選んだ状態で開く（Windows はエクスプローラー。mac は 29-4 で足す）。</summary>
+    public static void Reveal(string file)
     {
         try
         {

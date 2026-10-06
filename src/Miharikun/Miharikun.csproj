@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Miharikun.Core\Miharikun.Core.csproj" />
     <ProjectReference Include="..\Miharikun.Docs\Miharikun.Docs.csproj" />
+    <ProjectReference Include="..\Miharikun.Presentation\Miharikun.Presentation.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,10 +1,9 @@
 using System.IO;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Memo;
 using Miharikun.Core.Storage;
-using Miharikun.Views;
+using Miharikun.Services;
 
 namespace Miharikun.ViewModels;
 
@@ -25,7 +24,8 @@ public sealed partial class MemoViewModel : ObservableObject, IPreviewHost, IDis
     private readonly Func<string, string?> _resolveInApp;
     private readonly Action<string>? _log;
     private readonly MemoEditor _editor = new();
-    private readonly DispatcherTimer _watchTimer;
+    private readonly IUiTimer _watchTimer;
+    private readonly IUiServices _services;
 
     private FileSystemWatcher? _watcher;
     private DateTime? _lastWrite;
@@ -37,21 +37,21 @@ public sealed partial class MemoViewModel : ObservableObject, IPreviewHost, IDis
 
     /// <param name="resolveInApp">リンク先のフルパス → ドキュメントタブで開けるなら相対パス、開けなければ null。</param>
     public MemoViewModel(string projectFolder, ProjectMemoStore store, AppPaths paths, Func<bool> isDark,
-        SynchronizationContext ui, Func<string, string?> resolveInApp, Action<string>? log = null)
+        SynchronizationContext ui, Func<string, string?> resolveInApp, IUiServices services, Action<string>? log = null)
     {
         _projectFolder = projectFolder;
         _store = store;
         _paths = paths;
         _isDark = isDark;
         _ui = ui;
+        _services = services;
         _resolveInApp = resolveInApp;
         _log = log;
-        _watchTimer = new DispatcherTimer { Interval = WatchDelay };
-        _watchTimer.Tick += (_, _) =>
+        _watchTimer = services.CreateTimer(WatchDelay, () =>
         {
-            _watchTimer.Stop();
+            _watchTimer!.Stop();
             OnFileChanged();
-        };
+        });
     }
 
     // ── IPreviewHost ────────────────────────────────────────────────
@@ -78,7 +78,7 @@ public sealed partial class MemoViewModel : ObservableObject, IPreviewHost, IDis
             return;
         }
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
-            ShellOpen.Open(fullPath);
+            _services.OpenWithDefaultApp(fullPath);
     }
 
     // ── 画面とのやりとり ────────────────────────────────────────────
@@ -88,9 +88,6 @@ public sealed partial class MemoViewModel : ObservableObject, IPreviewHost, IDis
 
     /// <summary>入力欄にフォーカスしてほしい。</summary>
     public event Action? FocusEditorRequested;
-
-    /// <summary>キャンセルの確認（変更を破棄してよいか）。設定されていなければ、そのまま破棄する。</summary>
-    public Func<bool>? ConfirmDiscard { get; set; }
 
     public bool IsEditing => _editor.IsEditing;
 
@@ -279,12 +276,18 @@ public sealed partial class MemoViewModel : ObservableObject, IPreviewHost, IDis
     }
 
     [RelayCommand(CanExecute = nameof(IsEditing))]
-    private void Cancel()
+    private async Task CancelAsync()
     {
         if (!_editor.IsEditing)
             return;
-        if (_editor.IsDirty && ConfirmDiscard is { } confirm && !confirm())
-            return;
+        if (_editor.IsDirty)
+        {
+            if (!await _services.ConfirmAsync("Miharikun - メモ", "変更を破棄しますか？"))
+                return;
+            // 確認している間に、状態が変わっていたら何もしない
+            if (!_editor.IsEditing || !_editor.IsDirty)
+                return;
+        }
         LeaveEditing();
     }
 

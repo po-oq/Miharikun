@@ -907,9 +907,11 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 14.3 の項目を、利用者の mac で確かめる（Hook は、mac で NativeAOT で作って手で入れる）。任意で、WKWebView の読み取り範囲の試作（捨てる小さな画面。12.7。Phase 30 の最初でもよい）
 - 完了条件：14.3 の項目が「確認済み」または「保留」に整理され、Core の mac 向けの直し（Phase 29）の内容が決まる
 
-## [ ] Phase 28: ViewModel の切り出し（挙動は変えない）
+## [x] Phase 28: ViewModel の切り出し（挙動は変えない）
 - `Miharikun.Presentation`（`net10.0`）を作り、ViewModel を移す。WPF の型（`DispatcherTimer`・`CollectionViewSource`/`ICollectionView`・`Clipboard`・`MessageBox`）を使わない形にし、タイマー・クリップボード・「フォルダで表示」・確認ダイアログ・UI スレッドへの受け渡しは interface 越しにする。一覧の絞り込みは、絞った一覧を自前で作る（作り直さずに合わせ、選んでいるカードは動かさない：12.2）。タイムラインの種別・検索・切り替えは、入れ物ごと差し替える（5,000 行でも 1 件ずつ通知しない）。Issue #17（Phase 34〜36）で入った `HookSetup` の置き場所（起動時の受け入れ・`ChangePlacement`）と、`MainViewModel` の「Hook なし」の帯（件数・文・hook-error.log を開く）も、同じ形で移す
 - 完了条件：既存のテストが全部通る（件数を減らさない）。ViewModel のテストを足す。Windows の WPF 版の画面が従来どおり動く（WPF 側は配線だけ直す）。切り出す前に WPF 版の動き（選んでいるカードが隠れたとき・5,000 行の種別と検索の速さなど）を記録し、同じであること
+- 状況：実装済み（2026-10-07。Windows）。`Miharikun.Presentation`（`net10.0`）に `IUiServices`・`IUiTimer`・`ViewList`（絞った一覧を合わせる。選択中は動かさない）・`AppLog`・`ShellOpen`（`Reveal` に改名）・`HookSetup`（非同期。起動時の受け入れ・`ChangePlacementAsync` も）・ViewModel 一式を移した（名前空間は `Miharikun.ViewModels`・`Miharikun` のまま）。`MainViewModel.VisibleCards`（`Selected` は手書き。同期中の null を無視する保険つき）・`TimelineViewModel.VisibleItems`（追記は `Add`、それ以外は入れ物ごと差し替え。行のコピーのタイマーは 1 つ）・1 秒の時計は `MainViewModel.StartClock`・メモのキャンセルは `IUiServices.ConfirmAsync`。git は `Func` で受け取る。WPF 側は `WpfUiServices` と配線だけ。テスト 961 → 1047 件合格（`ViewListTests`・`Presentation/` の ViewModel のテスト 86 件）、スキップ 5（`PerfFact`）。`Miharikun.Core` のビルドと全体のビルドは警告 0。切り出し前後の WPF 版を、隔離環境で UI Automation により同じ手順で照合した（選択・隠れたときの動き・5,000 行の速さ・コピーの表示・Hook のダイアログ・メモの確認ほか）。変わったのは、✏️ の入力中に 6 秒待っても入力が消えない点だけ（計画 7.3 で「変わってよい」とした）。記録：`docs/macos-support/phase28-wpf-record.md`
+- 未確認：詳細の概要・3 行サマリー・成果・ドキュメントのプレビューなどの目視（ViewModel は移しただけ。記録の 3 章）
 
 ## [ ] Phase 29: Core・テストの mac 対応
 - CI に macOS ランナーでのテストを足す（最初に。Windows の確認にも使う）。Hook の名前（mac は拡張子なし）・同梱の Hook の場所・Hook の導入での「隔離」の印の解除と試しの起動（8.1）・Hook の更新の仕方（mac は一時ファイル → 名前の付け替え。8 章）・「Finder で表示」・シンボリックリンク（実パスでも比べる。9 章）・ドキュメントの相対パスの NFC・git の場所（Command Line Tools の git の実体を直接使う）・Hook の置き場所の mac（既定の場所・設定画面の誤りの文・hooks.json の登録のパスの読み取り。8.2・12.12）・14.3 で分かった違い。テストのパスを OS 別にする（Windows だけのテストには印を付ける）

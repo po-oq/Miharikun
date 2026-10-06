@@ -1,12 +1,11 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Documents;
 using Miharikun.Core.Settings;
 using Miharikun.Core.Storage;
-using Miharikun.Views;
+using Miharikun.Services;
 
 namespace Miharikun.ViewModels;
 
@@ -25,7 +24,8 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
     private readonly Action<string>? _log;
     private readonly Func<bool> _isDark;
     private readonly DocumentIndex _index = new();
-    private readonly DispatcherTimer _refreshTimer;
+    private readonly IUiTimer _refreshTimer;
+    private readonly IUiServices _services;
     private readonly RescanScheduler _scheduler;
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FolderNodeViewModel> _nodes = new(StringComparer.OrdinalIgnoreCase);
@@ -46,18 +46,18 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
     private bool _disposed;
 
     public DocumentsViewModel(string projectFolder, ProjectSettingsStore settings, AppPaths paths, Func<bool> isDark,
-        SynchronizationContext ui, Action<string>? log = null)
+        SynchronizationContext ui, IUiServices services, Action<string>? log = null)
     {
         _root = projectFolder;
         PreviewDir = paths.PreviewDir;
         _isDark = isDark;
         _settings = settings;
         _ui = ui;
+        _services = services;
         _log = log;
         _matcher = GitIgnoreMatcher.Parse(settings.IgnoreTextOrDefault(projectFolder));
 
-        _refreshTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = RefreshInterval };
-        _refreshTimer.Tick += (_, _) => RefreshNow();
+        _refreshTimer = services.CreateTimer(RefreshInterval, RefreshNow);
 
         // 全再走査の予約（フォルダの変更・バッファあふれ）。スレッドプールから呼ばれるので UI へ送る。
         _scheduler = new RescanScheduler(() => _ui.Post(_ => Rescan(), null));
@@ -115,14 +115,14 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
     private void OpenFolder()
     {
         if (CurrentTarget is { } t)
-            ShellOpen.RevealInExplorer(t.FullPath);
+            _services.RevealInFileManager(t.FullPath);
     }
 
     [RelayCommand]
     private void OpenExternal()
     {
         if (CurrentTarget is { } t)
-            ShellOpen.Open(t.FullPath);
+            _services.OpenWithDefaultApp(t.FullPath);
     }
 
     /// <summary>
@@ -139,7 +139,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
             return;
         }
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
-            ShellOpen.Open(fullPath);
+            _services.OpenWithDefaultApp(fullPath);
     }
 
     /// <summary>メモのリンク先が、ドキュメントタブで開けるか（対象フォルダ内の md/html で、除外されていない）。</summary>
@@ -181,7 +181,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         _log?.Invoke($"{relativePath} は索引に無いので、既定のアプリで開く");
         if (File.Exists(full))
-            ShellOpen.Open(full);
+            _services.OpenWithDefaultApp(full);
     }
 
     private void SelectPath(string relativePath)

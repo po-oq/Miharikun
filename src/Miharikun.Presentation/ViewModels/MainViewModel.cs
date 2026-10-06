@@ -1,12 +1,11 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Miharikun.Core.Agents;
 using Miharikun.Core.Git;
 using Miharikun.Core.Meta;
 using Miharikun.Core.Sessions;
+using Miharikun.Services;
 
 namespace Miharikun.ViewModels;
 
@@ -17,11 +16,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly SessionMetaService _meta;
     private readonly Func<SessionKey, IReadOnlyList<AgentEvent>> _getEvents;
     private readonly Dictionary<SessionKey, SessionCardViewModel> _byKey = [];
+    private readonly IUiServices _services;
+    private readonly Action<string>? _log;
+    private IUiTimer? _clock;
 
-    // git（要件 10章：コミット・未コミットは App が実行する）
+    // git（要件 10章：コミット・未コミットは App が実行する）。テストで本物の git を起動しないよう、差し替えられる形で受け取る
     private const int GitRefreshEveryTicks = 5;
     private static readonly TimeSpan GitMinInterval = TimeSpan.FromSeconds(2);
-    private readonly GitClient _git;
+    private readonly Func<GitStatus?> _getGitStatus;
+    private readonly Func<SessionSummary, IReadOnlyList<GitCommit>?> _loadCommits;
     private GitStatus? _gitStatus;
     private bool _gitBusy;
     private DateTimeOffset _lastGitRefresh = DateTimeOffset.MinValue;
@@ -35,8 +38,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<SessionCardViewModel> Cards { get; } = [];
 
-    /// <summary>検索・フィルタ済みで、最後の動きの新しい順に並んだカード。</summary>
-    public ICollectionView CardsView { get; }
+    /// <summary>
+    /// 検索・フィルタ済みで、最後の動きの新しい順に並んだカード。作り直さずに合わせる（<see cref="ViewList.SyncTo"/>。
+    /// 選んでいるカードは動かさない：計画 7.3）。
+    /// </summary>
+    public ObservableCollection<SessionCardViewModel> VisibleCards { get; } = [];
+
+    private bool _syncingCards;
 
     [ObservableProperty] private string _searchText = "";
     [ObservableProperty] private bool _runningOnly;
@@ -60,10 +68,27 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>拡大⇄戻す。セッションを選んでいないときは拡大しない。</summary>
     [RelayCommand]
     private void ToggleTimelineExpanded() => IsTimelineExpanded = !IsTimelineExpanded && Selected is not null;
-    [ObservableProperty] private SessionCardViewModel? _selected;
+    private SessionCardViewModel? _selected;
+
+    /// <summary>
+    /// 選んでいるカード。一覧を合わせている間（<see cref="RefreshCards"/>）に画面の一覧から来た null は、いったん無視する
+    /// （選んでいたカードが一覧に残っていれば、合わせ終わりに選び直す。隠れたときは今と同じく外す。計画 7.3 の保険）。
+    /// </summary>
+    public SessionCardViewModel? Selected
+    {
+        get => _selected;
+        set
+        {
+            if (_syncingCards && value is null)
+                return;
+            if (SetProperty(ref _selected, value))
+                HandleSelectedChanged(value);
+        }
+    }
+
     [ObservableProperty] private SessionDetailViewModel? _detail;
 
-    public TimelineViewModel Timeline { get; } = new();
+    public TimelineViewModel Timeline { get; }
     [ObservableProperty] private IReadOnlyList<StateCount> _counts = [];
 
     /// <summary>「Hook なし」のセッションの数（カード全体から数える。フィルタ・検索に関係なく。どの状態の件数にも入れない。要件 12.11）。</summary>
@@ -98,16 +123,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool UncommittedFilterAvailable => true;
     public bool MemoFilterAvailable => true;
 
+    /// <param name="getGitStatus">git status（背景スレッドで呼ぶ）。</param>
+    /// <param name="loadCommits">セッションのコミット一覧（背景スレッドで呼ぶ）。</param>
     public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui,
-        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta, GitClient git,
-        int runningTimeoutMinutes = StalledRule.DefaultTimeoutMinutes, string? hookErrorLogPath = null)
+        Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta, IUiServices services,
+        Func<GitStatus?> getGitStatus, Func<SessionSummary, IReadOnlyList<GitCommit>?> loadCommits,
+        int runningTimeoutMinutes = StalledRule.DefaultTimeoutMinutes, string? hookErrorLogPath = null, Action<string>? log = null)
     {
         RunningTimeoutMinutes = runningTimeoutMinutes;
         _hookErrorLogPath = hookErrorLogPath;
+        _services = services;
+        _log = log;
+        Timeline = new TimelineViewModel(services);
         OpenHookErrorLogCommand = new RelayCommand(
-            () => ShellOpen.Open(_hookErrorLogPath!),
+            () => _services.OpenWithDefaultApp(_hookErrorLogPath!),
             () => _hookErrorLogPath is not null && System.IO.File.Exists(_hookErrorLogPath));
-        _git = git;
+        _getGitStatus = getGitStatus;
+        _loadCommits = loadCommits;
         _meta = meta;
         _meta.Changed += OnMetaChanged;
         ProjectFolder = projectFolder;
@@ -125,14 +157,45 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             };
         }
 
-        CardsView = CollectionViewSource.GetDefaultView(Cards);
-        CardsView.SortDescriptions.Add(new SortDescription(nameof(SessionCardViewModel.LastActivityAt), ListSortDirection.Descending));
-        CardsView.Filter = o => o is SessionCardViewModel c && Visible(c);
-
         SelectRecentCommand = new RelayCommand<RecentRow>(SelectRecent);
 
         UpdateCounts();
         _monitor.Updated += OnUpdated;
+    }
+
+    /// <summary>1 秒ごとの時計（◯分前・停止の表示・git の見直し）を始める。組み立ての最後に呼ぶ。<see cref="Dispose"/> で止まる。</summary>
+    public void StartClock()
+    {
+        _clock ??= _services.CreateTimer(TimeSpan.FromSeconds(1), Tick);
+        _clock.Start();
+    }
+
+    /// <summary>
+    /// 検索・フィルタに合うカードを、最後の動きの新しい順（同じ時刻は <see cref="Cards"/> に入った順）に並べて、
+    /// <see cref="VisibleCards"/> を合わせる。選んでいるカードは動かさない。
+    /// </summary>
+    private void RefreshCards()
+    {
+        var desired = Cards.Where(Visible).OrderByDescending(c => c.LastActivityAt).ToList();
+        var selected = _selected;
+        _syncingCards = true;
+        try
+        {
+            ViewList.SyncTo(VisibleCards, desired, selected);
+        }
+        finally
+        {
+            _syncingCards = false;
+        }
+
+        // 合わせている間に画面の一覧が外した選択を、残っていれば選び直す。隠れたときは外す（今と同じ）
+        if (selected is not null && ReferenceEquals(_selected, selected))
+        {
+            if (VisibleCards.Contains(selected))
+                OnPropertyChanged(nameof(Selected));
+            else
+                Selected = null;
+        }
     }
 
     /// <summary>
@@ -218,7 +281,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     Selected = null;
             }
         }
-        CardsView.Refresh();
+        RefreshCards();
         UpdateCounts();
         UpdateRecent(now);
 
@@ -238,7 +301,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         LoadCommits(snap.Summary);
     }
 
-    partial void OnSelectedChanged(SessionCardViewModel? value)
+    private void HandleSelectedChanged(SessionCardViewModel? value)
     {
         Detail?.FlushMemo();   // 切り替える前に、入力途中のメモを保存する
         Timeline.Clear();
@@ -280,7 +343,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Detail?.RefreshClock(now);
         if (stateChanged)
         {
-            CardsView.Refresh();
+            RefreshCards();
             UpdateCounts();
         }
         if (IsTimelineExpanded)
@@ -299,26 +362,28 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private int? UncommittedCount(SessionSummary s) => UncommittedFiles(s)?.Count;
 
-    /// <summary>git status を背景で取り直し、全カードと詳細の未コミットを更新する。実行中なら何もしない。</summary>
-    public async void RefreshGit()
+    /// <summary>git status を背景で取り直し、全カードと詳細の未コミットを更新する。実行中なら何もしない。時計・イベントから呼ぶ包み（テストは <see cref="RefreshGitAsync"/> を待つ）。</summary>
+    public async void RefreshGit() => await RefreshGitAsync();
+
+    public async Task RefreshGitAsync()
     {
         if (_gitBusy)
             return;
         _gitBusy = true;
         try
         {
-            _gitStatus = await Task.Run(_git.GetStatus);
+            _gitStatus = await Task.Run(_getGitStatus);
             _lastGitRefresh = DateTimeOffset.Now;
 
             foreach (var card in Cards)
                 card.SetUncommitted(UncommittedCount(card.Snapshot.Summary));
             if (Selected is not null)
                 Detail?.SetUncommitted(UncommittedFiles(Selected.Snapshot.Summary));
-            CardsView.Refresh();
+            RefreshCards();
         }
         catch (Exception ex)
         {
-            AppLog.Write("git の更新に失敗: " + ex.Message);
+            _log?.Invoke("git の更新に失敗: " + ex.Message);
         }
         finally
         {
@@ -330,7 +395,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// 選択中セッションのコミット一覧。範囲（開始・最新の HEAD、または head を持たないセッションのブランチと時刻）が変わったときだけ git を実行する。
     /// head を持たない Claude Code は、ブランチと時刻から head を求める（SessionCommits）。
     /// </summary>
-    private async void LoadCommits(SessionSummary s)
+    private async void LoadCommits(SessionSummary s) => await LoadCommitsAsync(s);
+
+    public async Task LoadCommitsAsync(SessionSummary s)
     {
         var key = SessionCommits.Key(s);
         if (key == _commitKey)
@@ -339,26 +406,26 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         try
         {
-            var commits = await Task.Run(() => SessionCommits.Load(s, _git));
+            var commits = await Task.Run(() => _loadCommits(s));
             // 待っている間に選択や範囲が変わっていたら捨てる
             if (Detail is not null && Detail.Key == s.Key && _commitKey == key)
                 Detail.SetCommits(commits);
         }
         catch (Exception ex)
         {
-            AppLog.Write("コミット一覧の取得に失敗: " + ex.Message);
+            _log?.Invoke("コミット一覧の取得に失敗: " + ex.Message);
         }
     }
 
-    partial void OnSearchTextChanged(string value) => CardsView.Refresh();
-    partial void OnRunningOnlyChanged(bool value) => CardsView.Refresh();
-    partial void OnUncommittedOnlyChanged(bool value) => CardsView.Refresh();
-    partial void OnMemoOnlyChanged(bool value) => CardsView.Refresh();
+    partial void OnSearchTextChanged(string value) => RefreshCards();
+    partial void OnRunningOnlyChanged(bool value) => RefreshCards();
+    partial void OnUncommittedOnlyChanged(bool value) => RefreshCards();
+    partial void OnMemoOnlyChanged(bool value) => RefreshCards();
     private void ClearStatusSelection()
     {
         _statusSelection.Clear();
         SyncStatusChips();
-        CardsView.Refresh();
+        RefreshCards();
     }
 
     private void SyncStatusChips()
@@ -379,9 +446,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         else
             _statusSelection.Remove(chip.Tab);
         SyncStatusChips();
-        CardsView.Refresh();
+        RefreshCards();
     }
-    partial void OnAgentKeyChanged(string value) => CardsView.Refresh();
+    partial void OnAgentKeyChanged(string value) => RefreshCards();
 
     private bool Visible(SessionCardViewModel c)
     {
@@ -430,7 +497,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             card.RefreshMeta();
         if (Detail is not null && Detail.Key == key)
             Detail.RefreshMeta();
-        CardsView.Refresh();
+        RefreshCards();
         UpdateCounts();   // ステータスのタブの件数が変わるため
         UpdateRecent(DateTimeOffset.Now);   // 閉じたセッションの表示名が変わるため
     }
@@ -440,10 +507,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _clock?.Dispose();
+        Timeline.Dispose();
         _monitor.Updated -= OnUpdated;
         _meta.Changed -= OnMetaChanged;
     }
 }
+
 /// <summary>絞り込みタブ1つ。Count は他のフィルタに関係なく、全カードから数えた件数。</summary>
 public sealed partial class StatusTabItem(StatusTab tab, string name) : ObservableObject
 {

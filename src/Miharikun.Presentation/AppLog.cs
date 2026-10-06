@@ -4,7 +4,7 @@ using Miharikun.Core.Storage;
 namespace Miharikun;
 
 /// <summary>%LOCALAPPDATA%\Miharikun\logs\app.log への簡易ログ。書けなくてもアプリは止めない。</summary>
-internal static class AppLog
+public static class AppLog
 {
     private static readonly object Gate = new();
     private static string? _path;

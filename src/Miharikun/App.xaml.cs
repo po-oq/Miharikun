@@ -44,24 +44,31 @@ public partial class App : Application
         var store = new ProjectEventStore(sources, log: AppLog.Write);
         _monitor = new SessionMonitor(store);
         var meta = new SessionMetaService(agentId => new MetaStore(paths, agentId, AppLog.Write), log: AppLog.Write);
-        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, new GitClient(folder),
-            runningTimeoutMinutes: appSettings.LoadRunningTimeoutMinutes(), hookErrorLogPath: paths.HookErrorLog);
+
+        // 画面の仕組みへの口（確認ダイアログはメインウィンドウの上に出す）
+        MainWindow? window = null;
+        var services = new WpfUiServices(() => window);
+        var git = new GitClient(folder);
+        _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, services,
+            git.GetStatus, s => SessionCommits.Load(s, git),
+            runningTimeoutMinutes: appSettings.LoadRunningTimeoutMinutes(), hookErrorLogPath: paths.HookErrorLog, log: AppLog.Write);
 
         // 同梱の Hook exe は Miharikun.exe と同じフォルダ（単一ファイル発行でも実行ファイルの場所を使う）
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
-        var hookSetup = new HookSetup(dir => HookInstaller.CreateDefault(paths, appDir, dir), appSettings, paths);
+        var hookSetup = new HookSetup(dir => HookInstaller.CreateDefault(paths, appDir, dir), appSettings, paths, services);
 
         WebViewEnvironment.Configure(paths.WebView2Dir);
         _ = Task.Run(() => PreviewFiles.CleanOld(paths.PreviewDir));   // 1 日より古い md の一時 HTML を消す
         _documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), paths, () => theme.IsDark,
-            SynchronizationContext.Current!, AppLog.Write);
+            SynchronizationContext.Current!, services, AppLog.Write);
         _memo = new MemoViewModel(folder, new ProjectMemoStore(paths, AppLog.Write), paths, () => theme.IsDark,
-            SynchronizationContext.Current!, path => _documents.IsInAppDocument(path, out var rel) ? rel : null, AppLog.Write);
-        var window = new MainWindow(_viewModel, _documents, _memo, hookSetup, theme, appSettings);
+            SynchronizationContext.Current!, path => _documents.IsInAppDocument(path, out var rel) ? rel : null, services, AppLog.Write);
+        window = new MainWindow(_viewModel, _documents, _memo, hookSetup, theme, appSettings);
         theme.Start(window);
         window.Show();
         _monitor.Start();
         _viewModel.RefreshGit();
+        _viewModel.StartClock();
     }
 
     /// <summary>

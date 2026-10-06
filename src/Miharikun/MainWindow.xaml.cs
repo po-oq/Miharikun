@@ -9,7 +9,6 @@ namespace Miharikun;
 public partial class MainWindow : FluentWindow
 {
     private readonly MainViewModel _viewModel;
-    private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
 
     private readonly HookSetup _hookSetup;
     private readonly ThemeService _theme;
@@ -34,8 +33,6 @@ public partial class MainWindow : FluentWindow
             documents.OnThemeChanged();
             memo.OnThemeChanged();
         };
-        memo.ConfirmDiscard = () => System.Windows.MessageBox.Show(this, "変更を破棄しますか？", "Miharikun - メモ",
-            System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.Yes;
         memo.OpenInDocumentsRequested += OpenInDocumentsTab;
 
         Title = $"Miharikun - {viewModel.ProjectFolder}";
@@ -54,12 +51,22 @@ public partial class MainWindow : FluentWindow
                 ApplyTimelineExpanded(viewModel.IsTimelineExpanded);
         };
 
-        _clock.Tick += (_, _) => _viewModel.Tick();
-        _clock.Start();
         // 画面が出てから、hook が未導入なら導入を提案する
-        Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _hookSetup.CheckAtStartup(this));
+        Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => RunSafe(_hookSetup.CheckAtStartupAsync)));
         Closing += OnClosing;
-        Closed += (_, _) => _clock.Stop();
+    }
+
+    /// <summary>イベントから呼ぶ非同期の処理。例外はログに残す（イベントの `async void` から外へ出さない）。</summary>
+    private static async void RunSafe(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("画面の操作で例外: " + ex);
+        }
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
@@ -154,7 +161,7 @@ public partial class MainWindow : FluentWindow
         _viewModel.SetRunningTimeout(dialog.RunningTimeoutMinutes);
 
         if (!string.Equals(dialog.HookDir, System.IO.Path.TrimEndingDirectorySeparator(before), StringComparison.OrdinalIgnoreCase))
-            _hookSetup.ChangePlacement(this, dialog.HookDir);
+            RunSafe(() => _hookSetup.ChangePlacementAsync(dialog.HookDir));
     }
 
     private void OnDocumentSettingsClick(object sender, System.Windows.RoutedEventArgs e)
@@ -164,9 +171,9 @@ public partial class MainWindow : FluentWindow
             _documents.ApplyIgnoreText(dialog.IgnoreText);
     }
 
-    private void OnInstallHookClick(object sender, System.Windows.RoutedEventArgs e) => _hookSetup.InstallFromMenu(this);
+    private void OnInstallHookClick(object sender, System.Windows.RoutedEventArgs e) => RunSafe(_hookSetup.InstallFromMenuAsync);
 
-    private void OnUninstallHookClick(object sender, System.Windows.RoutedEventArgs e) => _hookSetup.UninstallFromMenu(this);
+    private void OnUninstallHookClick(object sender, System.Windows.RoutedEventArgs e) => RunSafe(_hookSetup.UninstallFromMenuAsync);
 
     // メニューを開くたびに、いまのテーマにチェックを付ける。
     private void OnThemeMenuOpened(object sender, System.Windows.RoutedEventArgs e)

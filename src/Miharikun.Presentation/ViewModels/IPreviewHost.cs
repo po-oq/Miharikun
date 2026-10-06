@@ -1,6 +1,6 @@
 using Miharikun.Core.Documents;
 
-namespace Miharikun.Views;
+namespace Miharikun.ViewModels;
 
 /// <summary>プレビューに出すもの。</summary>
 public abstract record PreviewSource
@@ -15,7 +15,7 @@ public abstract record PreviewSource
     public sealed record Message(string Text) : PreviewSource;
 }
 
-/// <summary>md プレビューの部品（<see cref="MarkdownPreview"/>）を使う側（ドキュメントタブ・メモタブ）。</summary>
+/// <summary>md プレビューの部品（画面の MarkdownPreview）を使う側（ドキュメントタブ・メモタブ）。</summary>
 public interface IPreviewHost
 {
     /// <summary>md の一時 HTML の置き場。</summary>

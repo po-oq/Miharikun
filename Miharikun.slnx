@@ -3,6 +3,7 @@
     <Project Path="src/Miharikun.Core/Miharikun.Core.csproj" />
     <Project Path="src/Miharikun.Docs/Miharikun.Docs.csproj" />
     <Project Path="src/Miharikun.Hook/Miharikun.Hook.csproj" />
+    <Project Path="src/Miharikun.Presentation/Miharikun.Presentation.csproj" />
     <Project Path="src/Miharikun/Miharikun.csproj" />
   </Folder>
   <Folder Name="/tests/">
