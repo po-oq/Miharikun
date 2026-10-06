@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #17 のマージが macOS 対応計画に与える影響</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>main（Issue #17）のマージが macOS 対応計画（Issue #22）に与える影響と、直した所</h1>
+<p><b>状態：確定</b>（2026-10-07。マージのコミット <code>093171a</code>。計画の md・HTML などの修正は、まだコミットしていない）。</p>
+<p><b>結論</b>：<span class="ng">影響あり</span>。Issue #17 は、計画の Phase 28 で移す・Phase 30 で書き直すファイル（<code>HookSetup</code>・設定画面・<code>MainViewModel</code>）を変え、要件定義の節番号（12.11）も使っていた。<b>Phase 28 を始める前に main をこのブランチへマージ</b>し、要件定義と実装計画を合わせた。残る決めごとは 1 つ（Hobby で Hook が呼ばれないときの扱い。Phase 27 の結果しだい）。</p>
+
+<h2>1. 調べた範囲</h2>
+<ul>
+<li><code>git log main..origin/main</code>：Issue #17 の 7 コミット（Phase 34〜36、PR #24 のマージ）。このブランチ側は文書だけの 2 コミット</li>
+<li>差分：<code>docs/miharikun-requirements.md</code>（6・8.2・9・10・11・12.9・12.11・15 章）、<code>docs/release.md</code>、<code>scripts/publish.ps1</code>、Core（<code>HookInstaller</code>・<code>HookRegistration</code>・<code>HookDirInput</code>・<code>AppSettingsStore</code>・<code>CursorTranscriptImporter</code>・<code>SessionMonitor</code> ほか）、WPF（<code>HookSetup</code>・<code>AppSettingsDialog</code>・<code>MainWindow</code>・<code>MainViewModel</code>・<code>SessionDetailViewModel</code>・色）、テスト 7 ファイル</li>
+<li><code>docs/issue17/issue17-cursor-hook-plan.md</code>（「#22 の Phase 28 より先に main に入れる」と書かれている）</li>
+<li>マージ後に <code>dotnet test tests/Miharikun.Tests</code>：<b>961 件合格・スキップ 5</b>（計画の基準 842 件から増えた）</li>
+</ul>
+
+<h2>2. 概念図</h2>
+<h3>ブランチの関係（なぜ今マージしたか）</h3>
+<svg viewBox="0 0 960 200" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<text x="10" y="40" font-weight="bold">main</text>
+<line x1="70" y1="35" x2="930" y2="35" stroke="#333"/>
+<circle cx="120" cy="35" r="6" fill="#dff" stroke="#08a"/><text x="95" y="20" font-size="12">0f98b38</text>
+<rect x="300" y="22" width="260" height="26" fill="#ffe9c8" stroke="#a70"/><text x="310" y="40" font-size="12">Issue #17：Phase 34〜36（PR #24）</text>
+<circle cx="600" cy="35" r="6" fill="#ffe9c8" stroke="#a70"/><text x="575" y="20" font-size="12">79d01d3</text>
+<text x="10" y="135" font-weight="bold">#22</text>
+<line x1="120" y1="41" x2="200" y2="130" stroke="#333"/>
+<line x1="200" y1="130" x2="930" y2="130" stroke="#333"/>
+<rect x="220" y="117" width="250" height="26" fill="#dff" stroke="#08a"/><text x="230" y="135" font-size="12">計画・要件の文書（2 コミット）</text>
+<line x1="600" y1="41" x2="650" y2="124" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<circle cx="655" cy="130" r="7" fill="#dfd" stroke="#383"/><text x="630" y="160" font-size="12">093171a マージ</text>
+<rect x="700" y="117" width="220" height="26" fill="#e8f1fd" stroke="#0b63c5"/><text x="710" y="135" font-size="12">Phase 27 → 28 …（これから）</text>
+<text x="10" y="188" font-size="12" fill="#c05000">※ コードを動かす前（文書だけの今）にマージしたので、衝突は要件定義の文だけ。Phase 28 の後だと、移した HookSetup などとコードがぶつかる。</text>
+</svg>
+
+<h3>Issue #17 で入ったものと、計画のどこで扱うか</h3>
+<svg viewBox="0 0 960 300" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="10" width="290" height="270" fill="#ffe9c8" stroke="#a70"/>
+<text x="20" y="32" font-weight="bold">main に入ったもの（Issue #17）</text>
+<text x="20" y="60" font-size="12">① hookDir（置き場所）・起動時の受け入れ</text>
+<text x="20" y="86" font-size="12">② HookDirInput（入力の検査・誤りの文）</text>
+<text x="20" y="112" font-size="12">③ NoHook の判定（作成日時）・transcript の監視</text>
+<text x="20" y="138" font-size="12">④ HookSetup.ChangePlacement（MessageBox）</text>
+<text x="20" y="164" font-size="12">⑤ 「Hook なし」の帯（MainViewModel・画面）</text>
+<text x="20" y="190" font-size="12">⑥ 設定画面の欄（参照… は WPF のダイアログ）</text>
+<text x="20" y="216" font-size="12">⑦ README・release.md のチェック</text>
+<text x="20" y="242" font-size="12">⑧ テスト 842 → 961 件（C:\ のパスが多い）</text>
+<text x="20" y="268" font-size="12">⑨ 要件定義 12.11 を使用</text>
+<g fill="#dfd" stroke="#383">
+<rect x="360" y="10" width="270" height="50"/><rect x="360" y="70" width="270" height="50"/><rect x="360" y="130" width="270" height="50"/><rect x="360" y="190" width="270" height="50"/></g>
+<text x="370" y="30" font-weight="bold">Phase 28（切り出し・Windows）</text><text x="370" y="50" font-size="12">④⑤ を Presentation へ。非同期に・テスト</text>
+<text x="370" y="90" font-weight="bold">Phase 29（Core の mac 対応）</text><text x="370" y="110" font-size="12">①② mac の既定・文／③ mac で確かめる／⑧</text>
+<text x="370" y="150" font-weight="bold">Phase 30（Avalonia の画面）</text><text x="370" y="170" font-size="12">⑤ 帯（30-3）／⑥ 設定画面（30-6）</text>
+<text x="370" y="210" font-weight="bold">Phase 32（配布）</text><text x="370" y="230" font-size="12">⑦ README-win へ移す・mac 版の文</text>
+<g stroke="#333" marker-end="url(#a)"><line x1="300" y1="140" x2="358" y2="35"/><line x1="300" y1="140" x2="358" y2="95"/><line x1="300" y1="140" x2="358" y2="155"/><line x1="300" y1="140" x2="358" y2="215"/></g>
+<rect x="670" y="10" width="280" height="110" fill="#e8f1fd" stroke="#0b63c5"/>
+<text x="680" y="32" font-weight="bold">⑨ 節番号</text>
+<text x="680" y="56" font-size="12">12.11 ＝ main の「Hook なし」の警告</text>
+<text x="680" y="78" font-size="12">12.12 ＝ Windows と macOS の違い</text>
+<text x="680" y="100" font-size="12">（#22 の 12.11 を 12.12 に移した）</text>
+<rect x="670" y="140" width="280" height="140" fill="#fde" stroke="#b33"/>
+<text x="680" y="162" font-weight="bold" fill="#b33">Phase 27 の結果しだい</text>
+<text x="680" y="186" font-size="12">・空白入りのパスがだめ</text>
+<text x="694" y="206" font-size="12">→ mac の既定を ~/.miharikun/bin（決定）</text>
+<text x="680" y="232" font-size="12">・Hobby で Hook が呼ばれない</text>
+<text x="694" y="252" font-size="12">→ 帯が出続ける。扱いは相談（未決）</text>
+</svg>
+
+<h2>3. 直した所</h2>
+<h3>要件定義（<code>docs/miharikun-requirements.md</code>。マージのコミットに入れた）</h3>
+<table>
+<tr><th>場所</th><th>衝突・影響</th><th>直し方</th></tr>
+<tr><td>8 章 導入処理 1.</td><td>main「Hook の置き場所にコピー」と #22「mac は一時ファイル → 名前の付け替え」が同じ行</td><td>両方を 1 行に。空白のパスがだめなときは「mac の<b>既定の置き場所</b>を <code>~/.miharikun/bin</code>」に（従来の「スペースの無い場所に置く」を hookDir の仕組みに載せた）</td></tr>
+<tr><td>8.2（末尾に追加）</td><td>置き場所の設定は Windows の書き方だけ</td><td>mac の既定・欄の名前と誤りの文（「/ から始まる」・<code>~</code> は展開しない）・「参照…」は OS のフォルダ選択・置き場所を変えて導入し直すときも印の解除と試しの起動・受け入れではしない</td></tr>
+<tr><td>12.11 / 12.12</td><td>両方が 12.11 を新しく使っていた</td><td>12.11 は main の「Hook が記録していないときの警告」。#22 の「Windows と macOS の違い」を <b>12.12</b> にし、本文の参照（4・12.5・13・15 章）を直した</td></tr>
+<tr><td>12.12 の表</td><td>Issue #17 の文は Windows 向け（「Hook exe」「この PC」「C:\」）</td><td>行を 2 つ足す：設定画面の Hook の置き場所の言い方、「Hook なし」の帯の mac の文（「この Mac で…「隔離」の印など…⚙ →「Hook を導入」でもう一度、または置き場所を変える」）</td></tr>
+<tr><td>6 章・settings.json</td><td><code>bin\</code> の行・<code>hookDir</code> の既定</td><td>「既定の置き場所。hookDir で変えられる」「mac は 8.2」</td></tr>
+<tr><td>11 章・14.3</td><td>「Issue #17 が入れば」と未来形／Hobby で呼ばれないと NoHook の帯が出続ける</td><td>入った前提に直し、帯が出続ける場合の扱いは Phase 27 の結果で利用者と決める、と書いた</td></tr>
+<tr><td>15 章</td><td>Phase 27〜33 と 34〜36 が同じ位置に追加されていた</td><td>27〜33 → 34〜36 の順に並べ、※の注記を「マージ済み」に。Phase 28・29・30・32 の説明に Issue #17 の分を足した</td></tr>
+</table>
+
+<h3>実装計画（<code>macos-support-plan.md</code> と <code>.html</code>。同じ内容。未コミット）</h3>
+<table>
+<tr><th>場所</th><th>直したこと</th></tr>
+<tr><td>冒頭・1 章</td><td>参照する章に 8.2・12.9・12.11・12.12。マージの注記。テストの基準 842 → <b>961 件</b></td></tr>
+<tr><td>品質ゲート 3</td><td>一覧に「Hook なし」の帯、詳細に「—」の表示、⚙ に置き場所の欄・導入し直し・起動時の受け入れ（Phase 35 で確かめた項目）</td></tr>
+<tr><td>7.1</td><td>Hobby の行：帯が出続けることと、扱いは相談。空白の行：<code>DefaultHookDir</code> を mac だけ <code>~/.miharikun/bin</code></td></tr>
+<tr><td>28-2・28-3</td><td><code>HookSetup</code> の受け入れ・<code>ChangePlacement</code> も <code>IUiServices</code> で非同期に。<code>OpenHookErrorLogCommand</code> の <code>ShellOpen</code> を口に。テストを追加</td></tr>
+<tr><td>29-2・29-3・29-4</td><td>Issue #17 のテストも OS で分ける。mac の既定・<code>HookDirInput</code> の文・帯の文。作成日時とサブフォルダの監視を mac で確かめる</td></tr>
+<tr><td>30-3・30-6</td><td>帯（色のキー・AutomationId）、設定画面の置き場所（<code>StorageProvider.OpenFolderPickerAsync</code>）</td></tr>
+<tr><td>32-1・32-2・32-4</td><td>Windows の README の Issue #17 の段落はそのまま移す。mac 版の文。release.md のチェックを両 OS に</td></tr>
+<tr><td>7.2・7.5・7.12</td><td>フォルダ選択は画面の側。<code>ChangePlacementAsync</code>。導入先は「置き場所」。受け入れでは probe しない。文を OS で替える対象を追加</td></tr>
+<tr><td><b>7.21（新規）</b></td><td>Issue #17 で入ったもの × どの Phase で何をするかの表（図つき）</td></tr>
+<tr><td>6 章・8 章・9 章・10.1・状態</td><td>ファイル構成、リスク 2 行、マージで決めたこと 3 つ、「main がさらに進んでいないか確かめる」</td></tr>
+</table>
+<h3>そのほか</h3>
+<ul>
+<li><code>macos-support-design.html</code>・<code>macos-support-review.html</code>：過去の記録なので本文は変えず、冒頭に「12.11 は 12.12 と読み替える」の注記だけ</li>
+<li><code>CLAUDE.md</code>：変えていない（守ることに変化なし）</li>
+</ul>
+
+<h2>4. 決めたこと（2026-10-07）と、残っていること</h2>
+<table>
+<tr><th>#</th><th>問い</th><th>決定</th></tr>
+<tr><td>1</td><td>mac で空白を含むパスから Hook を起動できなかったら</td><td><span class="ok">mac の既定の置き場所を変える</span>（<code>~/.miharikun/bin</code>。利用者の操作は要らない）</td></tr>
+<tr><td>2</td><td>「Hook なし」の帯の文を mac でどうするか</td><td><span class="ok">mac は文を替える</span>（隔離の印と「Hook を導入」の案内）</td></tr>
+<tr><td>3</td><td>main をいつマージするか</td><td><span class="ok">今（Phase 28 の前）</span>。コードがぶつかる前に</td></tr>
+</table>
+<div class="q"><b>残り：</b> mac の Cursor（Hobby）で Hook が呼ばれなかったとき、Hook を登録したままだと全セッションが「Hook なし」になり、帯が出続ける。<br>
+A) mac では Hook の導入を勧めない（登録しなければ「閉じた（導入前）」として出る）<br>
+B) 帯の文を Hobby 向けに替える<br>
+→ <b>Phase 27 の結果を見てから決める</b>（推測で決めない。計画 7.1・7.21、要件 11 章・14.3）。</div>
+
+<h2>5. リスクと対策</h2>
+<table>
+<tr><th>リスク</th><th>対策</th></tr>
+<tr><td>Issue #17 の画面（帯・置き場所の欄・受け入れ）を、切り出し・Avalonia への書き直しで取りこぼす</td><td>品質ゲート 3 に項目として入れ、7.21 で Phase ごとに割り当てた</td></tr>
+<tr><td>Issue #17 のテスト（C:\ のパス）が mac で大量に落ちる</td><td>29-2 で「Windows の意味」「たまたま C:\」「製品を直す」の 3 つに分ける（7.15）</td></tr>
+<tr><td>main がさらに進む</td><td>計画 10.1 に「始める前に <code>git log ..origin/main</code> で確かめ、影響を調べてからマージを頼む」を追加</td></tr>
+</table>
+</body></html>

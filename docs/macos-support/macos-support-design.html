@@ -10,6 +10,7 @@ code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #
 svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
 </style></head><body>
 <h1>macOS 対応のアーキテクチャ案（調査。Issue #22）</h1>
+<p style="background:#fff6dd;border:1px solid #e0c060;padding:6px 14px">※ 2026-10-07 追記：main の Issue #17（Hook の置き場所・「Hook なし」の警告）をマージしたため、要件定義の「Windows と macOS の違い」は <b>12.11 → 12.12</b> に移った（12.11 は「Hook が記録していないときの警告」）。本書の「12.11」は 12.12 と読み替える。影響の説明：<code>docs/macos-support/issue17-merge-impact.html</code></p>
 <p><b>状態：方針決定（Q1〜Q7）</b>。Q7 は FluentTheme と SukiUI の試作で見比べて決める（Phase 30-2）。コードは変えていない。</p>
 <p>ゴール：Windows と macOS の両方で、いまと同じ機能（ダッシュボード／ドキュメント／メモ）を使えるようにする。<b>機能は変えない</b>。画面の配置はなるべく変えず、変えないとできない所だけ変える。</p>
 

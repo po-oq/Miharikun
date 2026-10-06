@@ -1,10 +1,11 @@
 # macOS 対応（画面を Avalonia 12 に移す） 実装計画（Issue #22）
 
 > **連動ルール**：この md と `macos-support-plan.html`（図解）は対。**どちらかを直したら、もう一方も同じ内容に直す。**
-> 仕様の正は `miharikun-requirements.md`（3・4・5・6・7・8・**8.1**・**9**・9.1・11・**12.5**・**12.7**・12.10・**12.11**・13・**14.3**・16・17 章・**Phase 27〜33**）。設計の資料は `macos-support-design.html`（候補の比較・決定 Q1〜Q7・署名なしの配布の手順）。
+> 仕様の正は `miharikun-requirements.md`（3・4・5・6・7・8・**8.1**・**8.2**・**9**・9.1・11・**12.5**・**12.7**・12.9・12.10・**12.11**・**12.12**・13・**14.3**・16・17 章・**Phase 27〜33**）。設計の資料は `macos-support-design.html`（候補の比較・決定 Q1〜Q7・署名なしの配布の手順）。
 > この計画は、実装の分け方・コミット・ファイル構成と、**実装で迷いやすい所の決めごと（7 章）**。
 > 進め方：mac の実機確認 → ViewModel の切り出し（挙動不変）→ Core・テストの mac 対応 → 画面（Avalonia）→ 配布 → 通し確認。各 Phase の終わりに、決めた OS（1 章の表）で確かめ、要件定義の `[x]` と「状況」を更新して、ビルドの有無と出力先を報告する。コミットは頼まれたときだけ（ここは区切りの目安）。途中のコミットは `Refs #22`、最後だけ `Fixes #22`。作業ブランチは `feature/issue22-macos-support`（1 つ。main に入るのは Avalonia 版だけ）。
 > **レビュー**：`macos-support-review.html`（2026-10-06）の指摘 #1〜#19 と決定 Q1〜Q5 を反映した（要件定義も反映済み）。
+> **main のマージ（2026-10-07）**：Issue #17（Phase 34〜36：Cursor の Hook の置き場所 `hookDir`・「Hook なし」の警告の帯）が先に main に入ったので、このブランチにマージした。計画への影響は **7.21** にまとめ、各 Phase の表・品質ゲート・ファイル構成にも入れた。要件定義の「Windows と macOS の違い」は **12.12**（12.11 は main の「Hook なし」の警告）。説明：`docs/macos-support/issue17-merge-impact.html`。
 
 ## 1. 全体像
 
@@ -30,18 +31,18 @@
 - 新しい依存パッケージ：`Avalonia`・`Avalonia.Desktop`・`Avalonia.Themes.Fluent`（Phase 30。12 系の最新。調査時点で 12.1.x）、`Avalonia.Controls.WebView`（Phase 31。MIT。Windows は WebView2、mac は WKWebView）。`SukiUI`（Phase 30-2 の見比べで使う。MIT。7.0 系は Avalonia 12.0.3 以上に対応。安定版を使い、nightly は使わない。DataGrid・ColorPicker なども一緒に入る）。FluentTheme を選んだら外す（7.8）。`Avalonia.Headless.XUnit`（Phase 30-3。テスト。画面を出さずに Avalonia の部品を動かす。版は Avalonia にそろえる）。**外すもの**：`WPF-UI`・`Microsoft.Web.WebView2`（Phase 30-1。Runtime の見分けは `NativeWebView.AdapterInfo` で行う。それで足りなければ、Windows だけで使う形で戻す。7.11）。
 - 守る制約：Core は AOT 互換のまま（リフレクションを使わない。Hook が使う）。App は共通イベント `AgentEvent` だけを扱う。`~/.claude/` には何も書かない。本物の環境（Windows の `%LOCALAPPDATA%\Miharikun\`・`%USERPROFILE%\.cursor\hooks.json`、mac の `~/Library/Application Support/Miharikun/`・`~/.cursor/hooks.json`）を勝手に書き換えない。
 - **Phase 28 は挙動を変えない切り出し**。Windows の WPF 版の画面が変わらないことが完了条件（品質ゲート）。Phase 30・31 は、同じ確認項目を Avalonia 版（両 OS）でもう一度通す。
-- いまのテスト：**842 件合格 + スキップ 5**（`PerfFact`。2026-10-06、Windows）。**件数は減らさない**。mac では Windows だけのテストが飛ぶので、OS ごとの件数を記録する（7.15）。
+- いまのテスト：**961 件合格 + スキップ 5**（`PerfFact`。2026-10-07、Windows。main の Issue #17 をマージした後。マージ前は 842 件）。**件数は減らさない**。mac では Windows だけのテストが飛ぶので、OS ごとの件数を記録する（7.15）。
 
 ### 品質ゲート（Phase 28 の完了条件。Phase 30・31 の完了条件でも、Avalonia 版で同じ項目を通す）
-1. `dotnet test` が全部通る（842 件を減らさない。28-3 で ViewModel のテストが増える）。
+1. `dotnet test` が全部通る（961 件を減らさない。28-3 で ViewModel のテストが増える）。
 2. `dotnet build src/Miharikun.Core --no-incremental` が警告 0。アプリのビルドも警告 0。
 3. 既存の機能が従来どおり（隔離環境。下の一覧を全部）：
-   - **一覧**：状態ごとの件数、ステータスのチップ（「全て」・複数選択の OR・件数は全カードから）、エージェントのチップ（1 つだけ）、検索（全プロンプト・概要・メモ・タイトル・変更ファイル名）、フィルタ（実行中のみ・未コミットあり・メモあり）、並び（最後の動きの新しい順。動いたカードが上へ移る）、カードの選択、**並べ替えても選んでいるカードの選択が外れない**（Avalonia は Move で外れる不具合があるので、選択中は動かさない。7.3）、✏️ のリネーム（Enter・Esc・フォーカスアウト）、**選択中のカードが隠れたときの動き**（絞り込み・検索のほか、「実行中のみ」で停止に変わった・「未コミットあり」でコミットした・「メモあり」でメモを消した・拡大中に隠れた。28-2 の前に WPF 版で記録し、同じであること。7.3）、停止の表示（1 秒ごと）。
-   - **詳細**：ステータスのボタン（押す・もう一度で未設定）、概要の取り込み・編集・1 つ前に戻す、3 行サマリーのクリック → タイムラインへジャンプ（フィルタが OFF なら ON）、完了チェック、稼働状態、成果（コミット・変更ファイル・テストの展開）、ターン一覧のジャンプ。
+   - **一覧**：状態ごとの件数、ステータスのチップ（「全て」・複数選択の OR・件数は全カードから）、エージェントのチップ（1 つだけ）、検索（全プロンプト・概要・メモ・タイトル・変更ファイル名）、フィルタ（実行中のみ・未コミットあり・メモあり）、並び（最後の動きの新しい順。動いたカードが上へ移る）、カードの選択、**並べ替えても選んでいるカードの選択が外れない**（Avalonia は Move で外れる不具合があるので、選択中は動かさない。7.3）、✏️ のリネーム（Enter・Esc・フォーカスアウト）、**選択中のカードが隠れたときの動き**（絞り込み・検索のほか、「実行中のみ」で停止に変わった・「未コミットあり」でコミットした・「メモあり」でメモを消した・拡大中に隠れた。28-2 の前に WPF 版で記録し、同じであること。7.3）、停止の表示（1 秒ごと）、**「Hook なし」の警告の帯**（Issue #17。一覧の上・件数の文・閉じられない・「hook-error.log を開く」はファイルが無ければ押せず、できると押せる・Hook の記録が来ると件数が減る・0 件で消える。カードは灰色の丸「Hook なし」で、状態の件数に入らない。要件 12.11）。
+   - **詳細**：ステータスのボタン（押す・もう一度で未設定）、概要の取り込み・編集・1 つ前に戻す、3 行サマリーのクリック → タイムラインへジャンプ（フィルタが OFF なら ON）、完了チェック、稼働状態、成果（コミット・変更ファイル・テストの展開）、ターン一覧のジャンプ。「導入前」「Hook なし」のセッションは時刻・ターン・ツール・git が「—」、チェック欄の文がそれぞれ違う（要件 12.11）。
    - **右ペイン**：メモ（フォーカスアウトで保存・セッション切り替えで保存）、タイムラインの種別チップ・検索（「3/48件」・✕）・行のクリックで全文の開閉・ダブルクリックでコピー（バブル「コピーしました」）・全部コピー、拡大モード（Esc で戻る・状態が保たれる）、最近の入力・最近閉じたセッション（クリックでカードを選ぶ。隠れていればフィルタを外す）、5,000 行のタイムラインで種別の ON/OFF・検索の 1 文字・セッションの切り替えがもたつかない（28-2 の前に WPF 版で時間を測って記録し、同じくらいであること。7.3）。
    - **ドキュメントタブ**：Phase 16・24 で確かめた項目（ツリー・一覧・絞り込み・概要・md（チェックボックス・日本語の見出し id・mermaid・コードの色付け・相対パスの画像）・`#` リンク・md→md と html→md のリンク・html の相対 css/js/画像・自動再読み込み・タブを切り替えて戻っても表示とスクロール位置が戻る（Avalonia では WebView を作り直さない：7.17）・テーマの切り替えで md が作り直される・「フォルダで開く」・「既定のアプリで開く」・除外設定のダイアログ）。
    - **メモタブ**：Phase 25 で確かめた項目（空の案内・編集・保存・Ctrl+S・キャンセルの確認・タブを移っても入力が残る・読めないメモ・外での書き換え・未保存で閉じるときの確認［保存］［保存しない］［キャンセル］・メモのリンクからドキュメントタブへ）。
-   - **⚙**：テーマ（OS に合わせる・ライト・ダーク）、設定…（停止とみなす時間）、ドキュメントの設定…、Hook の導入・削除（`MIHARIKUN_CURSOR_DIR` の一時フォルダで）、起動時の Hook の確認。
+   - **⚙**：テーマ（OS に合わせる・ライト・ダーク）、設定…（停止とみなす時間・**Hook の置き場所**：「参照…」・「既定に戻す」・存在しないフォルダ／相対パス／空は保存できない（分を直しても保存できないまま）・保存して場所が変わると「導入し直しますか？」→ はい／いいえ。要件 8.2・12.9）、ドキュメントの設定…、Hook の導入・削除（`MIHARIKUN_CURSOR_DIR` の一時フォルダで）、起動時の Hook の確認（**hooks.json の登録が全イベントで同じ別の場所なら、ダイアログなしで受け入れ・`settings.json` に `hookDir`・`app.log` に 1 行**／場所がばらばらなら「登録し直します」／別の場所の exe が古ければ「更新」でその場所にコピー。Phase 35 の確認項目。要件 8.2）。
 4. 確かめ方：隔離環境（`MIHARIKUN_DATA_DIR`・`MIHARIKUN_CURSOR_DIR`・`MIHARIKUN_CLAUDE_DIR` を一時フォルダに）。Windows は UI Automation（`AutomationId`）と DevTools プロトコル（WebView2）で、これまでと同じ方法。mac は利用者の目視を基本にする（7.20）。本物のデータは使わない。
 
 ## 2. Phase 27・28：mac の実機確認と ViewModel の切り出し
@@ -75,8 +76,8 @@
 | # | コミット | 内容 | 確認 |
 |---|---|---|---|
 | 28-1 | Presentation プロジェクトと口 | `src/Miharikun.Presentation/Miharikun.Presentation.csproj`（`net10.0`、`CommunityToolkit.Mvvm` 8.4.2、Core を参照。Docs は参照しない＝ VM は Markdig を使っていない）。`Miharikun.slnx`・テストのプロジェクトに追加。`Services/IUiServices`・`IUiTimer`（7.2）、`Services/ViewList`（7.3。選択中の要素は動かさない）。`AppLog`・`ShellOpen` を Presentation へ移す（中身は変えない。画面のプロジェクトから呼ぶので `public` にする。`ShellOpen.RevealInExplorer` は `Reveal` に名前を変える。`ShellOpen` は 29-4 で mac を足す）。WPF 側に `WpfUiServices`（`DispatcherTimer`・`ClipboardHelper`・`MessageBox`・`ShellOpen` を包む）。この時点では VM はまだ WPF のプロジェクトにある | `ViewListTests`（7.3 の表の行ごと。選択中の要素に Move が出ないことも）。`dotnet test` 全部通る。WPF 版が起動する |
-| 28-2 | ViewModel を移す | `ViewModels/*.cs` と `Views/IPreviewHost.cs`（`IPreviewHost`・`PreviewSource`。名前空間を `Miharikun.ViewModels` に）、`HookSetup` を Presentation へ移す。WPF の型を使わない形にする：`MainViewModel.CardsView` → `VisibleCards`（7.3。選択中は動かさない）、`TimelineViewModel.View` → `VisibleItems`（7.3。種別・検索・切り替えは入れ物ごと差し替え）、`DispatcherTimer` → `IUiTimer`（7.4。1 秒の時計は `MainWindow` から `MainViewModel` へ移す）、`ClipboardHelper` → `IUiServices.SetClipboardTextAsync`（7.5）、`ShellOpen` → `IUiServices`、`MemoViewModel.ConfirmDiscard`（`Func<bool>`）→ `IUiServices.ConfirmAsync`（`CancelCommand` を非同期に。7.5）、`HookSetup` の `MessageBox` → `IUiServices`（非同期。owner の引数をなくす）、`AppLog.Write` の直接呼び出し → コンストラクタで受け取る `Action<string>`。`MainViewModel` の git の状態を取る所は差し替えられる形に（`Func<GitStatus?>` など）、`RefreshGit`・`LoadCommits` は Task を返す中身＋イベント用の包みに分ける（7.5）。WPF 側は配線だけ：`MainWindow.xaml` のバインド先（`VisibleCards`・`Timeline.VisibleItems`）、`App.xaml.cs` の組み立て、`MainWindow.xaml.cs`（時計・確認の関数を消す） | 品質ゲート 1〜4。**始める前に、WPF 版で 7.3 の「28-2 の前の記録」を取る**（選択中のカードが隠れたとき・5,000 行の速さ ほか） |
-| 28-3 | ViewModel のテスト | `tests/Miharikun.Tests/Presentation/`：`FakeUiServices`（タイマーを手で進める・確認の答えを決めておく・クリップボードの成否）。git の状態は差し替え、UI スレッドへの受け渡しはその場で実行する `SynchronizationContext` にする（7.5）。一覧（絞り込みの組み合わせ・並び・選択の保ち方（並べ替えで選択中の要素が動かない）・隠れたカードを選ぶとフィルタが外れる）、タイムライン（種別・検索・件数の文字・全部コピーの中身・追記で表示中の行が増える・ジャンプでフィルタが ON）、メモ（キャンセルの確認：はい／いいえ・変更なしならすぐ戻る）、Hook の導入の流れ（確認で「いいえ」なら何もしない） | `dotnet test` が増えて全部通る（件数を記録） |
+| 28-2 | ViewModel を移す | `ViewModels/*.cs` と `Views/IPreviewHost.cs`（`IPreviewHost`・`PreviewSource`。名前空間を `Miharikun.ViewModels` に）、`HookSetup` を Presentation へ移す。WPF の型を使わない形にする：`MainViewModel.CardsView` → `VisibleCards`（7.3。選択中は動かさない）、`TimelineViewModel.View` → `VisibleItems`（7.3。種別・検索・切り替えは入れ物ごと差し替え）、`DispatcherTimer` → `IUiTimer`（7.4。1 秒の時計は `MainWindow` から `MainViewModel` へ移す）、`ClipboardHelper` → `IUiServices.SetClipboardTextAsync`（7.5）、`ShellOpen` → `IUiServices`、`MemoViewModel.ConfirmDiscard`（`Func<bool>`）→ `IUiServices.ConfirmAsync`（`CancelCommand` を非同期に。7.5）、`HookSetup` の `MessageBox` → `IUiServices`（非同期。owner の引数をなくす。Issue #17 で増えた `ChangePlacement` の「導入し直しますか？」と保存失敗のお知らせも。`CheckAtStartup` の「受け入れ → 状態を取り直す → 提案」の順と、受け入れたフォルダを直接渡して作り直す所は変えない。7.21）、`MainViewModel.OpenHookErrorLogCommand` の `ShellOpen.Open` → `IUiServices.OpenWithDefaultApp`（押せるかの `File.Exists` はそのまま）、`AppLog.Write` の直接呼び出し → コンストラクタで受け取る `Action<string>`。`MainViewModel` の git の状態を取る所は差し替えられる形に（`Func<GitStatus?>` など）、`RefreshGit`・`LoadCommits` は Task を返す中身＋イベント用の包みに分ける（7.5）。WPF 側は配線だけ：`MainWindow.xaml` のバインド先（`VisibleCards`・`Timeline.VisibleItems`）、`App.xaml.cs` の組み立て、`MainWindow.xaml.cs`（時計・確認の関数を消す。設定ダイアログの後の「置き場所が変わったら `ChangePlacement`」は画面の側に残す：7.2） | 品質ゲート 1〜4（Issue #17 の帯・置き場所・受け入れの項目も）。**始める前に、WPF 版で 7.3 の「28-2 の前の記録」を取る**（選択中のカードが隠れたとき・5,000 行の速さ ほか） |
+| 28-3 | ViewModel のテスト | `tests/Miharikun.Tests/Presentation/`：`FakeUiServices`（タイマーを手で進める・確認の答えを決めておく・クリップボードの成否）。git の状態は差し替え、UI スレッドへの受け渡しはその場で実行する `SynchronizationContext` にする（7.5）。一覧（絞り込みの組み合わせ・並び・選択の保ち方（並べ替えで選択中の要素が動かない）・隠れたカードを選ぶとフィルタが外れる）、タイムライン（種別・検索・件数の文字・全部コピーの中身・追記で表示中の行が増える・ジャンプでフィルタが ON）、メモ（キャンセルの確認：はい／いいえ・変更なしならすぐ戻る）、Hook の導入の流れ（確認で「いいえ」なら何もしない）、Hook の置き場所（7.21：起動時の受け入れはダイアログを出さずに `hookDir` を保存・保存に失敗しても今回だけその場所を使う／`ChangePlacement` は保存の失敗でお知らせ・「いいえ」なら hooks.json を変えない・「はい」なら導入）、「Hook なし」の帯（`NoHookCount`・`HasNoHook`・文・`OpenHookErrorLogCommand` はファイルが無ければ押せない） | `dotnet test` が増えて全部通る（件数を記録） |
 
 **注意**：28-2 は「移して、型を差し替える」だけ。表示の文言・並び・選択・フォーカス・スクロールの呼び出し（`CardScrollRequested`・`ScrollRequested`）の箇所と順番を変えない。`MainViewModel.Apply` の中の「カードを足す → 一覧を合わせる → 件数 → 最近の入力」の順も同じ。VM のテストは 28-2 の後になる（それまでは WPF のプロジェクトの中にあって、テストから参照できない）。
 
@@ -85,9 +86,9 @@
 | # | コミット | 内容 | テスト／確認 |
 |---|---|---|---|
 | 29-1 | CI でテスト（最初に作る） | `.github/workflows/test.yml`（新規。push・pull_request・手動）：Windows（`dotnet build Miharikun.slnx` → `dotnet test`）と macOS（プロジェクトを指定してビルド → `dotnet test` → `dotnet publish src/Miharikun.Hook -r osx-arm64` で NativeAOT が通るか）。7.20。このあとの mac の作業で Windows を壊していないかを、これで見る。CI を見る前に、利用者にコミットと push を頼む（1 章） | Windows は緑。mac は 27-1 の一覧と同じテストだけが落ちる（29-2・29-4 で直す） |
-| 29-2 | テストの OS 対応 | 始める前に mac でもう一度テストを回し、基準を取り直す（28 で Presentation のテストが増えたため）。「mac で落ちたテスト」を 3 つに分ける（7.15）：Windows の意味を確かめるもの（ドライブ文字・`/c:/` の形・`\` 区切り・`~RF*.TMP`・CP932）→ `[WindowsFact]`／`[WindowsTheory]`（`PerfFact` と同じ作り。mac では飛ぶ）。たまたま `C:\` を使っているだけのもの → `TestPaths`（OS の絶対パスを作る）に直す。**mac で本当に動かないもの**（例：一時フォルダが `/var` → `/private/var` のリンクなので、`GitClientTests` が実パスと論理パスの違いで落ちる）→ テストは変えず、製品のコードを直す（29-4）。mac の形の行を足す（`ProjectPath`：`/Users/x/proj` の比較、`ClaudeFolderName`：`/Users/x/repo` → `-Users-x-repo` ほか、14.3 で分かったもの）→ `[MacFact]` か両 OS | Windows の件数は減らない。mac で残る落ちは「製品のコードを直すもの」だけ（29-4 で通る）。OS ごとの件数（合格・スキップ）を記録 |
-| 29-3 | Hook と導入の mac 対応 | `HookInstaller.HookExeName` を OS で（Windows `Miharikun.Hook.exe`、mac `Miharikun.Hook`）。`IsOurs` は拡張子を除いた `Miharikun.Hook` で見る（両 OS の名前に当たる）。Hook に `--probe`（何も読まず・書かず、`ok` を出して 0 で終わる。7.12）。`HookInstaller` の mac の導入・更新は、同じフォルダの一時ファイルにコピーしてから名前を付け替える（7.12）。`HookSetup`：導入の後、mac は印を外し（`/usr/bin/xattr -d com.apple.quarantine`）、両 OS で `--probe` を試す。だめなら `xattr` の 1 行を案内（実際の `.app` の場所・コピーできる形・App Translocation のときの案内。7.12）。Hook の案内の文の mac の言い方（要件 12.11）。27-1 の結果で導入先を変える場合はここ（7.1） | `HookRunnerTests`：`--probe` は 0・`ok`・ファイルを作らない。`HookInstallerTests`：名前（OS）・`IsOurs`（両方の名前・古いパス）・空白を含む導入先の `BuildCommand`・上書きで中身が新しくなる（mac は名前の付け替え）。`HookSetup` の流れ（Fake：probe 失敗で案内が出る・案内の `.app` の場所） |
-| 29-4 | git・パス・シェルの mac 対応 | `Core/Git/GitLocator`（7.13。mac で Command Line Tools が無いと `/usr/bin/git` がインストールのダイアログを出すため。開発フォルダの git の実体を直接使う）を `GitClient` と Hook の `GitProbe` で使う。`ProjectPath.Normalize` で NFC にそろえる（7.14）。シンボリックリンク：App は対象フォルダの実パスも持ち（`Core/Projects/RealPath`）、`ProjectPath.Matches` は論理・実のどちらかが合えば一致。`GitClient` は status のパスを、作業フォルダからの相対（`--show-cdup`）で論理のルートに付ける（7.14）。ドキュメントの相対パスを NFC にそろえて比べる（`DocumentIndex`・`GitIgnoreMatcher`・`DocumentLinkRule`。7.14）。`ShellOpen`：mac は `open`・`open -R`（7.2）。ボタンの文字「フォルダで開く／Finder で表示」（7.2）。14.3 で分かったそのほかの違い | `GitLocatorTests`（候補の順・無いとき null。ファイルの有無は差し替えて試す）、`ProjectPathTests`（NFC と NFD が一致・論理と実のどちらでも一致）、`RealPathTests`（mac）、リンク経由のプロジェクトの `GitClientTests`（mac）、NFD の名前のファイルに NFC のリンク（`DocumentIndex`）、`ShellOpen` のコマンドの組み立て（OS ごと） |
+| 29-2 | テストの OS 対応 | 始める前に mac でもう一度テストを回し、基準を取り直す（28 で Presentation のテストが増えたため）。「mac で落ちたテスト」を 3 つに分ける（7.15）：Windows の意味を確かめるもの（ドライブ文字・`/c:/` の形・`\` 区切り・`~RF*.TMP`・CP932）→ `[WindowsFact]`／`[WindowsTheory]`（`PerfFact` と同じ作り。mac では飛ぶ）。たまたま `C:\` を使っているだけのもの → `TestPaths`（OS の絶対パスを作る）に直す。**mac で本当に動かないもの**（例：一時フォルダが `/var` → `/private/var` のリンクなので、`GitClientTests` が実パスと論理パスの違いで落ちる）→ テストは変えず、製品のコードを直す（29-4）。Issue #17 で増えたテスト（`HookInstallerPlacementTests`・`AppSettingsHookDirTests`・`HookDirInputTests`・`HookRegistrationTests`・`CursorTranscriptRealtimeTests` は `C:` や `` 区切りのパスを多く使う）も同じ 3 つに分ける（7.21）。mac の形の行を足す（`ProjectPath`：`/Users/x/proj` の比較、`ClaudeFolderName`：`/Users/x/repo` → `-Users-x-repo` ほか、14.3 で分かったもの）→ `[MacFact]` か両 OS | Windows の件数は減らない。mac で残る落ちは「製品のコードを直すもの」だけ（29-4 で通る）。OS ごとの件数（合格・スキップ）を記録 |
+| 29-3 | Hook と導入の mac 対応 | `HookInstaller.HookExeName` を OS で（Windows `Miharikun.Hook.exe`、mac `Miharikun.Hook`）。`IsOurs` は拡張子を除いた `Miharikun.Hook` で見る（両 OS の名前に当たる）。Hook に `--probe`（何も読まず・書かず、`ok` を出して 0 で終わる。7.12）。`HookInstaller` の mac の導入・更新は、同じフォルダの一時ファイルにコピーしてから名前を付け替える（7.12）。`HookSetup`：導入の後、mac は印を外し（`/usr/bin/xattr -d com.apple.quarantine`）、両 OS で `--probe` を試す。だめなら `xattr` の 1 行を案内（実際の `.app` の場所・コピーできる形・App Translocation のときの案内。7.12）。Hook の案内の文の mac の言い方（要件 12.12）。**Hook の置き場所の mac（7.21）**：`DefaultHookDir`（27-1 で空白がだめなら `~/.miharikun/bin`。7.1）、`HookDirInput` の誤りの文（mac「/ から始まるフォルダを指定してください」）、`CanInstall`・置き場所が無いときの文、「Hook なし」の帯の文（要件 12.12）。導入（メニュー・`ChangePlacement` の「はい」とも）の後に印の解除と `--probe`。起動時の受け入れでは走らせない | `HookRunnerTests`：`--probe` は 0・`ok`・ファイルを作らない。`HookInstallerTests`：名前（OS）・`IsOurs`（両方の名前・古いパス）・空白を含む導入先の `BuildCommand`・上書きで中身が新しくなる（mac は名前の付け替え）。`HookSetup` の流れ（Fake：probe 失敗で案内が出る・案内の `.app` の場所・`ChangePlacement` の「はい」でも probe・受け入れでは probe しない）。`HookInstallerPlacementTests` に mac の行（`/Users/x/my dev/Miharikun.Hook --agent cursor` の引用符あり・なし、拡張子なしの名前、`DefaultHookDir`）。`HookDirInputTests` の文（OS ごと） |
+| 29-4 | git・パス・シェルの mac 対応 | `Core/Git/GitLocator`（7.13。mac で Command Line Tools が無いと `/usr/bin/git` がインストールのダイアログを出すため。開発フォルダの git の実体を直接使う）を `GitClient` と Hook の `GitProbe` で使う。`ProjectPath.Normalize` で NFC にそろえる（7.14）。シンボリックリンク：App は対象フォルダの実パスも持ち（`Core/Projects/RealPath`）、`ProjectPath.Matches` は論理・実のどちらかが合えば一致。`GitClient` は status のパスを、作業フォルダからの相対（`--show-cdup`）で論理のルートに付ける（7.14）。ドキュメントの相対パスを NFC にそろえて比べる（`DocumentIndex`・`GitIgnoreMatcher`・`DocumentLinkRule`。7.14）。`ShellOpen`：mac は `open`・`open -R`（7.2）。ボタンの文字「フォルダで開く／Finder で表示」（7.2）。14.3 で分かったそのほかの違い | `GitLocatorTests`（候補の順・無いとき null。ファイルの有無は差し替えて試す）、`ProjectPathTests`（NFC と NFD が一致・論理と実のどちらでも一致）、`RealPathTests`（mac）、リンク経由のプロジェクトの `GitClientTests`（mac）、NFD の名前のファイルに NFC のリンク（`DocumentIndex`）、`ShellOpen` のコマンドの組み立て（OS ごと）。Issue #17 の mac での動き（7.21）：`HookRegistrationTests` の events の作成日時（mac は APFS の作成日時が取れる見込み）、`SessionMonitorWatchTests` のサブフォルダの監視（`agent-transcripts/<uuid>/`）が mac で通る |
 
 完了条件：両 OS の `dotnet test` が通り（件数を記録。29-2 で分けた「製品のコードを直すもの」も通る）、CI が緑。Core は AOT 互換（警告 0）。mac の NativeAOT の Hook が通る。WPF 版は Windows で起動する（CI のビルド＋手元で 1 回）。
 
@@ -97,14 +98,14 @@
 
 | # | コミット | 内容 | 確認 |
 |---|---|---|---|
-| 30-1 | WPF を Avalonia に置き換える（土台） | **始める前に**：WPF 版（28 の終わり）を別の場所にビルドして残す（`-p:OutDir=`。30・31 の Windows の確認で見比べる）。**最初に**：WKWebView の読み取り範囲の試作（捨てる小さな画面。7.11 の組み合わせ。27 で済んでいなければ）と、開発用の `.app`（`scripts/publish-mac.sh` の開発用：Info.plist・配置・アドホック署名。7.19）。そのあと `src/Miharikun/` の WPF のファイル（`*.xaml`・`*.xaml.cs`・`Themes/*.xaml`・`Behaviors/`・`AssemblyInfo.cs`・`ClipboardHelper.cs`・`WpfUiServices`・`ThemeService.cs`・`WebViewEnvironment.cs`）を消し（`PreviewFiles.cs` は WPF に依らないので残す）、同じ場所・同じ名前（`Miharikun`）の Avalonia のプロジェクトにする（`net10.0`。7.9。csproj は今の `IncludeNativeLibrariesForSelfExtract`・`SatelliteResourceLanguages`・`DebugType` を引き継ぐ）。`Program.cs`、`App.axaml(.cs)`（組み立て：7.7。ログ・テーマはウィンドウを出す前。`Name="Miharikun"`、mac のアプリのメニューに既定の項目を出さない：要件 12.11）、`AvaloniaUiServices`（7.2）、`Views/MessageDialog`（OK／はい・いいえ。案内の 1 行は選んでコピーできる形）、`ThemeService`（7.8）、`Themes/Colors.Light.axaml`・`Colors.Dark.axaml`（今と同じキー。`ThemeDictionaries` から読む。7.8）、フォント（7.10）、`MainWindow`：共通ヘッダー（タブ 3 つ・対象フォルダ・⚙ メニュー）とタブの枠だけ（中身は重ねて `IsVisible` で切り替える：7.17）、mac の起動時のフォルダ選択（7.7）、閉じるときの流れの骨組み（7.6）、起動時の Hook の確認（7.16） | WKWebView の試作の結果を要件 12.7 に書く（だめなら 7.11 の代わりの形）。両 OS で起動する。mac（開発用の `.app` を Finder から開く）：引数なしでフォルダを選ぶ画面 → キャンセルで終わる・選ぶと開く、`open -n -a` で 2 つ開ける、アプリのメニューに「About Avalonia」が出ない、書類フォルダの中のプロジェクトを開いたときの許可（TCC）の出方と、拒否したときの見え方を記録（要件 8.1）。⚙ のテーマが効く（OS 追従も）。Hook の確認（隔離環境）。日本語の字形（中国語風の字にならない） |
+| 30-1 | WPF を Avalonia に置き換える（土台） | **始める前に**：WPF 版（28 の終わり）を別の場所にビルドして残す（`-p:OutDir=`。30・31 の Windows の確認で見比べる）。**最初に**：WKWebView の読み取り範囲の試作（捨てる小さな画面。7.11 の組み合わせ。27 で済んでいなければ）と、開発用の `.app`（`scripts/publish-mac.sh` の開発用：Info.plist・配置・アドホック署名。7.19）。そのあと `src/Miharikun/` の WPF のファイル（`*.xaml`・`*.xaml.cs`・`Themes/*.xaml`・`Behaviors/`・`AssemblyInfo.cs`・`ClipboardHelper.cs`・`WpfUiServices`・`ThemeService.cs`・`WebViewEnvironment.cs`）を消し（`PreviewFiles.cs` は WPF に依らないので残す）、同じ場所・同じ名前（`Miharikun`）の Avalonia のプロジェクトにする（`net10.0`。7.9。csproj は今の `IncludeNativeLibrariesForSelfExtract`・`SatelliteResourceLanguages`・`DebugType` を引き継ぐ）。`Program.cs`、`App.axaml(.cs)`（組み立て：7.7。ログ・テーマはウィンドウを出す前。`Name="Miharikun"`、mac のアプリのメニューに既定の項目を出さない：要件 12.12）、`AvaloniaUiServices`（7.2）、`Views/MessageDialog`（OK／はい・いいえ。案内の 1 行は選んでコピーできる形）、`ThemeService`（7.8）、`Themes/Colors.Light.axaml`・`Colors.Dark.axaml`（今と同じキー。`ThemeDictionaries` から読む。7.8）、フォント（7.10）、`MainWindow`：共通ヘッダー（タブ 3 つ・対象フォルダ・⚙ メニュー）とタブの枠だけ（中身は重ねて `IsVisible` で切り替える：7.17）、mac の起動時のフォルダ選択（7.7）、閉じるときの流れの骨組み（7.6）、起動時の Hook の確認（7.16） | WKWebView の試作の結果を要件 12.7 に書く（だめなら 7.11 の代わりの形）。両 OS で起動する。mac（開発用の `.app` を Finder から開く）：引数なしでフォルダを選ぶ画面 → キャンセルで終わる・選ぶと開く、`open -n -a` で 2 つ開ける、アプリのメニューに「About Avalonia」が出ない、書類フォルダの中のプロジェクトを開いたときの許可（TCC）の出方と、拒否したときの見え方を記録（要件 8.1）。⚙ のテーマが効く（OS 追従も）。Hook の確認（隔離環境）。日本語の字形（中国語風の字にならない） |
 | 30-2 | テーマを見比べて決める・日本語入力 | カード一覧と詳細のヘッダーを FluentTheme で実際に作る（試作で捨てない）。`App.axaml` のテーマの 1 行を `SukiTheme` に差し替えて、同じ画面を SukiUI でも出す（7.8 の「見比べの進め方」）。両 OS・ライト/ダークのスクリーンショットを並べて利用者に見せる。SukiUI は 7.8 の ①〜④ も確かめて、結果を添える。**利用者が決める**。選ばれなかった方のパッケージ・スタイルは外してからコミットする。決めたテーマと結果を要件 12.5 に書く。日本語入力（IME）を、検索・リネーム・メモの入力欄で両 OS で試す（変換中の表示・確定・Enter の扱い）。おかしければ止まって相談 | 利用者の決定。テーマ・SukiUI の ①〜④・IME の結果を 12.5 に記録 |
-| 30-3 | 左ペイン | 状態ごとの件数、ステータスのチップ（複数）、エージェントのチップ（1 つ）、検索、フィルタ、カードの一覧（`VisibleCards`・仮想化・選択）、カードの中身（状態の丸・バッジ・各行）、✏️ のリネーム（7.18）、`CardScrollRequested` → `ScrollIntoView`（7.9）。選択の保ち方（7.3）を `tests/Miharikun.UiTests`（Avalonia.Headless。新規）で確かめる：並べ替え・追加・絞り込みで `SelectedItem` が保たれる／隠れたら null。両 OS の CI で回す（7.20） | 品質ゲート 3 の「一覧」。`UiTests` が両 OS で通る |
+| 30-3 | 左ペイン | 一番上の「Hook なし」の警告の帯（Issue #17。`HasNoHook`・`HookWarningText`・「hook-error.log を開く」。色は `HookWarningBackgroundBrush`・`HookWarningBorderBrush`・`HookWarningTextBrush`。`AutomationId` は `HookWarning`・`OpenHookErrorLog`。要件 12.11）、状態ごとの件数、ステータスのチップ（複数）、エージェントのチップ（1 つ）、検索、フィルタ、カードの一覧（`VisibleCards`・仮想化・選択）、カードの中身（状態の丸・バッジ・各行）、✏️ のリネーム（7.18）、`CardScrollRequested` → `ScrollIntoView`（7.9）。選択の保ち方（7.3）を `tests/Miharikun.UiTests`（Avalonia.Headless。新規）で確かめる：並べ替え・追加・絞り込みで `SelectedItem` が保たれる／隠れたら null。両 OS の CI で回す（7.20） | 品質ゲート 3 の「一覧」。`UiTests` が両 OS で通る |
 | 30-4 | 中央ペイン | 詳細のすべてのブロック（ヘッダー・ステータスのボタン・概要・3 行サマリーのジャンプ・完了チェック・稼働状態・成果の展開・ターン一覧） | 品質ゲート 3 の「詳細」 |
 | 30-5 | 右ペイン | メモ（フォーカスアウトで保存）、タイムライン（チップ・検索・件数・`VisibleItems`（入れ物ごと差し替え・末尾は追加。7.3）・可変の高さの仮想化・行のクリックで開閉・ダブルクリックでコピーとバブル・全部コピー）、拡大モード（Esc・幅の保存と復元）、最近の入力・最近閉じたセッション、選んだときに末尾へ・ジャンプのスクロール（7.9） | 品質ゲート 3 の「右ペイン」。5,000 イベントのセッション（`ClaudeLogBuilder` で作るダミー）で、スクロール・ジャンプ・種別の ON/OFF・検索がもたつかない（28-2 の前の記録と同じくらい） |
-| 30-6 | ⚙ のダイアログ・Hook | 設定…（`AppSettingsDialog`）、Hook の導入・削除の確認とお知らせ（`IUiServices`）、テーマのチェックの表示 | 品質ゲート 3 の「⚙」（ドキュメントの設定…は 31-2） |
+| 30-6 | ⚙ のダイアログ・Hook | 設定…（`AppSettingsDialog`：停止とみなす時間と **Hook の置き場所**（入力欄・「参照…」は `StorageProvider.OpenFolderPickerAsync`（今の置き場所が在れば最初に開く場所にする）・「既定に戻す」・分と置き場所をまとめて検査する `Revalidate`）。保存の後、置き場所が変わっていれば `HookSetup.ChangePlacementAsync`。欄の名前と誤りの文は OS で替える：要件 12.12。7.21）、Hook の導入・削除の確認とお知らせ（`IUiServices`）、起動時の受け入れ（ダイアログなし）、テーマのチェックの表示 | 品質ゲート 3 の「⚙」（ドキュメントの設定…は 31-2）。mac：「参照…」で OS のフォルダ選択が出る（WPF 版では未確認だった項目） |
 
-完了条件：要件 12.1〜12.5・12.8・12.9・12.11 が両 OS で動く（ライト/ダーク）。品質ゲート 3 の「一覧・詳細・右ペイン・⚙」を Avalonia 版で通す。テーマを 12.5 に書いた。
+完了条件：要件 12.1〜12.5・12.8・12.9・12.11（「Hook なし」の帯）・12.12 が両 OS で動く（ライト/ダーク）。品質ゲート 3 の「一覧・詳細・右ペイン・⚙」を Avalonia 版で通す。テーマを 12.5 に書いた。
 
 ### 4.2 Phase 31：ドキュメント・メモタブ（mac。区切りごとに Windows でも起動）
 
@@ -123,10 +124,10 @@
 
 | # | コミット | 内容 | 確認 |
 |---|---|---|---|
-| 32-1 | Windows の発行を Avalonia に | Windows か CI で行う。`scripts/publish.ps1`：App（Avalonia）の単一ファイル・自己完結（`win-x64`。Avalonia の Skia などのネイティブ DLL も単一ファイルに入れる：30-1 で引き継いだ `IncludeNativeLibrariesForSelfExtract`）。配布 zip の `README.txt` の文を `scripts/dist/README-win.txt` に移す（`{VERSION}` を置き換える）。NativeWebView（WebView2）が単一ファイルで動くか | zip を展開 → 起動 → ドキュメント・メモタブのプレビューが出る |
-| 32-2 | mac の発行 | `scripts/publish-mac.sh`（30-1 の開発用を配布用に仕上げる。7.19）：App（`osx-arm64`・自己完結・単一ファイルにしない）と Hook（NativeAOT）→ `Miharikun.app`（`scripts/dist/Info.plist` を元に）→ アドホック署名 → `codesign --verify` → `README.txt`（`scripts/dist/README-mac.txt`。要件 8.1・9 章の手順：印の外し方・`open -n -a Miharikun --args "$(pwd -P)"`・ファイルとフォルダの許可）と一緒に `ditto` で zip → SHA-256 | mac で zip を展開 → `xattr` の 1 行 → 起動 → Hook の導入（印の解除と `--probe`）→ Cursor で会話 → 表示。版を上げて再導入（Hook の更新）→ Cursor で会話。`.app` を「アプリケーション」以外に置いたときの案内 |
+| 32-1 | Windows の発行を Avalonia に | Windows か CI で行う。`scripts/publish.ps1`：App（Avalonia）の単一ファイル・自己完結（`win-x64`。Avalonia の Skia などのネイティブ DLL も単一ファイルに入れる：30-1 で引き継いだ `IncludeNativeLibrariesForSelfExtract`）。配布 zip の `README.txt` の文を `scripts/dist/README-win.txt` に移す（`{VERSION}` を置き換える。Issue #17 で足した「会社の PC などで Hook が動かないとき」「Hook なし の帯」の段落も含めて、文は変えずに移す）。NativeWebView（WebView2）が単一ファイルで動くか | zip を展開 → 起動 → ドキュメント・メモタブのプレビューが出る |
+| 32-2 | mac の発行 | `scripts/publish-mac.sh`（30-1 の開発用を配布用に仕上げる。7.19）：App（`osx-arm64`・自己完結・単一ファイルにしない）と Hook（NativeAOT）→ `Miharikun.app`（`scripts/dist/Info.plist` を元に）→ アドホック署名 → `codesign --verify` → `README.txt`（`scripts/dist/README-mac.txt`。要件 8.1・9 章の手順：印の外し方・`open -n -a Miharikun --args "$(pwd -P)"`・ファイルとフォルダの許可。Issue #17 の段落の mac 版：Hook が動かないとき（まず「隔離」の印と ⚙ →「Hook を導入」、だめなら置き場所を変える。記録先は `~/Library/Application Support/Miharikun/`）・「Hook なし」の帯の意味。要件 8.2・12.12）と一緒に `ditto` で zip → SHA-256 | mac で zip を展開 → `xattr` の 1 行 → 起動 → Hook の導入（印の解除と `--probe`）→ Cursor で会話 → 表示。版を上げて再導入（Hook の更新）→ Cursor で会話。`.app` を「アプリケーション」以外に置いたときの案内 |
 | 32-3 | リリースのワークフロー | `.github/workflows/release.yml`：Windows のジョブ（今のもの）と macOS のジョブ（`publish-mac.sh`）。release のジョブは両方の zip と `.sha256` を載せる（Windows の zip にも `.sha256` を付ける） | 手動実行（`workflow_dispatch`）で両方の zip ができる |
-| 32-4 | README・リリース手順 | `docs/release.md`（mac のジョブ・出す前のチェックに mac の項目：印の外し方・Hook の導入・フォルダの選択）。配布 zip の README（Windows・mac）を見直す | 手順どおりに試運転できる |
+| 32-4 | README・リリース手順 | `docs/release.md`（mac のジョブ・出す前のチェックに mac の項目：印の外し方・Hook の導入・フォルダの選択。Issue #17 で足した「Hook の置き場所」「Hook なし の警告」のチェックを、mac でも行う形に（`%LOCALAPPDATA%` などの書き方を両 OS に））。配布 zip の README（Windows・mac）を見直す | 手順どおりに試運転できる |
 
 完了条件：手動実行で両 OS の zip ができ、展開 →（mac は印を外す）→ 起動 → Hook の導入 → 会話 → 表示、が両 OS で通る（利用者）。
 
@@ -144,12 +145,13 @@ src/Miharikun.Presentation/                      28-1 新規（net10.0。画面�
 ├─ Services/IUiServices.cs・IUiTimer.cs           28-1 新規：画面の仕組みへの口（7.2・7.4）
 ├─ Services/ViewList.cs                           28-1 新規：絞った一覧を要素を使い回して合わせる。選択中は動かさない（7.3）
 ├─ AppLog.cs・ShellOpen.cs                        28-1 移す（WPF から。public に。RevealInExplorer → Reveal）／29-4 変更：ShellOpen に mac
-├─ HookSetup.cs                                   28-2 移す（非同期に）／29-3 変更：印の解除・--probe・案内（.app の場所）
+├─ HookSetup.cs                                   28-2 移す（非同期に。Issue #17 の受け入れ・ChangePlacement も）／29-3 変更：印の解除・--probe・案内（.app の場所）・文を OS で
 ├─ ViewModels/*.cs                                28-2 移す（名前空間はそのまま）：VisibleCards・VisibleItems・IUiTimer・IUiServices・git の差し替え口
 └─ ViewModels/IPreviewHost.cs                     28-2 移す（Views/IPreviewHost.cs から。名前空間 Miharikun.ViewModels）
 
 src/Miharikun.Core/
-├─ Install/HookInstaller.cs                       29-3 変更：HookExeName を OS で・IsOurs・mac は一時ファイル → 名前の付け替え・文言
+├─ Install/HookInstaller.cs                       29-3 変更：HookExeName を OS で・IsOurs・mac は一時ファイル → 名前の付け替え・文言・DefaultHookDir（mac。7.1）
+├─ Settings/HookDirInput.cs                       29-3 変更：誤りの文を OS で（mac は「/ から始まる」）
 ├─ Git/GitLocator.cs                              29-4 新規：git の場所（mac の CLT。開発フォルダの git の実体）
 ├─ Git/GitClient.cs                               29-4 変更：GitLocator を使う・status のパスを作業フォルダ基準（--show-cdup）
 ├─ Projects/ProjectPath.cs                        29-4 変更：NFC にそろえる・論理と実のどちらでも一致
@@ -164,11 +166,11 @@ src/Miharikun/                                    28-1/28-2 変更（WPF の配�
 ├─ Miharikun.csproj                               30-1 変更：net10.0・Avalonia（WPF-UI・WebView2 を外す。IncludeNativeLibrariesForSelfExtract などは引き継ぐ）／30-2 SukiUI を選んだら足す／31-1 WebView を足す
 ├─ Program.cs・App.axaml(.cs)                     30-1 新規：起動と組み立て（7.7。Name="Miharikun"・mac のアプリのメニュー）
 ├─ AvaloniaUiServices.cs                          30-1 新規（7.2）
-├─ ThemeService.cs・Themes/Colors.Light.axaml・Colors.Dark.axaml   30-1 新規（7.8。ThemeDictionaries から読む）
+├─ ThemeService.cs・Themes/Colors.Light.axaml・Colors.Dark.axaml   30-1 新規（7.8。ThemeDictionaries から読む。Issue #17 の HookWarning*Brush も同じ値で）
 ├─ Themes/AppStyles.axaml                         30-2 新規：自前の見た目（どちらのテーマでも使う。7.8）
 ├─ MainWindow.axaml(.cs)                          30-1 新規：ヘッダー・タブ（中身は重ねて IsVisible）・フォルダ選択・閉じる流れ／30-3〜30-6 ペイン
 ├─ Views/MessageDialog.axaml(.cs)                 30-1 新規（案内の 1 行はコピーできる形）
-├─ Views/AppSettingsDialog.axaml(.cs)             30-6 新規（WPF 版を書き直す）
+├─ Views/AppSettingsDialog.axaml(.cs)             30-6 新規（WPF 版を書き直す。Hook の置き場所の欄・参照…は StorageProvider）
 ├─ Views/MarkdownPreview.axaml(.cs)              31-1 新規（WPF 版を書き直す。7.11。PreviewFiles.cs はそのまま使う）
 ├─ Views/DocumentsView・DocumentSettingsDialog    31-2 新規（WPF 版を書き直す）
 ├─ Views/MemoView・UnsavedMemoDialog              31-3 新規（WPF 版を書き直す）
@@ -180,7 +182,7 @@ tests/Miharikun.Tests/
 ├─ Presentation/FakeUiServices.cs・*ViewModelTests.cs  28-3 新規
 ├─ OsFactAttributes.cs・TestPaths.cs              29-2 新規：WindowsFact／MacFact・OS の絶対パス
 ├─ Core/*Tests.cs（mac で落ちたもの）            29-2 変更
-├─ Hook/HookRunnerTests.cs・Core/HookInstallerTests.cs  29-3 変更
+├─ Hook/HookRunnerTests.cs・Core/HookInstallerTests.cs・Core/HookInstallerPlacementTests.cs・Core/HookDirInputTests.cs  29-3 変更
 └─ Core/GitLocatorTests.cs・ProjectPathTests.cs・RealPathTests.cs・GitClientTests.cs・Document*Tests.cs   29-4 新規・変更
 
 tests/Miharikun.UiTests/                          30-3 新規：Avalonia.Headless.XUnit。一覧の選択の保ち方（7.3）
@@ -202,8 +204,8 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 ### 7.1 Phase 27 の結果で決まること
 | 確かめること（14.3） | 結果が「はい」 | 結果が「いいえ」のとき |
 |---|---|---|
-| Hobby で hooks.json の command が呼ばれる | そのまま | mac の Cursor は会話ログの取り込み（要件 11 章）で出す。Hook の mac 対応（29-3）と配布は行い、mac 実機での Hook の確認は「保留」。Issue #17 の「取り込み直し」と合わせて利用者と相談 |
-| 空白を含むパス（`~/Library/Application Support/…`）で起動できる | 導入先は今の規則（データの `bin/`） | 導入先を `~/.miharikun/bin/Miharikun.Hook` にする（mac だけ。29-3。要件 8 章に書く） |
+| Hobby で hooks.json の command が呼ばれる | そのまま | mac の Cursor は会話ログの取り込み（要件 11 章。Issue #17 で transcript が変わるたびに取り込むようになったので、再起動は要らない）で出す。Hook の mac 対応（29-3）と配布は行い、mac 実機での Hook の確認は「保留」。**Hook を登録したままだと、どのセッションも「Hook なし」になり、警告の帯が出続ける**（要件 12.11）。扱い（mac では導入を勧めない／帯の文を替える など）は、この結果を見て利用者と決める（推測で決めない。7.21） |
+| 空白を含むパス（`~/Library/Application Support/…`）で起動できる | 既定の置き場所は今の規則（データの `bin/`） | mac の**既定の置き場所**（`HookInstaller.DefaultHookDir`）を `~/.miharikun/bin` にする（mac だけ。29-3。2026-10-07 決定。要件 8 章・8.2）。既定なのでフォルダはアプリが作る。`hookDir` の設定・受け入れ・`ToSettingValue` の「既定と同じなら null」はこの既定で動く。利用者の操作は要らない |
 | `workspace_roots` が `/Users/…` の形 | `ProjectPath` はそのまま | 見つかった形を `ProjectPath.Normalize` で直す（29-4。テスト） |
 | 日本語の入力が壊れない | `PayloadRecovery` は mac では何もしない | 壊れ方を調べて相談（推測で直さない） |
 | 「隔離」の印の付いた Hook を Cursor が呼ぶと止まる | 導入時の印の解除と `--probe` が必須（7.12。予定どおり） | 印の解除は念のため残す |
@@ -220,12 +222,12 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 | `Task<bool> SetClipboardTextAsync(string text)` | クリップボードへ | `ClipboardHelper.TrySetText`（今のやり直しのまま） | `TopLevel.Clipboard.SetTextAsync`（例外は false） | 成否を決めておける |
 | `void OpenWithDefaultApp(string target)` | URL・ファイル・フォルダを既定のアプリで | `ShellOpen.Open` | `ShellOpen.Open` | 呼ばれた値を記録 |
 | `void RevealInFileManager(string file)` | ファイルを選んだ状態で開く | `ShellOpen.Reveal`（`explorer.exe /select,`） | `ShellOpen.Reveal`（mac は `open -R`） | 記録 |
-| `string RevealButtonText` | 「フォルダで開く」ボタンの文字（要件 12.11） | 「フォルダで開く」 | Windows「フォルダで開く」、mac「Finder で表示」 | 固定 |
+| `string RevealButtonText` | 「フォルダで開く」ボタンの文字（要件 12.12） | 「フォルダで開く」 | Windows「フォルダで開く」、mac「Finder で表示」 | 固定 |
 | `Task<bool> ConfirmAsync(string title, string message)` | はい／いいえ | `MessageBox`（オーナーはメインウィンドウ） | `MessageDialog` | 答えを決めておける |
 | `Task ShowMessageAsync(string title, string message, MessageKind kind)` | お知らせ（情報・注意） | `MessageBox` | `MessageDialog` | 記録 |
 
 - `ShellOpen`（Presentation。画面のプロジェクトから呼ぶので `public`）：`Open(target)` は今のまま `UseShellExecute = true`（.NET は mac で `open` を使う。29-4 で mac 実機で確認）。`Reveal(file)`（今の `RevealInExplorer` の名前を変える）：Windows `explorer.exe /select,<file>`、mac `open -R <file>`（`ArgumentList` に渡す）。失敗はログだけ（今と同じ）。
-- 3 択のダイアログ（未保存で閉じる）と、設定ダイアログ 2 つは、画面の側（`MainWindow`）が直接出す（今と同じ。VM を通さない）。
+- 3 択のダイアログ（未保存で閉じる）と、設定ダイアログ 2 つは、画面の側（`MainWindow`）が直接出す（今と同じ。VM を通さない）。設定ダイアログの「参照…」（フォルダ選択）も画面の側（ダイアログの中）。
 - オーナー（どのウィンドウの上に出すか）は `IUiServices` の実装が持つ（メインウィンドウ）。VM はウィンドウを知らない。
 
 ### 7.3 絞った一覧（`ICollectionView` の代わり）
@@ -265,7 +267,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 ### 7.5 非同期になるもの（Avalonia のダイアログとクリップボードは待つ形）
 - メモのキャンセル：`CancelCommand` を `AsyncRelayCommand` に。確認の間に押し直されても 2 回目は動かない（`AsyncRelayCommand` の既定）。**確認の答えが返ってから、もう一度 `IsEditing`・`IsDirty` を見る**（確認中に状態が変わっていたら何もしない）。
 - 行のコピー・全部コピー：`SetClipboardTextAsync` が true のときだけ「コピーしました」にする（今と同じ）。
-- Hook の導入：`CheckAtStartupAsync`・`InstallFromMenuAsync`・`UninstallFromMenuAsync`。起動時の確認は、ウィンドウが出てから（7.16）。
+- Hook の導入：`CheckAtStartupAsync`・`InstallFromMenuAsync`・`UninstallFromMenuAsync`・`ChangePlacementAsync`（Issue #17）。起動時の確認は、ウィンドウが出てから（7.16）。
 - `async void` はイベントから呼ぶ所だけ（例外をログに残す小さな包み。今の `MarkdownPreview.OnPreviewChanged` と同じ `async void`＋try/catch の書き方）。今 `async void` の `MainViewModel.RefreshGit`・`LoadCommits` は、「Task を返す中身」と「イベント・時計から呼ぶ包み」に分け、テストは中身を await する。git の状態を取る所は差し替えられる形（`Func<GitStatus?>` など）にし、テストで本物の git を起動しない。テストの UI スレッドへの受け渡しは、その場で実行する `SynchronizationContext` にする（28-2・28-3）。
 
 ### 7.6 閉じるときの流れ（Avalonia の `Closing` は待てない）
@@ -296,7 +298,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 - `IsDark` は `ActualThemeVariant == ThemeVariant.Dark`。`ActualThemeVariantChanged` で `Changed` を出し、ドキュメント・メモの md を作り直す（今と同じ。1 回の変更で 1 回だけ）。
 - 色：要件 12.5 のとおり、ライト用・ダーク用のファイルに分ける（`Themes/Colors.Light.axaml`・`Themes/Colors.Dark.axaml`。今の `Colors.Light.xaml`・`Colors.Dark.xaml` と同じキー：`StateRunningBrush` ほか）。`App.axaml` の `ResourceDictionary.ThemeDictionaries`（`Light`・`Dark`）から `ResourceInclude` で読む。画面は `DynamicResource`（今と同じ）。辞書の差し替えのコード（今の `SetColors`）は要らなくなる。
 - 背景（12.5）：Windows は `TransparencyLevelHint = Mica`、mac は `Blur`、`Background` は透明。効かなければ単色（Avalonia 12 の不具合 #21082 はタイトルバーの拡張と組み合わせたとき。下のとおり拡張しないので当たらない見込み）。
-- **タイトルバーは両 OS とも OS 標準**（中身をタイトルバーに広げない）。WPF-UI の独自のタイトルバーはやめる。Windows は OS 標準で閉じる・最小化が右（要件 12.11 の「今に近い形」）。
+- **タイトルバーは両 OS とも OS 標準**（中身をタイトルバーに広げない）。WPF-UI の独自のタイトルバーはやめる。Windows は OS 標準で閉じる・最小化が右（要件 12.12 の「今に近い形」）。
 
 **見比べの進め方（30-2。要件 12.5）**
 - テーマを 1 行で差し替えられるように作る：`App.axaml` の `Application.Styles` の先頭はテーマ（`FluentTheme` か `SukiTheme`）だけ。自前の見た目は `Themes/AppStyles.axaml`（新規）、色は `Themes/Colors.Light.axaml`・`Colors.Dark.axaml`、フォントは 7.10 にまとめ、テーマの後ろに置いて上書きする。どちらのテーマでも同じファイルで動くようにする。
@@ -305,7 +307,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 
 **SukiUI を選んだときの決めごと**
 - `App.axaml` の `Application.Styles` に `SukiTheme` を入れる（FluentTheme の代わり）。色の辞書（`Themes/Colors.Light.axaml`・`Colors.Dark.axaml`）・`Themes/AppStyles.axaml`・フォント（7.10）は、その後ろに置いて上書きする。
-- ウィンドウは**ふつうの `Window`**（OS 標準のタイトルバー）。SukiUI 専用のウィンドウ（独自のタイトルバー）は使わない（要件 12.11：mac は閉じる・最小化が左の OS 標準）。
+- ウィンドウは**ふつうの `Window`**（OS 標準のタイトルバー）。SukiUI 専用のウィンドウ（独自のタイトルバー）は使わない（要件 12.12：mac は閉じる・最小化が左の OS 標準）。
 - ライト/ダーク：上の `RequestedThemeVariant` で切り替える。SukiUI の切り替えの仕組み（基本の色）が `ThemeVariant` に連動するか、`ThemeVariant.Default` で OS の変更に追従するかを確かめる。連動しなければ、`ThemeService` で SukiUI 側の切り替えも呼ぶ。
 - **SukiUI のウィンドウの中に重ねて出すダイアログ・通知（トースト）は使わない**。WebView（ドキュメント・メモ）は OS の部品なので、ウィンドウの中に重ねたものはその下に隠れる（要件 12.7）。確認・お知らせは今までどおり別のウィンドウ（`MessageDialog`・`UnsavedMemoDialog`・設定ダイアログ）。
 - 背景のアニメーション（SukiUI の動く背景）は使わない（常に開いておく道具なので、CPU を使わない）。部品の動き（押したとき・開閉）は SukiUI の既定のまま。
@@ -313,7 +315,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 
 | SukiUI で確かめること（30-2。見比べの材料） | 見る所 | だめなとき（利用者に添える） |
 |---|---|---|
-| ① ふつうの `Window` で崩れない | 背景・余白・角・影 | SukiUI 専用のウィンドウが要るなら、要件 12.11 と合わないことを添える |
+| ① ふつうの `Window` で崩れない | 背景・余白・角・影 | SukiUI 専用のウィンドウが要るなら、要件 12.12 と合わないことを添える |
 | ② 情報の多い 3 ペインに収まる | カードの行数・詳細の詰まり具合。**右ペインが 340px で、種別のチップ 5 つと検索ボックスが 1 行**（要件 12.4） | 余白・文字の大きさをセレクタで詰めてから見せる。詰められなければ、そのことを添える |
 | ③ 日本語が OS のフォントで出る | SukiUI が独自のフォントを指定していないか。漢字の字形（7.10） | アプリ全体のフォントの指定で上書きする |
 | ④ 「OS に合わせる」で、実行中の OS のライト/ダークの変更に追従する | 両 OS で、アプリを開いたまま OS の設定を変える | `ThemeService` で SukiUI 側も切り替える。それでもだめなら、そのことを添える |
@@ -359,13 +361,13 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 - 2 つ目の WebView（メモ）は、メモタブを最初に表示したときに作る（今と同じ）。
 
 ### 7.12 Hook の導入（mac の印の解除と、試しの起動）
-1. `installer.Install()`（Core。今と同じ：Hook をデータの `bin/` にコピーし、hooks.json に登録）。mac のコピー（版を上げたときの更新も）は、同じフォルダの一時ファイルに写してから `File.Move(tmp, dest, overwrite: true)` で名前を付け替える（新しいファイルになる。署名つきの実行ファイルを同じ場所で上書きすると、次の起動で止められることがあるため。Cursor が Hook を動かしている最中の書き換えも避けられる）。Windows は今のまま（使用中のやり直しあり）。
+1. `installer.Install()`（Core。今と同じ：Hook を**置き場所**（`hookDir`。既定はデータの `bin/`。要件 8.2）にコピーし、hooks.json に登録）。mac のコピー（版を上げたときの更新も）は、同じフォルダの一時ファイルに写してから `File.Move(tmp, dest, overwrite: true)` で名前を付け替える（新しいファイルになる。署名つきの実行ファイルを同じ場所で上書きすると、次の起動で止められることがあるため。Cursor が Hook を動かしている最中の書き換えも避けられる）。Windows は今のまま（使用中のやり直しあり）。
 2. mac だけ：`/usr/bin/xattr -d com.apple.quarantine <導入した Hook>` を実行（印が無いときの失敗は成功とみなす。結果はログ）。
 3. 両 OS：`<導入した Hook> --probe` を実行（3 秒で打ち切り）。終了コード 0 で `ok` が出れば成功。
 4. 3 が失敗したら：お知らせ「Hook を起動できませんでした。ターミナルで次の 1 行を実行してから、もう一度 ⚙ の『Hook を導入』を選んでください。」＋ `xattr -dr com.apple.quarantine "<いま開いている .app の場所>"`（mac。`Environment.ProcessPath` から `.app` の場所を求める。場所に `/AppTranslocation/` を含むときは、先に「Miharikun.app を『アプリケーション』に移してから開き直してください」と添える）。1 行は選んでコピーできる形（`SelectableTextBlock` か「コピー」ボタン）。Windows は「セキュリティソフトなどで止められていないか確かめてください」。登録は戻さない（次の導入で直る）。
 5. `--probe`（`HookRunner`）：引数に `--probe` があれば、標準入力を読まず、データのフォルダにも触らず、`ok` を出して 0 を返す。`--agent` より先に見る。
-6. 起動時の確認（`CheckAtStartupAsync`）では `--probe` を走らせない（起動を遅くしない）。導入・再導入のときだけ。
-7. 文言：今の「Miharikun.exe と同じフォルダ」「Hook exe」は、mac では「Miharikun.app の中」「Hook」と言う（例「Miharikun.app の中に Hook が見つかりません」。要件 12.11）。`HookInstaller` と `HookSetup` の文を OS で替える。
+6. 起動時の確認（`CheckAtStartupAsync`）では `--probe` を走らせない（起動を遅くしない）。導入・再導入のときだけ（メニューの「Hook を導入」と、設定で置き場所を変えたときの「導入し直しますか？」→ はい。どちらも同じ `RunInstall` を通す）。起動時の受け入れ（Issue #17）も、印の解除・`--probe` をしない（ダイアログを出さないのと同じ考え。受け入れた場所の Hook が止められていれば、「Hook なし」の帯で気づける：要件 12.11）。
+7. 文言：今の「Miharikun.exe と同じフォルダ」「Hook exe」は、mac では「Miharikun.app の中」「Hook」と言う（例「Miharikun.app の中に Hook が見つかりません」。要件 12.12）。`HookInstaller` と `HookSetup` の文を OS で替える。Issue #17 で増えた文（設定画面の欄の名前・`HookDirInput` の誤りの文・`MainViewModel.HookWarningText`）も同じ（7.21）。
 
 ### 7.13 git の場所（mac の Command Line Tools）
 - mac で Command Line Tools も Xcode も無いと、`/usr/bin/git` は「コマンドライン・デベロッパツールをインストールしますか」のダイアログを出す。App は 5 秒ごとに git を呼ぶので、ダイアログが出続ける。Hook も `sessionStart`・`stop` で呼ぶ。
@@ -399,7 +401,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
   - mac の形を確かめるテスト（`/Users/x/…`・`open -R`・`GitLocator` の mac の順）→ `Mac…` か、OS を引数で渡せる形にして両 OS で動かす。
 - 件数：各 Phase の報告に、Windows と mac それぞれの「合格・スキップ」を書く。Windows の合格は減らさない。
 - 基準：29-2 の始めに、mac でもう一度テストを回して基準を取り直す（28 で Presentation のテストが増え、27-1 の一覧には入っていないため）。
-- 画面の部品の動き（一覧の選択の保ち方）は `tests/Miharikun.UiTests`（Avalonia.Headless。30-3）で確かめ、両 OS の CI で回す（7.20）。件数は `Miharikun.Tests`（842 件の基準）とは別に数える。
+- 画面の部品の動き（一覧の選択の保ち方）は `tests/Miharikun.UiTests`（Avalonia.Headless。30-3）で確かめ、両 OS の CI で回す（7.20）。件数は `Miharikun.Tests`（961 件の基準）とは別に数える。
 
 ### 7.16 起動時の Hook の確認
 - 今：`MainWindow.Loaded` の後、`ApplicationIdle` で `CheckAtStartup`。
@@ -438,6 +440,26 @@ Miharikun-v{版}-osx-arm64.zip
 - `test.yml`（29-1）：`on: push・pull_request・workflow_dispatch`。ジョブ 2 つ：`windows-latest`（`dotnet build Miharikun.slnx` → `dotnet test`）、`macos-latest`（Core・Docs・Hook・Presentation・テストを指定してビルド → `dotnet test` → Hook の `osx-arm64` の NativeAOT の発行）。Phase 30 で WPF が消えたら、mac もソリューション全体をビルドする形にする。30-3 から `tests/Miharikun.UiTests`（Avalonia.Headless）も両方で回す。リポジトリは公開なので、macOS のランナーも無料の範囲。CI は push で動くので、見る前に利用者にコミットと push を頼む（1 章）。
 - 画面の確認：Windows は、これまでの UI Automation（`AutomationId`）と DevTools プロトコル（WebView2）。Avalonia も UI Automation に対応している（ID は 7.9 のとおり残す）。DevTools プロトコルは、`EnvironmentRequested` の `AdditionalBrowserArguments`（`--remote-debugging-port`）で開く。mac は利用者の目視を基本にする（自動の操作・撮影のために、システムの権限を変えない）。開発用の `.app` を Finder から開いて見る（7.19）。
 
+### 7.21 main の Issue #17 をマージしたことの影響（2026-10-07）
+Issue #17（Phase 34〜36）は、この計画の Phase 28 で移す・Phase 30 で書き直すファイルを変えた。何が入ったかと、どの Phase で何をするか。
+
+| 入ったもの（main） | 場所 | この計画でやること |
+|---|---|---|
+| Hook の置き場所の設定（`settings.json` の `hookDir`。`AppSettingsStore.LoadHookDir`/`SaveHookDir`） | Core | そのまま使う。mac の既定（`DefaultHookDir`）は 29-3（27-1 で空白がだめなら `~/.miharikun/bin`。7.1） |
+| `HookInstaller`：`CreateDefault(…, hookDir)`・`DefaultHookDir`・`ToSettingValue`・`TryParseExePath`・`SameRegistration`・`FindRegisteredElsewhere` | Core | 29-3 で mac の行のテストを足す（拡張子なしの名前・`/Users/…` の空白入りのパス・引用符なしの手書き）。`IsOurs` を拡張子なしで見る変更（29-3）と、`TrySplit` の「末尾が Hook の名前」の比較がそろうこと |
+| `HookDirInput`（設定画面の入力の検査） | Core | 29-3：誤りの文を OS で（mac「/ から始まるフォルダを指定してください」。`~` は展開しない） |
+| `HookRegistration`（hooks.json の更新日時と events の一番古いファイルの作成日時）→ `NoHook` | Core | 29-4：mac で作成日時が取れるか（`File.GetCreationTimeUtc`。APFS は取れる見込み）を、テストで確かめる |
+| transcript を変わるたびに取り込む（`agent-transcripts` をサブフォルダ込みで監視） | Core | 29-4：mac の `FileSystemWatcher`（サブフォルダ込み）で `SessionMonitorWatchTests` が通るか。だめでも 3 秒ごとのポーリングがある |
+| `HookSetup`：置き場所の受け入れ・`ChangePlacement`（`MessageBox` を使う） | WPF | 28-2 で Presentation へ移し、`IUiServices` で非同期に（`ChangePlacementAsync`）。28-3 でテスト |
+| `MainViewModel`：`NoHookCount`・`HasNoHook`・`HookWarningText`・`OpenHookErrorLogCommand`（`ShellOpen.Open`） | WPF の VM | 28-2 でそのまま移す（`ShellOpen` は `IUiServices` に）。29-3 で `HookWarningText` を OS で（要件 12.12）。28-3 でテスト |
+| `SessionDetailViewModel`：`IsTranscriptOnly`（Hook なしも「—」） | WPF の VM | 28-2 でそのまま移す |
+| 設定画面の置き場所の欄（「参照…」は WPF の `OpenFolderDialog`）・帯（`MainWindow.xaml`）・色（`HookWarning*Brush`） | WPF の画面 | 28 は配線だけ。30-3（帯）・30-6（設定画面。「参照…」は `StorageProvider.OpenFolderPickerAsync`）・30-1（色のキー）で Avalonia に書き直す |
+| 配布 zip の README の段落・`docs/release.md` のチェック | 配布 | 32-1 は文を変えずに `README-win.txt` へ移す。32-2 で mac 版の文。32-4 でチェックを両 OS に |
+| テストが 842 → 961 件 | テスト | 品質ゲートの基準を 961 件に。29-2 で Issue #17 のテストも OS で分ける |
+
+- **mac の Cursor（Hobby）で Hook が呼ばれないとき**：Issue #17 で、Hook を登録したのに記録が無いセッションは「Hook なし」になり、帯が出続ける。27-1 の結果で、利用者と扱いを決める（7.1。推測で決めない）。
+- 要件定義の節：12.11 は main の「Hook が記録していないときの警告」、この計画の「Windows と macOS の違い」は **12.12**。
+
 ## 8. リスクと対策
 
 | リスク | 対策 |
@@ -469,6 +491,8 @@ Miharikun-v{版}-osx-arm64.zip
 | タイムラインの絞り込みで、1 件ずつの通知が数千回になる | 入れ物ごと差し替える（7.3） |
 | Windows で Runtime が無いと WebView1 に切り替わり、案内が出ない | `AdapterInfo.Type` で見分ける（7.11） |
 | CI・OS の行き来に push が要り、確かめないまま進む | 区切りで止まって、利用者にコミットと push を頼む（1 章） |
+| Issue #17 で入った画面（「Hook なし」の帯・設定画面の置き場所・起動時の受け入れ）を、切り出し・書き直しで取りこぼす | 品質ゲート 3 に項目として入れた（一覧・詳細・⚙）。7.21 の表で Phase ごとに割り当てた |
+| mac の Cursor（Hobby）で Hook が呼ばれず、「Hook なし」の帯が出続ける | 27-1 で確かめ、扱いを利用者と決める（7.1・7.21） |
 
 ## 9. 決定事項（確認済み。設計の質問 Q1〜Q7）
 1. Q1：画面は Avalonia 12 に作り直し、Windows と mac で 1 つにする。
@@ -485,6 +509,11 @@ Miharikun-v{版}-osx-arm64.zip
 3. Q3：タブの中身は載せたまま `IsVisible` で切り替え、WebView を作り直さない（7.17。要件 12.7）。
 4. Q4：WKWebView で読めなければ、`TryGetPlatformHandle()` と `loadFileURL:allowingReadAccessToURL:` で読める範囲を指定して開く。独自のスキームは使わない（7.11。要件 12.7）。
 5. Q5：mac では対象フォルダの実パスも持ち、論理・実のどちらかが合えば一致。git は作業フォルダ基準（`--show-cdup`）。README は `"$(pwd -P)"`（7.14。要件 9 章）。
+
+main の Issue #17 のマージで決めたこと（2026-10-07）：
+1. main をこのブランチにマージした（Phase 28 で `HookSetup` などを移す前に。後でコードがぶつからないように）。
+2. 27-1 で空白を含むパスから Hook を起動できなければ、mac の**既定の置き場所**を `~/.miharikun/bin` に変える（`DefaultHookDir`。利用者の操作は要らない）。
+3. 「Hook なし」の帯の文は、mac では替える（「この Mac で Hook の実行が止められている可能性（「隔離」の印など）。⚙ →「Hook を導入」でもう一度、または ⚙ →「設定…」で置き場所を変える」。要件 12.12）。
 
 計画で決めたこと（要件にない細部）：
 - 新しいプロジェクトの名前は `Miharikun.Presentation`。ViewModel の名前空間は `Miharikun.ViewModels` のまま。`IPreviewHost`・`PreviewSource` も `Miharikun.ViewModels` へ。
@@ -503,7 +532,7 @@ Miharikun-v{版}-osx-arm64.zip
 - テストは `WindowsFact`／`MacFact` と `TestPaths` で OS に分ける（消さない）。mac で本当に動かないものは、テストを飛ばさず製品のコードを直す。
 - CI に `test.yml`（push・PR・手動。Windows と macOS）を、Phase 29 の最初に足す。画面の部品の動きは `tests/Miharikun.UiTests`（Avalonia.Headless）。
 - mac の App は単一ファイルにしない（`.app` の中に並べる）。バンドル ID は `io.github.po-oq.miharikun`。zip には `.app` と `README.txt` を入れ、両 OS の zip に `.sha256` を付ける。配布の README の文は `scripts/dist/` に置く。
-- Phase 27 で空白を含むパスがだめなら、mac の Hook の導入先は `~/.miharikun/bin/`。
+- Phase 27 で空白を含むパスがだめなら、mac の Hook の既定の置き場所（`DefaultHookDir`）は `~/.miharikun/bin/`（Issue #17 の `hookDir` の仕組みの上で。上の 2）。
 - Phase 28 は Windows で行う（WPF で確かめる最後の機会）。Phase 29〜32 は mac が中心（32-1 は Windows か CI）。OS を移る前・CI を見る前に、利用者にコミットと push を頼む。
 
 ## 10. 実装するセッションへの注意（必ず読む）
@@ -511,6 +540,7 @@ Miharikun-v{版}-osx-arm64.zip
 ### 10.1 始める前に
 - **この計画・`macos-support-design.html`・`macos-support-review.html`・要件定義の変更・`CLAUDE.md` が見えることを確かめる**。mac で始めるなら、Windows でコミットして push してから、mac で pull する（未追跡のファイルは mac に無い。OS を移るたびに同じ：1 章の区切り）。`HANDOFF.md` は git に入っていない（ずっと守る決まりは `CLAUDE.md` の「作業の決まり」にある）。見つからなければ、推測で進めずに利用者に聞く。
 - 計画と要件定義に食い違いが無いか確かめる。あれば要件定義が正。判断がつかなければ聞く。
+- **main の Issue #17 はマージ済み**（2026-10-07）。`HookSetup`・設定画面・`MainViewModel` の帯は、その変更を含めて移す（7.21）。中身の理由は `docs/issue17/issue17-cursor-hook-plan.md`。始める前に `git log --oneline main..` と `git log --oneline ..origin/main` で、main がさらに進んでいないかを見る（進んでいたら、影響を調べてから利用者にマージを頼む）。
 - `CLAUDE.md` の「作業の決まり」と「守ること」を読む（コミットは頼まれたときだけ・`git add` はパス指定・完了報告にビルドの有無と出力先・本物の環境に触らない・`~/.claude/` は読むだけ・会話ログは構造だけ数える）。
 - **mac で作業するとき**：
   - Phase 30-1 までは、`dotnet build Miharikun.slnx` は WPF のプロジェクトのせいで失敗する。Core・Docs・Hook・Presentation・テストを指定してビルドする（例：`dotnet test tests/Miharikun.Tests`）。
@@ -526,4 +556,4 @@ Miharikun-v{版}-osx-arm64.zip
 - 報告には、ビルドの有無と出力先（OS ごと）、テスト件数（Windows・mac それぞれの合格・スキップ）、できなかった確認を書く。**次の Phase に進む前に止まって報告する**。
 - レビューを挟む所（利用者が望めば）：Phase 28 の後（切り出しの差分と品質ゲートの結果）、30-1 の後（WKWebView の試作の結果と、代わりの形を使うか・TCC の出方）、30-2 の後（テーマの決定・IME の結果）。
 
-**状態：レビュー済み**（`macos-support-review.html`。2026-10-06。指摘 #1〜#19 と決定 Q1〜Q5 を反映。要件定義も反映済み）。Phase 27 から始められる。
+**状態：レビュー済み**（`macos-support-review.html`。2026-10-06。指摘 #1〜#19 と決定 Q1〜Q5 を反映。要件定義も反映済み）。**2026-10-07**：main の Issue #17 をマージし、その影響を反映（7.21）。Phase 27 から始められる。

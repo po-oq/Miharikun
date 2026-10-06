@@ -10,6 +10,7 @@ code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #
 svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
 </style></head><body>
 <h1>macOS 対応 実装計画（docs/macos-support/macos-support-plan.md）レビュー（Issue #22）</h1>
+<p style="background:#fff6dd;border:1px solid #e0c060;padding:6px 14px">※ 2026-10-07 追記：main の Issue #17（Hook の置き場所・「Hook なし」の警告）をマージしたため、要件定義の「Windows と macOS の違い」は <b>12.11 → 12.12</b> に移った（12.11 は「Hook が記録していないときの警告」）。本書の「12.11」は 12.12 と読み替える。影響の説明：<code>docs/macos-support/issue17-merge-impact.html</code></p>
 <p><b>結論：直してから進める。</b>全体の分け方（mac で事実を確かめる → Windows で ViewModel を切り出す → mac で Core → 画面 → 配布）と、Phase 28 を「挙動を変えない切り出し」にして品質ゲートで守る方針は妥当。WPF 版の「一覧の選択の保ち方」と「選択中のカードが隠れたとき」は、<code>ViewList.SyncTo</code> でも今と同じになる（WPF のソースで確認）。</p>
 <p>ただし、計画の前提が Avalonia では成り立たない所が 2 つある：<b>並べ替え（Move）で選択が外れる（#1）</b>と、<b>WebView の「代わりの形」が今の部品では作れない（#2）</b>。mac 固有では<b>シンボリックリンク（論理パスと実パス）</b>が抜けていて、テストも mac で落ちる見込み（#3）。この 3 つは 7.3・7.11・29 章の作りに効くので、計画を直してから Phase 28 に入る。Phase 27 は確認項目を足せば、すぐ始めてよい。ほかは計画の文を足せば済む中〜低の指摘。</p>
 <p>状態：レビュー（2026-10-06）。コードは変えていない。実機では確かめていない（このリポジトリのコードと、使うライブラリのソースを読んで判断した。推測は「要確認」と書いた）。</p>
