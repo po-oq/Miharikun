@@ -847,8 +847,9 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 起動時の受け入れ、設定画面の置き場所、`NoHook` の表示と一覧の上の警告（8.2・12.9・12.11）
 - 状況：実装済み（35-1・35-2）。`HookSetup`（置き場所を受け取って installer を作る。起動時の受け入れ→`CanInstall` の確認→提案の順。受け入れたフォルダを直接渡して作り直す。`ChangePlacement`＝保存→導入し直すかを聞く）、`AppSettingsDialog`（置き場所の欄・「参照…」・「既定に戻す」。分と置き場所をまとめて検査する `Revalidate`）、Core の `HookDirInput`（存在しないフォルダ・完全なパスでない値は保存できない。既定の置き場所はまだ無くてもよい）、`MainViewModel`（`NoHookCount`・`HookWarningText`・`OpenHookErrorLogCommand`）、左ペイン最上段の黄色の帯（ライト/ダークの色を追加）、`SessionDetailViewModel` は `IsTranscriptOnly`。テスト 961 件合格（スキップ 5）。隔離環境（一時フォルダ・UI Automation）で確認：hooks.json を `\` 区切りの別の場所に書き換えて起動 → ダイアログなし・`hookDir` が入り・`app.log` に 1 行・次の起動でも出ない／引数なし → 「登録し直します」／別の場所の exe が同梱と違う → 「更新」→ はいで**その場所に**コピー（`data\bin` は作られない）／settings.json を排他で開いている間 → 受け入れは今回だけ（ダイアログなし・hooks.json は変わらない）／設定画面：存在しないフォルダ・相対パス・空は保存できない（分を打ち直しても保存できないまま）・既定に戻す・保存 → 導入し直す？ → いいえ（hooks.json は変わらず、次の起動で元の場所に戻る）・はい（13 件が新しい場所・exe コピー・バックアップあり・古い exe は残る）／帯：登録あり＋events なし＋新しい transcript 2 件 → 「Hook なし 2 件」・カードは灰色の丸「Hook なし」・hook-error.log は無ければ押せず、できると押せる・Hook の記録を置くと件数が減る・hooks.json から登録を外すと帯が消えて「閉じた（導入前）」に戻る。ライト/ダークの画面を確認。**未確認**：「hook を削除」メニューの実クリック（hooks.json の書き換えで代替）、「参照…」のフォルダ選択ダイアログ、「hook-error.log を開く」の実際の起動、詳細ペインの「—」の目視、本物の Cursor での確認（10.2。利用者の作業）。コミットはまだしていない
 
-## [ ] Phase 36: 仕上げ（Issue #17）
+## [x] Phase 36: 仕上げ（Issue #17）
 - 配布 zip の `README.txt`・`docs/release.md`、本書の状況の更新
+- 状況：実施済み。配布 zip の `README.txt`（`scripts/publish.ps1`）に、会社の PC などで Hook が動かないとき（⚙ → 設定… → Hook exe の置き場所・hooks.json の登録の自動採用・記録先は変わらない）と、「Hook なし」の帯の意味（導入・置き場所の変更の直後に出たら、まず Cursor を再起動。hook-error.log を開くボタン）を追記。`docs/release.md` の出す前のチェックに、置き場所（受け入れ・設定画面・導入し直し）と「Hook なし」の警告の確認を追加。`CLAUDE.md` は変えていない（守ることに変化なし）。**Issue #17 の実装は、これで 34〜36 がすべて完了**（本物の Cursor での確認は利用者の作業。計画 10.2）。リリースはしていない。コミットはまだしていない
 
 ## 16. テスト方針
 
