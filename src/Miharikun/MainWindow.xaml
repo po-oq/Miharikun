@@ -404,6 +404,17 @@
                                 </Grid.RowDefinitions>
 
                                 <StackPanel Grid.Row="0">
+                                <!-- Hook が記録していないときの警告（Issue #17。閉じられない。NoHook が 0 件になれば消える） -->
+                                <Border Visibility="{Binding HasNoHook, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8" Padding="8,6"
+                                        CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource HookWarningBorderBrush}"
+                                        Background="{DynamicResource HookWarningBackgroundBrush}" AutomationProperties.AutomationId="HookWarning">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding HookWarningText}" TextWrapping="Wrap" FontSize="12"
+                                                   Foreground="{DynamicResource HookWarningTextBrush}" />
+                                        <ui:Button Content="hook-error.log を開く" Command="{Binding OpenHookErrorLogCommand}" Margin="0,6,0,0"
+                                                   FontSize="12" AutomationProperties.AutomationId="OpenHookErrorLog" />
+                                    </StackPanel>
+                                </Border>
                                 <ItemsControl ItemsSource="{Binding Counts}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>

@@ -66,6 +66,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public TimelineViewModel Timeline { get; } = new();
     [ObservableProperty] private IReadOnlyList<StateCount> _counts = [];
 
+    /// <summary>「Hook なし」のセッションの数（カード全体から数える。フィルタ・検索に関係なく。どの状態の件数にも入れない。要件 12.11）。</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasNoHook), nameof(HookWarningText))] private int _noHookCount;
+
+    public bool HasNoHook => NoHookCount > 0;
+
+    public string HookWarningText =>
+        $"⚠ Cursor の Hook が記録していません（Hook なし {NoHookCount} 件）。この PC で Hook exe の実行が止められている可能性があります。⚙ →「設定…」で置き場所を変えてください。";
+
+    private readonly string? _hookErrorLogPath;
+
+    /// <summary>hook-error.log を既定のアプリで開く。ファイルが無ければ押せない。</summary>
+    public RelayCommand OpenHookErrorLogCommand { get; }
+
     /// <summary>ステータス絞り込みのチップ（全て / 未設定 / 作業中 / 中断 / 完了。「全て」以外は複数選べる）。件数は中身だけ更新し、入れ替えない（選択が外れないように）。</summary>
     public IReadOnlyList<StatusTabItem> StatusTabs { get; }
 
@@ -87,9 +100,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui,
         Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta, GitClient git,
-        int runningTimeoutMinutes = StalledRule.DefaultTimeoutMinutes)
+        int runningTimeoutMinutes = StalledRule.DefaultTimeoutMinutes, string? hookErrorLogPath = null)
     {
         RunningTimeoutMinutes = runningTimeoutMinutes;
+        _hookErrorLogPath = hookErrorLogPath;
+        OpenHookErrorLogCommand = new RelayCommand(
+            () => ShellOpen.Open(_hookErrorLogPath!),
+            () => _hookErrorLogPath is not null && System.IO.File.Exists(_hookErrorLogPath));
         _git = git;
         _meta = meta;
         _meta.Changed += OnMetaChanged;
@@ -243,6 +260,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var now = DateTimeOffset.Now;
         RefreshClocks(now);
         UpdateRecent(now);
+        if (HasNoHook)
+            OpenHookErrorLogCommand.NotifyCanExecuteChanged();   // ログのファイルが後からできても押せるように
 
         // 利用者が IDE や別のターミナルでコミットすることもあるので、定期的にも見直す。
         if (++_ticks % GitRefreshEveryTicks == 0)
@@ -398,6 +417,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (showClosed)
             counts.Add(new(SessionState.Closed, SessionText.StateName(SessionState.Closed), closed));
         Counts = counts;
+
+        // Hook なしの警告（12.11）。件数はどこにも入れず、帯だけで出す。ログの有無は件数が動いたときに見直す。
+        NoHookCount = Count(SessionState.NoHook);
+        OpenHookErrorLogCommand.NotifyCanExecuteChanged();
     }
 
     // タイトル・概要・メモが変わったら、カード・詳細・検索結果に反映する。

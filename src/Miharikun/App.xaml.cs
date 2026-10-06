@@ -45,11 +45,11 @@ public partial class App : Application
         _monitor = new SessionMonitor(store);
         var meta = new SessionMetaService(agentId => new MetaStore(paths, agentId, AppLog.Write), log: AppLog.Write);
         _viewModel = new MainViewModel(folder, _monitor, SynchronizationContext.Current!, _monitor.GetEvents, meta, new GitClient(folder),
-            runningTimeoutMinutes: appSettings.LoadRunningTimeoutMinutes());
+            runningTimeoutMinutes: appSettings.LoadRunningTimeoutMinutes(), hookErrorLogPath: paths.HookErrorLog);
 
         // 同梱の Hook exe は Miharikun.exe と同じフォルダ（単一ファイル発行でも実行ファイルの場所を使う）
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
-        var hookSetup = new HookSetup(HookInstaller.CreateDefault(paths, appDir, appSettings.LoadHookDir()));
+        var hookSetup = new HookSetup(dir => HookInstaller.CreateDefault(paths, appDir, dir), appSettings, paths);
 
         WebViewEnvironment.Configure(paths.WebView2Dir);
         _ = Task.Run(() => PreviewFiles.CleanOld(paths.PreviewDir));   // 1 日より古い md の一時 HTML を消す
