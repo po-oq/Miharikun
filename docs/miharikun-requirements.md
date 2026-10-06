@@ -43,7 +43,8 @@
 - Claude Code の会話ログ（`%USERPROFILE%\.claude\projects\`）は**読み取りだけ**。書き換え・削除をしない。ログの形式は公開された仕様ではないので、読めない行は飛ばして動き続ける（11.1）
 - トークン数・コスト・レート制限は取得手段がないため**扱わない**（Claude Code の会話ログに使用量があっても表示しない）
 - 管理者権限は不要であること（ユーザー階層 `~/.cursor/hooks.json` のみ使用。Claude Code は Hook 不要で、設定ファイルにも触れない）
-- 対象 OS は Windows。開発は自宅、会社では GitHub Release から exe をダウンロードして使う
+- 対象 OS は Windows と **macOS（Apple Silicon）**。macOS 対応は Phase 27〜33（画面を Avalonia に移す。設計 `docs/macos-support/macos-support-design.html`）。開発は自宅、会社では GitHub Release から exe をダウンロードして使う。mac は Release の zip の `.app` を使う（Apple の署名・公証はしない。8.1）
+- **パスの書き方**：本書の `%USERPROFILE%` は mac では `~`（`/Users/<名前>`）、`%LOCALAPPDATA%\Miharikun` は mac では `~/Library/Application Support/Miharikun`（.NET の `LocalApplicationData`）。区切りは OS に合わせる（`\` と `/`）。OS で違うものだけ、その場所に書き分ける
 
 ## 4. スコープ
 
@@ -54,6 +55,7 @@
 - Hook exe（Cursor 用のイベント記録）と、その導入機能
 - 概要・メモ・タイトルの手動編集
 - メモタブ（プロジェクトメモ。12.10）
+- macOS（Apple Silicon）対応：画面を WPF から Avalonia 12 に移し、Windows と mac で同じ画面・同じ機能にする（12.11・Phase 27〜33）
 
 ### MVP 対象外（後で実装）
 - 実装計画 md とセッションの紐付け、完了判定ミニ表示（✓✓✓✗）、Cursor でチャットを開くボタン、タスク・課題の更新、承認待ちの判定
@@ -67,7 +69,7 @@ LLM 要約・要対応抽出、ctx% バー、PID、分類タブ、トークン/�
 Cursor IDE ──(stdin JSON)──▶ Miharikun.Hook.exe --agent cursor ──append──▶ events\cursor\{sessionId}.jsonl（生データ）
 Claude Code ──(自分で追記)──▶ %USERPROFILE%\.claude\projects\<フォルダ名>\{sessionId}.jsonl（会話ログ。読み取りだけ）
 
-Miharikun.exe (WPF)
+Miharikun（画面。Avalonia。Phase 30 までは WPF）
   ISessionSource（エージェントごとの読み込み。CursorSessionSource / ClaudeSessionSource。差分 SessionDelta を返す）
         └─▶ 共通イベント（AgentEvent）─▶ 汎用 ProjectEventStore（保持・要約キャッシュ・変更通知）─▶ 状態判定・画面
   └─ read/write ─▶ meta\{agentId}\{sessionId}.json
@@ -78,14 +80,18 @@ Miharikun.exe (WPF)
 |---|---|---|
 | `Miharikun.Core` | クラスライブラリ | `IAgentInfo` / `IHookAgent`、`ISessionSource`、汎用 `ProjectEventStore`、共通イベントモデル、`CursorAgent` / `ClaudeCodeAgent`、状態判定、パス正規化。**AOT 互換で書く**（System.Text.Json はソースジェネレーター使用、リフレクション禁止） |
 | `Miharikun.Docs` | クラスライブラリ | ドキュメントタブの md→HTML（12.7。Markdig・mermaid・色付け・CSS）。**Markdig はここだけが参照する**（Core に入れると NativeAOT の Hook にも依存が混ざる）。`net10.0`、Core への参照なし |
-| `Miharikun.Hook` | コンソール, NativeAOT | Cursor 用。stdin を受けて JSONL に追記するだけ。高速起動が最優先。Claude Code では使わない |
-| `Miharikun` | WPF | 画面。WPF-UI 4.x を使用。ドキュメントのプレビューに WebView2（Edge の Runtime）を使う |
-| `Miharikun.Tests` | xUnit | Core と Docs のテスト |
+| `Miharikun.Hook` | コンソール, NativeAOT | Cursor 用。stdin を受けて JSONL に追記するだけ。高速起動が最優先。Claude Code では使わない。発行先は `win-x64` と `osx-arm64`（NativeAOT は、その OS の上でしか作れない。mac 版は CI の macOS ランナーか mac で作る） |
+| `Miharikun.Presentation` | クラスライブラリ | **Phase 28 で新設**。ViewModel（一覧・詳細・タイムライン・ドキュメント・メモ）。`net10.0`。画面の仕組み（WPF・Avalonia）を参照しない。タイマー・クリップボード・「フォルダで表示」・確認ダイアログ・UI スレッドへの受け渡しは interface 越しに使う（画面のプロジェクトが実装する） |
+| `Miharikun` | 画面 | **Avalonia 12**（Windows・mac 共通。Phase 30 で WPF＋WPF-UI から置き換える。それまでは WPF）。md・html のプレビューに NativeWebView（`Avalonia.Controls.WebView`。Windows は WebView2＝Edge の Runtime、mac は WKWebView＝OS に入っているもの） |
+| `Miharikun.Tests` | xUnit | Core・Docs・Hook のテスト（Phase 28 から Presentation も） |
 
-- ターゲット：.NET 10（`net10.0` / `net10.0-windows`）
-- UI ライブラリ：WPF-UI（lepoco/wpfui）4.x。選定理由は継続的に保守されていること
+- ターゲット：.NET 10（`net10.0`。Phase 30 までの WPF の画面だけ `net10.0-windows`）
+- UI ライブラリ：Avalonia 12（MIT）。選定理由は、WPF に近い書き方で今の画面の配置をそのまま作れること、Windows と mac で 1 つの画面にできること、プレビューの WebView が標準の部品にあること（設計の 2 章）。テーマは Phase 30 の試作で決める（12.5）。Phase 30 までは WPF-UI（lepoco/wpfui）4.x
 - MVVM：CommunityToolkit.Mvvm
-- 配布：`dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true`（App）、NativeAOT（Hook）。両 exe を zip にして GitHub Release に置く
+- 配布：
+  - Windows：`dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true`（App）、NativeAOT（Hook）。両 exe を zip にして GitHub Release に置く
+  - mac：`osx-arm64` の自己完結の App と NativeAOT の Hook を `Miharikun.app` にまとめ（Hook は `Contents/MacOS/Miharikun.Hook`）、アドホック署名（`codesign --sign -`）して、`ditto` で zip にして同じ Release に置く。zip の SHA-256 も添える。**Apple の署名・公証はしない**（利用者が初回に「隔離」の印を外す。8.1）
+  - どちらも GitHub Actions で作る（Windows ランナーと macOS ランナー）
 
 ## 5.1 エージェント抽象化（実装方針）
 
@@ -219,7 +225,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 
 ## 6. 保存データ
 
-ルート：`%LOCALAPPDATA%\Miharikun\`
+ルート：`%LOCALAPPDATA%\Miharikun\`（mac は `~/Library/Application Support/Miharikun/`。3 章）
 
 | パス | 内容 | 書き手 |
 |---|---|---|
@@ -228,7 +234,8 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 | `meta\{agentId}\{sessionId}.json` | タイトル・概要・メモ・ステータス | App |
 | `projects\{slug}-{hash8}.json` | プロジェクトごとの設定（ドキュメントタブの除外パターン） | App |
 | `projects\{slug}-{hash8}.memo.md` | プロジェクトメモ（12.10）。中身はただの Markdown（UTF-8・BOM なし）。名前の `{slug}-{hash8}` はプロジェクト設定と同じ。無ければ「メモなし」 | App |
-| `webview2\` | WebView2 の作業フォルダ（キャッシュ・Cookie 等。消してよい。自動掃除しない） | WebView2 |
+| `webview2\` | WebView2 の作業フォルダ（キャッシュ・Cookie 等。消してよい。自動掃除しない）。Windows だけ（mac の WKWebView はこのフォルダを使わない） | WebView2 |
+| `bin\` | 導入した Hook（`Miharikun.Hook.exe`。mac は `Miharikun.Hook`）。8 章 | App |
 | `preview\` | md を HTML にした一時ファイル（1 md＝1 ファイル。起動時に 1 日より古いものを削除） | App |
 | `settings.json` | アプリ全体の設定（テーマ、実行中の停止判定の時間。将来はテストコマンドのパターン等） | App |
 | `logs\hook-error.log` | Hook の例外ログ | Hook |
@@ -289,7 +296,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 （`beforeReadFile` 等は MVP では登録しない）
 
 ### 起動
-`Miharikun.Hook.exe --agent cursor`。`--agent` の値で `IAgent` 実装を選ぶ（MVP は cursor のみ。未知の値は exit 1）
+`Miharikun.Hook.exe --agent cursor`（mac は拡張子なしの `Miharikun.Hook`）。`--agent` の値で `IAgent` 実装を選ぶ（MVP は cursor のみ。未知の値は exit 1）。日本語の文字化けの修復（14.1）は、日本語環境の Windows で起きる問題への対応で、mac では働かない見込み（入力が正しければ何もしない）
 
 ### 処理
 1. stdin を UTF-8 で全読み → JSON パース → `hook_event_name`, `conversation_id` を取得
@@ -317,17 +324,28 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 
 - 起動時に `%USERPROFILE%\.cursor\hooks.json` を確認し、Miharikun の hook が未登録なら導入ダイアログを出す
 - 導入処理：
-  1. 同梱の `Miharikun.Hook.exe` を `%LOCALAPPDATA%\Miharikun\bin\` にコピー
+  1. 同梱の `Miharikun.Hook.exe` を `%LOCALAPPDATA%\Miharikun\bin\` にコピー（mac は同じフォルダの一時ファイルに写してから名前を付け替える。署名つきの実行ファイルを同じ場所で上書きすると、次の起動で止められることがあるため。版を上げたときの更新も同じ）
   2. 既存 `hooks.json` を `hooks.json.bak-{日時}` にバックアップ
   3. 既存設定を**壊さずにマージ**（各イベントの配列に自分のエントリを追加。重複は追加しない）
   4. `version` がなければ `1` を設定
-- コマンドはフルパス（`/` 区切り）。スペースを含む場合の扱いは Step 0 で確定
+- コマンドはフルパス（`/` 区切り）。スペースを含む場合の扱いは Step 0 で確定（mac の導入先は `Application Support` を含むので必ずスペースが入る。Phase 27 で確かめ、起動できなければ、スペースの無い場所に置く）
 - 「hook を削除」メニューも用意（自分のエントリだけ取り除く）
+- hooks.json の場所は mac も `~/.cursor/hooks.json`（Phase 27 で確認）。同梱の Hook は、Windows は `Miharikun.exe` と同じフォルダ、mac は `Miharikun.app/Contents/MacOS/Miharikun.Hook`
+
+### 8.1 mac：署名なしの配布と「隔離」の印
+- ブラウザでダウンロードしたファイルには、macOS が「隔離」の印（拡張属性 `com.apple.quarantine`）を付け、展開した中身にも引き継がれる。印のあるアプリを初めて開くと、Gatekeeper が Apple の署名と公証を調べ、無いので止める（「“Miharikun”は開いていません」）
+- 利用者は初回（と、版を入れ替えるたび）に、次のどちらかを行う。手順は配布 zip の README に書く（設計 `docs/macos-support/macos-support-design.html` の 7 章に下書き）
+  - ターミナルで `xattr -dr com.apple.quarantine /Applications/Miharikun.app`（おすすめ。中の Hook もまとめて外れる）
+  - システム設定 →「プライバシーとセキュリティ」→「このまま開く」（macOS 15 以降は Control クリックの「開く」は使えない）
+- **Hook の導入（mac）**：コピーした Hook から印を外し、試しに 1 回起動して（何も記録しない呼び方）確かめる。起動できなければ、README の `xattr` の 1 行を画面で案内する（Cursor から呼ばれた Hook が止められると、記録が黙って残らないため）。案内の 1 行は、いま開いている `.app` の実際の場所で出し、選んでコピーできる形にする。`.app` が仮の場所（App Translocation）で動いているときは、先に「アプリケーション」へ移すよう添える。「もう一度『Hook を導入』」も添える
+- **ファイルとフォルダの許可（TCC）**：書類・デスクトップ・ダウンロード・iCloud Drive・外付けのボリュームの中のプロジェクトを初めて読むとき、macOS が許可を求める。許可しないと、ドキュメント・git・監視・プレビューが読めない。アドホック署名は版ごとに変わるので、版を入れ替えるたびに聞き直される見込み（要確認。`.app` が要るので Phase 30 の最初に確かめる）。README に書く
+- 配る側：アドホック署名（無いと Apple Silicon では動かず、署名が崩れると「壊れているため開けません」になる）、`ditto -c -k --keepParent` で zip（実行の権限と署名を保つ）、zip の SHA-256 を Release に添える（5 章）
 
 ## 9. App：起動とプロジェクト判定
 
 - 起動：`Miharikun.exe [フォルダ]`。省略時はカレントディレクトリ
-- プロジェクト一致判定：`Path.GetFullPath` → 末尾区切り除去 → `StringComparison.OrdinalIgnoreCase` で**完全一致**。
+- **mac の起動**：引数が無いときは、起動時に OS 標準の「フォルダを選ぶ」画面を出す（Finder や Dock から開くとカレントディレクトリが `/` になるため）。キャンセルしたら終了する。ターミナルからは `open -n -a Miharikun --args "$(pwd -P)"`（mac は同じアプリを 2 つ目に開こうとすると前に出るだけなので、プロジェクトごとの複数起動には `-n` が要る。`-P` はシンボリックリンクをたどった実際のパスで、git や Claude Code の記録とそろう）。Windows は今のまま（選ぶ画面は出さない）
+- プロジェクト一致判定：`Path.GetFullPath` → 末尾区切り除去 → `StringComparison.OrdinalIgnoreCase` で**完全一致**（mac の既定のファイルシステムも大文字小文字を区別しないので同じ扱い。区別するボリュームは対象外）。日本語の文字の形（濁点が分かれた NFD と、まとまった NFC）は NFC にそろえて比べる。mac では対象フォルダの**実パス**（シンボリックリンクをたどった形。`/tmp` → `/private/tmp` など）も持ち、論理パス・実パスのどちらかが一致すれば対象にする（Claude Code の `cwd` と git のルートは実パスで来るため。レビュー 2026-10-06 の Q5）。
   セッションの `workspace_roots` のどれか1つでも一致すれば対象（Claude Code は各ファイルの最初の `cwd`。9.1）
 - タイトルバーに対象フォルダを表示。複数起動を前提とし、App は events を**読み取り専用**で扱う
 
@@ -337,7 +355,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 - 初回起動時は全ファイルを読み、`workspace_roots` が一致するものだけをメモリに保持
 
 ### 9.1 Claude Code の探索と照合（Issue #11）
-- 探索先：`%USERPROFILE%\.claude\projects\`（`MIHARIKUN_CLAUDE_DIR` で `.claude` の場所を上書きできる。検証用）。フォルダ名が「対象フォルダの Claude 式の名前」と同じ、または、それに `--claude-worktrees-` が続くものだけを開く。Claude 式の名前は、`C:\zDev\repo\Miharikun` → `C--zDev-repo-Miharikun`（`:` と `\` と `.` など英数字以外が、それぞれ `-`。Cursor の slug と違い、連なりを 1 つにまとめない）。名前の比較は大文字小文字を無視。**候補が 0 件のときだけ**、起動ごとに 1 回、全フォルダの各ファイルの先頭の `cwd` だけを読んで探す（日本語・記号を含むパスで規則が違った場合の保険。見つかったらログに残す）
+- 探索先：`%USERPROFILE%\.claude\projects\`（`MIHARIKUN_CLAUDE_DIR` で `.claude` の場所を上書きできる。検証用）。フォルダ名が「対象フォルダの Claude 式の名前」と同じ、または、それに `--claude-worktrees-` が続くものだけを開く。Claude 式の名前は、`C:\zDev\repo\Miharikun` → `C--zDev-repo-Miharikun`（`:` と `\` と `.` など英数字以外が、それぞれ `-`。Cursor の slug と違い、連なりを 1 つにまとめない。mac の `/Users/x/repo` は同じ規則で `-Users-x-repo` になる見込み。Phase 27 で確認）。名前の比較は大文字小文字を無視。**候補が 0 件のときだけ**、起動ごとに 1 回、全フォルダの各ファイルの先頭の `cwd` だけを読んで探す（日本語・記号を含むパスで規則が違った場合の保険。見つかったらログに残す）
 - 照合：各ファイルの最初の `cwd` を `ProjectPath`（上の一致判定）で比べる。フォルダ名の規則の違いに頼らない。**作業ツリー**は、`cwd` が「対象フォルダ\.claude\worktrees\<名前>」のものを同じプロジェクトとして扱う
 - 監視：`FileSystemWatcher`（300ms デバウンス）と 3 秒ごとのポーリング。ファイルごとに読み取り済みオフセットを保持し、追記分だけ読む（末尾の不完全な行は次回に回す。`JsonlTail`）。監視先は**ポーリングのたびに取り直す**（作業ツリーのフォルダはあとからできる）。フォルダの直下だけを見る（`subagents\` は見ない）
 - **`.claude` には何も書かない**（フォルダも作らない。監視先が無ければ、次のポーリングでまた試す）
@@ -418,7 +436,8 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 - 状態は Imported、時刻はファイルの更新日時、タイムラインは入力と返事のみ（時刻なし）
 - 確認できなかった場合は MVP から外す
 - **実装（Phase 9）**：Step 0 で前提を確認できたので実装した（14.1 参照）。`CursorTranscriptImporter`（Core）が transcript を共通イベントにし、`ProjectEventStore` が起動後の最初の `Refresh` で1回だけ取り込む。
-  - プロジェクトとの対応は slug（英数字以外の連なりを `-` にして、大文字小文字を無視して比較。パスのスラッシュ形式も可）。記号・日本語を含むパスの slug 規則は未確認。
+  - プロジェクトとの対応は slug（英数字以外の連なりを `-` にして、大文字小文字を無視して比較。パスのスラッシュ形式も可）。記号・日本語を含むパスの slug 規則は未確認。mac の場所（`~/.cursor/projects/<slug>/agent-transcripts/`）と slug の規則は Phase 27 で確認する。
+  - mac の Cursor で Hook が動かなかったとき（Hobby プランなど。14.3）は、この取り込みで表示する（入力と返事だけ）。Issue #17 の「会話ログを監視して取り込み直す」が入れば、再起動しなくても出る。
   - 取り込むのは入力（`<user_query>` の中身）と、assistant の本文だけ。ツール呼び出しは対象外。時刻はすべてファイルの更新日時なので、タイムラインでは時刻を出さない。
   - 「最近の入力」には出さない（時刻が実際のものではないため）。「最近閉じたセッション」にも出ない（`sessionEnd` がない）。
   - 取り込んだ後に同じ conversation_id の hook イベントが現れたら（導入後に再開したなど）、hook のイベントに切り替える。化けて記録済みの本文の補正は未実装。
@@ -446,7 +465,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - グレーの小さい注記テキスト（「取得元：〜」「状態判定：〜」「※〜」などの説明文）
 - 「⏸ あとで相談」枠と「不採用」の一覧
 - サンプルデータ（タイトル・時刻・件数などはすべてダミー）
-- 見た目（色・フォント・枠線）はラフ。最終的な見た目は WPF-UI の Fluent スタイルに合わせる
+- 見た目（色・フォント・枠線）はラフ。最終的な見た目は、Phase 30 で決めるテーマ（12.5）に合わせる（それまでは WPF-UI の Fluent スタイル）
 
 ワイヤーと本書が食い違う場合は**本書を優先**する。注記に書かれた算出ロジックは本書 10章・12章に記載済み。
 
@@ -460,7 +479,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - **ステータス絞り込み**：全て / 未設定 / 作業中 / 中断 / 完了 のチップ（件数つき）。「全て」以外は**複数選べる**（選んだ状態のどれかに合えば出す＝OR）。何も選ばなければ「全て」（既定）。「全て」を押すと他の選択を外す。件数は他のフィルタ・検索の前の全カードから数える。下のフィルタ・検索と AND
 - 全文検索ボックス：対象は全プロンプト、概要、メモ、タイトル、変更ファイル名。インクリメンタル、大文字小文字無視
 - フィルタ：実行中のみ / 未コミットあり / メモあり
-- 並び順：最後の動きの降順
+- 並び順：最後の動きの降順。並びが変わっても（動きのあったカードが上へ移っても）、選んでいるカードの選択は外れない（詳細・タイムラインはそのまま。拡大モードも戻らない）。絞り込み・検索で選んでいるカードが隠れたときは、今と同じく選択が外れ、詳細とタイムラインは空になる（Avalonia の一覧は、並べ替えで選んだ項目を動かすと選択を外す不具合があるので、選んでいるカードは動かさずに並べ替える。レビュー 2026-10-06 の Q1）
 - カード表示項目：状態バッジ、タイトル（✏️でリネーム）、依頼数・最後の動き・モデル・圧縮回数・ブランチ、
   3行サマリー（12.4 と同じ）、概要の先頭、メモ（あれば）、**ステータスのバッジ**（未設定のときは出さない）
 - カードクリックで選択 → 中央・右ペインを切り替え
@@ -503,7 +522,9 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 
 ### 12.5 テーマ
 - ⚙ メニューの「テーマ」から OS に合わせる / ライト / ダーク を選ぶ。選択は `settings.json` に保存し、OS 追従のときは実行中の OS 設定変更にも従う
-- 色はテーマ別の色定義（`Themes\Colors.Light.xaml` / `Colors.Dark.xaml`）に置き、画面側は DynamicResource で参照する（直書きしない）
+- 色はテーマ別の色定義（`Themes\Colors.Light.xaml` / `Colors.Dark.xaml`。Avalonia でも同じくライト用・ダーク用に分ける）に置き、画面側は DynamicResource で参照する（直書きしない）
+- **部品の見た目のテーマ（Phase 30）**：**Avalonia 標準の FluentTheme と SukiUI の 2 つで試作し、見比べて利用者が決める**（2026-10-06 決定）。Phase 30-2 で、カード一覧と詳細のヘッダーを作り、テーマだけを差し替えて、両 OS・ライト/ダークのスクリーンショットを並べる。SukiUI（MIT。7.0 系は Avalonia 12.0.3 以上に対応。安定版を使い、nightly は使わない）は、次も確かめて判断の材料にする：①ふつうのウィンドウ（OS 標準のタイトルバー。12.11）で崩れない ②情報の多い 3 ペインに収まる（とくに 12.4 の「通常の幅 340px で、種別のチップ 5 つと検索ボックスが 1 行」）③日本語が OS のフォントで出る ④「OS に合わせる」で、実行中の OS のライト/ダークの変更に追従する。**どちらでも配置・項目は変えない**（変えるのは色・角丸・影・余白・ちょっとした動きだけ）。SukiUI を選んだときは、SukiUI のウィンドウの中に重ねて出すダイアログ・通知は使わない（WebView の上に重ねられないため：12.7）、背景のアニメーションは使わない（常に開いておく道具なので、CPU を使わない）。決めたテーマと確かめた結果は本節に書く
+- 背景：Windows は Mica、mac はすりガラス（Blur）を試す。Avalonia 12 で、タイトルバーの拡張と組み合わせると Mica が効かない不具合の報告がある（#21082）。うまくいかなければ単色
 
 ### 12.6 イベントの一意 ID
 - App 側で「SessionKey + ファイル内の行番号」を ID とする（AgentEvent.Seq）（3行サマリー → タイムラインのジャンプに使用）
@@ -520,7 +541,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 
 **除外設定（プロジェクトごと）**
 - ヘッダー右上の ⚙ メニューに「ドキュメントの設定…」。ダイアログに gitignore 形式のテキストボックスと「既定に戻す」。保存は 6章のプロジェクト設定
-- 書式は gitignore のうち次を扱う：`#` コメント、空行、`!` 再包含、末尾 `/`＝フォルダのみ、先頭または途中の `/`＝対象フォルダ直下基準、`*` `?` `**`、それ以外は任意の深さの名前に一致。大文字小文字は区別しない（Windows）。後ろの行が優先。git と同じく、除外したフォルダの中身を `!` で戻すことはできない
+- 書式は gitignore のうち次を扱う：`#` コメント、空行、`!` 再包含、末尾 `/`＝フォルダのみ、先頭または途中の `/`＝対象フォルダ直下基準、`*` `?` `**`、それ以外は任意の深さの名前に一致。大文字小文字は区別しない（Windows・mac とも）。後ろの行が優先。git と同じく、除外したフォルダの中身を `!` で戻すことはできない
 - 既定値：`.git/` `node_modules/` `bin/` `obj/` `.vs/` `.idea/` `.venv/` `venv/` `__pycache__/` `dist/` `build/` `out/` `target/` `packages/` `.gradle/` `.next/` `coverage/`。`.cursor/` は除外しない
 - 保存したら即座に再走査する
 
@@ -531,15 +552,16 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 検索はファイル名のみ（本文検索はしない）
 
 **プレビュー**
-- WebView2（Edge の Runtime）を使う。未導入のときは「WebView2 Runtime が必要です」と案内を出し、ツリー・一覧・概要カードは使える。起動時に Runtime の有無を確認する
+- Windows は WebView2（Edge の Runtime）、mac は WKWebView（OS に入っている）を使う。Phase 31 から NativeWebView で両方を同じ書き方で扱う（`NavigationStarted` の取り消し・`NewWindowRequested` で下のリンクの振り分けを行う）。Windows で Runtime が未導入のときは「WebView2 Runtime が必要です」と案内を出し、ツリー・一覧・概要カードは使える。起動時に Runtime の有無を確認する（mac は案内しない）。NativeWebView は Runtime が無いと古い WebView1（EdgeHTML）に切り替えようとするので、使う部品が WebView2 でなければ案内を出す（作れたかどうかでは見分けない）
 - html：元のファイルをそのまま開く（`file:///`）。相対・絶対のローカルパスの css・js・画像・リンクはそのまま効く。JavaScript は実行する。外部 http のリンクは既定ブラウザで開く
-- **リンクの振り分け**（html・md 共通。`NavigationStarting` と `NewWindowRequested` の両方）：①http/https → 既定ブラウザ ②対象フォルダ内の .md/.html/.htm → アプリ内で選択（ツリー・一覧・最後のファイルも追従。html→html も同じ）③対象フォルダ外・除外フォルダ内の .md/.html → 既定のアプリ ④その他のローカルファイル・フォルダ → 既定のアプリ／エクスプローラー ⑤`#見出し` だけ → ページ内で移動
-- md：Markdig（`UseAdvancedExtensions`）で HTML にし、`<base>` を元のフォルダにした一時 HTML を開く（見出しの id は日本語を残す GitHub 方式。`#見出し` のリンクはページ内スクロールにする）。相対パスの画像・リンクが効く。他の .md へのリンクはアプリ内で開き、ツリー・一覧も追従する
+- **リンクの振り分け**（html・md 共通。`NavigationStarting` と `NewWindowRequested` の両方）：①http/https → 既定ブラウザ ②対象フォルダ内の .md/.html/.htm → アプリ内で選択（ツリー・一覧・最後のファイルも追従。html→html も同じ）③対象フォルダ外・除外フォルダ内の .md/.html → 既定のアプリ ④その他のローカルファイル・フォルダ → 既定のアプリ／エクスプローラー ⑤`#見出し` だけ → ページ内で移動。振り分けるのはページそのものの移動だけで、ページの中の iframe の読み込みは振り分けない（そのまま読む。mac の WKWebView は iframe にも `NavigationStarted` を出すので、試作で確かめる）
+- md：Markdig（`UseAdvancedExtensions`）で HTML にし、`<base>` を元のフォルダにした一時 HTML を開く（見出しの id は日本語を残す GitHub 方式。`#見出し` のリンクはページ内スクロールにする）。相対パスの画像・リンクが効く。他の .md へのリンクはアプリ内で開き、ツリー・一覧も追従する。**mac の WKWebView で、一時 HTML（データの `preview/`）から `<base>` 先のプロジェクトのファイル（`../`・絶対パスも）を読めるかは、Phase 30 の最初に試作で確かめる**（WKWebView はファイルの読み取り範囲を絞ることがあるため）。NativeWebView の mac は `loadRequest` で開き、WebKit はファイルのとき、まずファイル全体を読める許可を作る（Miharikun はサンドボックスに入らないので、読める見込み）。読めなければ、WKWebView を直接呼び、読める範囲（一時 HTML とプロジェクトの共通の親）を指定して開く（`loadFileURL:allowingReadAccessToURL:`）。見え方・リンクの振り分けは変えない。独自のスキームで返す形は、今の NativeWebView（12.1.0）では作れない（中身を返す口が無い）ので使わない（レビュー 2026-10-06 の Q4）
 - md の**タスクリスト**（`- [ ]` `- [x]` `- [X]`、入れ子、番号付きリスト内）は、チェックボックスとして表示する。読み取り専用（クリックしても md は変わらない）。黒丸は消す。コードブロック内と見出し内の `[x]` は変換しない
 - md の mermaid（`mermaid` 言語のコードブロック）は、CDN の mermaid.js で図にする（ネット接続が前提。繋がらないときはコードのまま表示）。コードブロックは highlight.js（CDN。繋がらないときは色なし）で色付けする
 - md のプレビューはライト/ダークのテーマに追従する（html はファイルの見た目を尊重）
 - ファイルが保存されたら自動で再読み込みする
-- WebView2 の上に WPF の要素を重ねない（Runtime 未導入の案内などは、プレビュー領域と入れ替えて出す）。設定ダイアログは別ウィンドウにする
+- タブを切り替えて戻っても、プレビューの表示とスクロール位置はそのまま（WebView を作り直さない。Avalonia ではタブの中身を画面に載せたまま、見える・見えないで切り替える。レビュー 2026-10-06 の Q3）
+- WebView の上に画面の要素を重ねない（WebView は OS の部品なので、上に重ねたものが隠れる。両 OS とも。Runtime 未導入の案内などは、プレビュー領域と入れ替えて出す）。設定ダイアログは別ウィンドウにする
 
 ### 12.8 エージェントの表示（Issue #11）
 - 一覧のカードと詳細のヘッダーに、エージェントの**バッジ**（Cursor / Claude）を出す（表示名は `IAgentInfo.DisplayName`）
@@ -570,24 +592,45 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 空（ファイルが無い・空白だけ）のときは「メモはまだありません。右上の『編集』で書けます」と出す
 - リンク：①http/https → 既定ブラウザ ②対象フォルダ内の .md/.html/.htm（除外フォルダ内を除く）→ **ドキュメントタブに切り替えて、そのファイルを選ぶ** ③それ以外のローカルファイル・フォルダ → 既定のアプリ／エクスプローラー ④`#見出し` → ページ内で移動
 - メモのファイルが外で書き換わったら（別の起動のアプリなど）、プレビュー中なら自動で読み直す
-- WebView2 Runtime が無いときは、プレビューの場所に 12.7 と同じ案内を出す。編集・保存は使える
+- WebView2 Runtime が無いとき（Windows）は、プレビューの場所に 12.7 と同じ案内を出す。編集・保存は使える
 
 **編集**
 - 「✎ 編集」で、いまの内容を入れた複数行の入力欄（`TextBox`、`AcceptsReturn`・折り返し・縦スクロール・等幅フォント）に切り替える。バーの右は「保存」「キャンセル」に替わり、見出しの横に「編集中」（変更があれば「編集中（未保存）」）
-- エディタとプレビューは重ねない（Visibility で入れ替える。WebView2 の上に WPF の要素を重ねない：12.7）
+- エディタとプレビューは重ねない（表示・非表示で入れ替える。WebView の上に画面の要素を重ねない：12.7）
 - **保存**（ボタン・Ctrl+S）：ファイルに書いて（一時ファイル → 置き換え。複数起動の競合は後勝ち）、プレビューに戻り、描き直す。書けなかったときは理由を出して、編集のまま（入力を失わない）
 - **キャンセル**：変更が無ければそのままプレビューへ。変更があれば「変更を破棄しますか？」と確かめ、破棄ならプレビューへ戻る（内容は保存済みのもの）。Esc でキャンセルはしない
 - 編集中にほかのタブへ移っても、入力はそのまま残る（戻れば続きから）
 - 編集中は、外での書き換えを取り込まない（入力を上書きしない）
-- **未保存のままアプリを閉じる**とき：「プロジェクトのメモが保存されていません。保存しますか？」［保存］［保存しない］［キャンセル］。キャンセルなら閉じない。保存に失敗したら閉じない
+- **未保存のままアプリを閉じる**とき：「プロジェクトのメモが保存されていません。保存しますか？」［保存］［保存しない］［キャンセル］。キャンセルなら閉じない。保存に失敗したら閉じない。mac の ⌘Q・Dock の「終了」、OS のサインアウト・ログアウト・シャットダウンでも同じ確認を出す（キャンセル・保存の失敗なら OS の終了も止まる。Windows は「このアプリがサインアウトを妨げています」の画面になり、mac はログアウトが取り消される。Phase 31 から。WPF 版ではサインアウト・シャットダウンで確認なしに失われていた。レビュー 2026-10-06 の Q2）。最小化していても、ウィンドウを前に出してから確認する
 - 編集の補助（色付け・補完・太字ボタンなど）、左右同時のプレビュー、履歴は作らない
 
 **そのほか**
 - ダッシュボードの全文検索の対象にはしない（検索はセッションを探すためのもの）
 
+### 12.11 Windows と macOS の違い（Phase 27〜33）
+画面の配置・項目・操作は、両 OS で同じ（12.1〜12.10 のとおり）。違うのは次だけ。設計イメージ：`docs/macos-support/macos-support-design.html`（4 章）。
+
+| 項目 | Windows | mac |
+|---|---|---|
+| タイトルバー | Avalonia で今に近い形（閉じる・最小化は右） | OS 標準（閉じる・最小化は左） |
+| 背景 | Mica（12.5） | すりガラス（Blur。12.5） |
+| ショートカット | Ctrl（メモの保存は Ctrl+S） | ⌘（メモの保存は ⌘S） |
+| 「フォルダで開く」（ドキュメント） | エクスプローラーでファイルを選んだ状態で開く | Finder で表示（`open -R`）。ボタンの名前も「Finder で表示」 |
+| 既定のアプリで開く | 関連付けのアプリ | 同じ（`open`） |
+| プレビュー | WebView2。Runtime が無いときは案内 | WKWebView（案内なし） |
+| 引数なしで起動 | カレントディレクトリ | フォルダを選ぶ画面（9 章） |
+| 等幅フォント | Consolas など | Menlo など（無いフォント名は OS のものに置き換わる） |
+| 配布 | zip（exe 2 つ） | zip（`Miharikun.app`。初回に「隔離」の印を外す。8.1） |
+| Hook の案内の文 | `Miharikun.exe`・「Hook exe」 | `Miharikun.app`・「Hook」（例：「Miharikun.app の中に Hook が見つかりません」） |
+| ファイルとフォルダの許可 | なし | 書類フォルダなどの中のプロジェクトは、初めて読むときに許可を求められる（8.1） |
+
+- mac の上のメニューバー（「設定…」⌘, など）は作らない（⚙ メニューで足りる。17 章の保留）。アプリのメニュー（左上の「Miharikun」）は、アプリ名を Miharikun にし、OS 標準の項目（終了など）だけにする（Avalonia が既定で出す「About Avalonia」などは出さない）
+- ⚙ メニューの中身・ダイアログ・確認の文言は両 OS で同じ（「エクスプローラー」の語と、Hook の案内の exe の名前だけ OS で替える）
+
 ## 13. 非機能要件
 
-- 1プロジェクト100セッション・1セッション5,000イベントで、起動3秒以内・操作がもたつかないこと
+- 1プロジェクト100セッション・1セッション5,000イベントで、起動3秒以内・操作がもたつかないこと（Windows と mac の両方で）
+- Windows と macOS（Apple Silicon）で、同じ機能が同じように動くこと（違いは 12.11 だけ）
 - Hook の処理が Cursor の操作感を損なわないこと（7章の性能要件）
 - 文字コードはすべて UTF-8（BOM なし）
 - 例外で落ちないこと：壊れた行はスキップしてログに残す。読み込み元（`ISessionSource`）ごとに例外を捕まえ、スタックつきでログに残して、他の読み込み元は動き続ける（Claude Code の読み込みが壊れても Cursor の表示は止めない）
@@ -677,6 +720,19 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - **初回の読み込み：9 本・47.9MB で 189〜316ms、変化なしのポーリング 0.7ms**（「直近 N 日」の設定は要らない）。`app.log` に出たのは、初めて見る version（2.1.286）の 1 行だけ。読めない行は 0
   - 手書きのダミーで確かめた形（実物と食い違いは無かった）：`message.content` の文字／配列、`tool_result`（文字／text の配列）、`is_error`、`stop_reason`、`message.id`、`toolUseResult`
   - 出なかったもの（上の 14.2 の未確認項目を **保留**）：圧縮、`relocated`、`api_error`・`isApiErrorMessage`、`Agent` の呼び出し・`task-notification`、`ExitPlanMode`、スラッシュコマンド（`<command-name>`）
+
+### 14.3 macOS の Step 0（Phase 27）
+利用者の mac（Apple Silicon。Cursor は **Hobby プラン**）で確かめる。会話ログ・イベントは**構造だけ**を数え、本文・コマンド・パスの中身は引用しない。進行中のセッションは読まない。mac の `~/.cursor/hooks.json` は本物の設定なので、Hook を入れる前に利用者の了承を取る（導入はバックアップしてから）。
+
+- [ ] **Hobby プランで hooks.json の command が呼ばれるか**。Cursor の料金ページでは「MCPs, skills, and hooks」が Pro 以上の欄にあるが、Windows の Hobby では実際に動いている（利用者の環境。2026-10-06）。呼ばれなければ、mac の Cursor は会話ログの取り込みで出す（11 章）
+- [ ] hooks.json の場所（`~/.cursor/hooks.json`）、command の起動のされ方（どのシェルか）、**スペースを含むパス**（`~/Library/Application Support/Miharikun/bin/…`）で起動できるか
+- [ ] 入力の JSON の形が Windows と同じか。`workspace_roots` の形（`/Users/…` か）。日本語が壊れずに届くか（14.1 の文字化けは Windows の PowerShell が原因なので、起きない見込み）
+- [ ] 「隔離」の印が付いたままの Hook を Cursor が呼んだときの動き（止まるか・ダイアログが出るか・何も出ないか）（8.1）
+- [ ] Cursor の会話ログの場所（`~/.cursor/projects/<slug>/agent-transcripts/`）と slug の規則（11 章）
+- [ ] Claude Code の会話ログのフォルダ名の規則（`/Users/x/repo` → `-Users-x-repo` か）と `cwd` の形（9.1）
+- [ ] `git` が使えるか（Xcode Command Line Tools）。Hook の `git -C` と App の git の呼び出し
+- [ ] シンボリックリンクを経由したフォルダ（`/tmp/…` など）で、Claude Code の `cwd`・Cursor の `workspace_roots`・git のルート（`git rev-parse --show-toplevel`）が、実パス・論理パスのどちらで来るか（9 章）
+- [ ] 日本語のファイル名の形：Finder で作ったファイル名が NFD（濁点が分かれた形）か。ドキュメントタブのリンク・最後のファイルの復元に効く（12.7）
 
 ## 15. 実装フェーズ
 
@@ -816,6 +872,41 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - ライト/ダーク、WebView2 未導入時（コードと案内）、配布 zip の `README.txt`・`docs/release.md`、本書の状況の更新
 - 状況：実施済み。配布 zip の `README.txt`（`scripts/publish.ps1`）に「メモ」タブ（書く・保存・保存先・未保存の確認・リンク）を追記、`docs/release.md` の出す前のチェックにメモタブの確認を追加。ライト/ダークは Phase 25 で確認済み。WebView2 未導入の案内はコードのみ（実機では未確認）。`CLAUDE.md` は変えていない（守ることに変化なし）。**Issue #14 の実装は、これで 23〜26 がすべて完了**。リリースはしていない
 
+## Phase 27〜33: macOS 対応（Avalonia への移行。Issue #22）
+3・5・8.1・9・12.5・12.7・12.11・14.3 章。設計（候補の比較・決定・署名なしの配布）は `docs/macos-support/macos-support-design.html`。実装の分け方・ファイル構成・決めごとは実装計画 `docs/macos-support/macos-support-plan.md`（図解 HTML と対）。
+- 決定（2026-10-06）：画面は Avalonia 12 に作り直して Windows と mac で 1 つにする／**一気に切り替える**（1 つの作業ブランチで作り、main に入るのは Avalonia 版だけ。WPF と Avalonia を main で混ぜない）／mac は署名・公証なしで配る（8.1）／対象は Apple Silicon だけ／mac で引数なしなら起動時にフォルダを選ぶ（9 章）／見た目のテーマは FluentTheme と SukiUI の試作で見比べて決める（12.5）
+- 計画のレビュー（`docs/macos-support/macos-support-review.html`。2026-10-06）の決定：Q1 並べ替えても選択を外さない（選んでいるカードは動かさずに並べ替える。12.2）／Q2 OS のサインアウト・ログアウト・シャットダウンでも未保存の確認を出す（12.10）／Q3 タブの中身は載せたまま切り替え、WebView を作り直さない（12.7）／Q4 WKWebView で読めなければ、読める範囲を指定して開く（独自のスキームは使わない。12.7）／Q5 mac では実パスでも比べる（9 章）
+- 全体の完了条件：Windows と mac の両方で、12 章の機能がすべて同じように動く（違いは 12.11 だけ）。配置・項目は変えない。既存のテストが減らない。Core は AOT 互換（警告 0）。ライト/ダークの両方で確認する
+- 開発の場所：Phase 27 は mac。Phase 28 は Windows（WPF で挙動を確かめられる最後の機会）。Phase 29〜32 は mac が中心（Windows 版の Hook は CI の Windows ランナーで作る。Phase 32 の Windows の発行は Windows か CI）。Phase 33 は両方。OS を移る前と CI を見る前に、利用者にコミットと push を頼む（作業ツリーは OS をまたげないため）
+
+## [ ] Phase 27: mac の実機確認（Step 0）
+- 14.3 の項目を、利用者の mac で確かめる（Hook は、mac で NativeAOT で作って手で入れる）。任意で、WKWebView の読み取り範囲の試作（捨てる小さな画面。12.7。Phase 30 の最初でもよい）
+- 完了条件：14.3 の項目が「確認済み」または「保留」に整理され、Core の mac 向けの直し（Phase 29）の内容が決まる
+
+## [ ] Phase 28: ViewModel の切り出し（挙動は変えない）
+- `Miharikun.Presentation`（`net10.0`）を作り、ViewModel を移す。WPF の型（`DispatcherTimer`・`CollectionViewSource`/`ICollectionView`・`Clipboard`・`MessageBox`）を使わない形にし、タイマー・クリップボード・「フォルダで表示」・確認ダイアログ・UI スレッドへの受け渡しは interface 越しにする。一覧の絞り込みは、絞った一覧を自前で作る（作り直さずに合わせ、選んでいるカードは動かさない：12.2）。タイムラインの種別・検索・切り替えは、入れ物ごと差し替える（5,000 行でも 1 件ずつ通知しない）
+- 完了条件：既存のテストが全部通る（件数を減らさない）。ViewModel のテストを足す。Windows の WPF 版の画面が従来どおり動く（WPF 側は配線だけ直す）。切り出す前に WPF 版の動き（選んでいるカードが隠れたとき・5,000 行の種別と検索の速さなど）を記録し、同じであること
+
+## [ ] Phase 29: Core・テストの mac 対応
+- CI に macOS ランナーでのテストを足す（最初に。Windows の確認にも使う）。Hook の名前（mac は拡張子なし）・同梱の Hook の場所・Hook の導入での「隔離」の印の解除と試しの起動（8.1）・Hook の更新の仕方（mac は一時ファイル → 名前の付け替え。8 章）・「Finder で表示」・シンボリックリンク（実パスでも比べる。9 章）・ドキュメントの相対パスの NFC・git の場所（Command Line Tools の git の実体を直接使う）・14.3 で分かった違い。テストのパスを OS 別にする（Windows だけのテストには印を付ける）
+- 完了条件：Windows と mac の両方で `dotnet test` が通る（mac で飛ばすテストは件数を記録する）。mac で本当に動かないテスト（シンボリックリンクなど）は、印を付けて飛ばさず、製品のコードを直す。Core は AOT 互換。mac の NativeAOT の Hook が通る
+
+## [ ] Phase 30: Avalonia でダッシュボード
+- **最初に WPF の画面のプロジェクトを消し、Avalonia 12 の画面のプロジェクトに置き換える**（消す前に、見比べ用に WPF 版をビルドして残す）。あわせて、開発用の `Miharikun.app`（Info.plist・アドホック署名。mac の確認は Finder から開いた `.app` で行う）、WKWebView の読み取り範囲の試作（12.7。Phase 27 で済んでいなければ）、ファイルとフォルダの許可（TCC。8.1）の確認。続けて、FluentTheme と SukiUI の試作と見比べ（12.5）、日本語入力（IME）の試作（メモ・検索・名前の変更の入力欄）。そのあと、共通ヘッダー・3 ペイン・カード・詳細・タイムライン（仮想化・ジャンプ・検索・コピー）・拡大モード・テーマ切り替え・設定画面・Hook の導入の確認・mac の起動時のフォルダ選択（9 章）
+- 完了条件：12.1〜12.5・12.8・12.9・12.11 が Windows と mac の両方で動く（並べ替えても選択が外れないこと（12.2）は、Avalonia.Headless のテストでも確かめる）。ライト/ダークの両方で確認する。決めたテーマと確かめた結果を 12.5 に書く
+
+## [ ] Phase 31: ドキュメント・メモタブ
+- NativeWebView（WKWebView の読み取り範囲の試作は Phase 30 の最初に済ませる。12.7）。リンクの振り分け・自動再読み込み・テーマの追従・タブを切り替えても WebView を作り直さない・Runtime 未導入の見分け（使う部品が WebView2 か）・未保存で閉じるときの確認（OS のサインアウト・ログアウトでも。12.10）・メモのリンクからドキュメントタブへ
+- 完了条件：12.7・12.10 が Windows と mac の両方で動く（md のチェックボックス・mermaid・相対パスの画像・リンク・タブを行き来してもスクロール位置が保たれる）
+
+## [ ] Phase 32: 配布
+- `.github/workflows/release.yml` に macOS ランナーのジョブを足す（`osx-arm64` の App と Hook、`Miharikun.app`、アドホック署名、`ditto` の zip、SHA-256）。mac 用の発行スクリプト（Phase 30 の開発用を配布用に仕上げる）。配布 zip の README（Windows と mac。mac は「隔離」の印の外し方・フォルダの指定・ファイルとフォルダの許可。8.1・9 章）、`docs/release.md`
+- 完了条件：手動実行のワークフローで両 OS の zip ができる。展開 → （mac は印を外す）→ 起動 → Hook の導入 → 会話 → 表示、が両 OS で通る。mac は版を上げての再導入（Hook の更新）でも通る
+
+## [ ] Phase 33: 両 OS の通し確認・仕上げ
+- Windows：Cursor・Claude Code。mac：Cursor（Hobby）・Claude Code。リリースの zip で通す。`CLAUDE.md`・本書（状況）の更新
+- 完了条件：目視確認 OK。未確認項目が「確認済み」または「保留」に整理されている
+
 ## 16. テスト方針
 
 - Core は xUnit で網羅：`CursorAgent.Normalize` の対応表どおりの変換、状態遷移（再開・中断・エラー・stop 欠落）、実行中ツールの保険クリア、
@@ -826,7 +917,9 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 
 - メモタブ（Core）：`ProjectMemoStore`（一時フォルダ。パス・無いとき・読み書き・BOM なし・上書き・他のファイルを消さない）、変更の有無の判定
 - Hook は「サンプル JSON を stdin に流して出力・終了コード・追記内容を検証」する結合テスト
-- UI は手動確認（ワイヤーと突き合わせ）
+- ViewModel（Phase 28 から）：`Miharikun.Presentation` を、画面の仕組みの代わりの小さな部品（タイマー・クリップボード・ダイアログ）でテストする
+- OS：Windows と mac（CI の macOS ランナー）の両方でテストを回す（Phase 29 から）。OS に依るテスト（Windows のパス・`File.Replace` の残りファイル・CP932 の文字化けの修復など）は印を付け、対象の OS だけで動かす。mac で落ちるテストのうち、本当に mac で動かないもの（シンボリックリンクの実パスなど）は、印を付けて飛ばさず、製品のコードを直す
+- UI は手動確認（ワイヤーと突き合わせ。Phase 30 からは Windows と mac の両方）。画面の部品の動きのうち、一覧の選択の保ち方（並べ替え・絞り込み）は Avalonia.Headless のテストで確かめる（Phase 30 から。両 OS の CI で回す）
 
 ## 17. 保留事項（MVP 後に相談）
 
@@ -837,3 +930,4 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 承認待ち状態の判定
 - ドキュメントタブ：本文検索、md の編集、ボード表示、索引のキャッシュ
 - Claude Code：セッションのタイトル（`custom-title` / `ai-title`）の取り込み、サブエージェントの詳細表示（`GetSubagentEvents`）、古いセッションの「直近 N 日」の設定（初回の読み込みが遅いとき）
+- macOS：Intel の mac（`osx-x64`）、Apple の署名・公証（Apple Developer Program。年 99 USD。入れれば 8.1 の手順が要らなくなる。切り替えは CI と README だけ）、上のメニューバー（「設定…」⌘, など）、Homebrew での配布

@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>macOS 対応 実装計画 レビュー</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>macOS 対応 実装計画（docs/macos-support/macos-support-plan.md）レビュー（Issue #22）</h1>
+<p><b>結論：直してから進める。</b>全体の分け方（mac で事実を確かめる → Windows で ViewModel を切り出す → mac で Core → 画面 → 配布）と、Phase 28 を「挙動を変えない切り出し」にして品質ゲートで守る方針は妥当。WPF 版の「一覧の選択の保ち方」と「選択中のカードが隠れたとき」は、<code>ViewList.SyncTo</code> でも今と同じになる（WPF のソースで確認）。</p>
+<p>ただし、計画の前提が Avalonia では成り立たない所が 2 つある：<b>並べ替え（Move）で選択が外れる（#1）</b>と、<b>WebView の「代わりの形」が今の部品では作れない（#2）</b>。mac 固有では<b>シンボリックリンク（論理パスと実パス）</b>が抜けていて、テストも mac で落ちる見込み（#3）。この 3 つは 7.3・7.11・29 章の作りに効くので、計画を直してから Phase 28 に入る。Phase 27 は確認項目を足せば、すぐ始めてよい。ほかは計画の文を足せば済む中〜低の指摘。</p>
+<p>状態：レビュー（2026-10-06）。コードは変えていない。実機では確かめていない（このリポジトリのコードと、使うライブラリのソースを読んで判断した。推測は「要確認」と書いた）。</p>
+<p><b>決めたこと（2026-10-06）</b>：Q1〜Q5 はすべて推奨どおり（Q1＝A・Q2＝B・Q3＝A・Q4＝A・Q5＝A）。指摘 #1〜#19 と決定を、要件定義（<code>docs/miharikun-requirements.md</code>）と計画（<code>macos-support-plan.md</code>・<code>.html</code>）に反映済み（5 章の表のとおり）。</p>
+
+<h2>観点ごとの答え</h2>
+<table>
+<tr><th style="width:24%">観点</th><th>答え</th><th style="width:13%">関係する #</th></tr>
+<tr><td>① Phase 28 の切り出しで WPF 版の挙動が変わらないか</td><td><span class="ok">WPF では変わらない。</span>WPF の ListBox は Move で選択を保ち、Reset では残っている選択を保って無くなった選択を外す。SyncTo の Move・Insert・Remove は今の <code>Refresh()</code> と同じ結果になり、隠れたら <code>Selected = null</code> も同じ。タイマー（どれも Background）・確認（WPF は完了済みの Task を返す）も同じ。<br><span class="ng">ただし</span>、Avalonia では Move で選択が外れる（#1）。タイムラインまで 1 件ずつの通知にすると重い（#7）。VM のテストの前提が無い（#11）。「変わってよい（良い方向）」所があるので記録に足す（#17・#18）。</td><td>#1 #7 #11 #17 #18</td></tr>
+<tr><td>② Avalonia の閉じる流れで未保存のメモを失わないか</td><td><span class="ok">✕・Alt+F4・⌘Q・Dock の「終了」では失わない。</span>Avalonia は終了の要求で窓の Closing を出し、取り消された窓が残れば終了そのものを取り消す（ソースで確認）。セッションのメモは入力のたびに VM に入るので Flush で保存される。<br><span class="ng">ただし</span>、OS のサインアウト・ログアウトでも Closing が来る（WPF と違う。計画 7.6-8 の「今と同じ」が成り立たない）。最小化中にダイアログが見えない恐れ、2 回目の Closing の扱い、<code>Shutdown()</code> は取り消しを無視、が抜けている。</td><td>#5 #14</td></tr>
+<tr><td>③ mac の WKWebView の読み取り範囲と、代わりの形</td><td><span class="ok">主の形（一時 HTML＋&lt;base&gt;）は通る見込みが高い。</span>NativeWebView の mac は <code>loadRequest</code> で開き、WebKit は file のとき、まず「/」全体の読み取り許可を作る。Miharikun はサンドボックスに入らないので通る見込み（試作で確かめる）。<br><span class="ng">代わりの形（独自スキーム＋WebResourceRequested）は 12.1.0 では作れない</span>（返事を返す口が無い・mac では画像の読み込みに来ない・スキームを登録できない）。ほかに、タブの切り替えで WebView が壊れる・mac は iframe にも NavigationStarted・Windows は Runtime が無いと WebView1 に落ちる。</td><td>#2 #4 #12 #16</td></tr>
+<tr><td>④ mac 固有の落とし穴の抜け</td><td><span class="ok">-psn_・空白を含むパス（hooks.json の引用符・ArgumentList）・--probe・隔離の印の解除は、計画どおりでよい。</span><br><span class="ng">抜け</span>：シンボリックリンク（#3）、ファイルとフォルダの許可＝TCC（#9）、Hook の上書き（#8）、NFD のドキュメントのリンク（#13）、起動の順（ログ・テーマが選ぶ後：#14）、git の場所の判定（#15）、案内の文・メニュー・Info.plist（#19）。</td><td>#3 #8 #9 #13 #14 #15 #19</td></tr>
+<tr><td>⑤ Phase の分け方と作業する OS</td><td><span class="ok">分け方・順番・「Phase の終わりで止まって報告」は妥当。</span><br><span class="ng">抜け</span>：WebView の試作（31-1）と mac の .app 作り（32-2）が遅い（#6）。CI・OS の行き来に要る push の区切りが無く、29-1 が CI より先（#10）。32-1 は Windows の作業、mac のテストの基準の取り直し、WPF 版の見比べ用のビルド（#19）。</td><td>#6 #10 #19</td></tr>
+</table>
+
+<h2>1. 確認した範囲</h2>
+<table>
+<tr><th style="width:38%">対象</th><th>見たこと</th></tr>
+<tr><td><code>docs/macos-support/macos-support-plan.md</code>（図解 <code>.html</code> は主な語・図の文字で突き合わせ）</td><td>全章。md と html で食い違いは見つからなかった</td></tr>
+<tr><td><code>docs/miharikun-requirements.md</code></td><td>3・5・8・8.1・9・9.1・12.4〜12.11・13・14.3・16 章と Phase 27〜33</td></tr>
+<tr><td><code>docs/macos-support/macos-support-design.html</code>、<code>docs/memo-tab/memo-tab-review.html</code></td><td>1 章の表・Q1〜Q7・7 章（署名なしの配布）・8 章のリスク。前回の Q2（サインアウトは既知の制限）の前提</td></tr>
+<tr><td><code>src/Miharikun/ViewModels/*.cs</code></td><td>WPF の型の使い方、<code>CardsView.Refresh()</code> の呼び所、選択・タイマー・確認・<code>async void</code></td></tr>
+<tr><td><code>src/Miharikun/MainWindow.xaml(.cs)</code>・<code>App.xaml.cs</code>・<code>HookSetup.cs</code>・<code>Behaviors/TextBoxBehaviors.cs</code></td><td>バインド（SelectedItem・UpdateSourceTrigger）、時計、閉じる流れ、組み立ての順、リネームの確定</td></tr>
+<tr><td><code>src/Miharikun/Views/MarkdownPreview.xaml.cs</code>・<code>IPreviewHost.cs</code>・<code>MemoView</code>・<code>DocumentsView</code>・<code>PreviewFiles.cs</code>・<code>WebViewEnvironment.cs</code>・<code>ThemeService.cs</code>・<code>ShellOpen.cs</code>・<code>ClipboardHelper.cs</code>・<code>AppLog.cs</code></td><td>一時 HTML とリンクの振り分け、Runtime の確認、置き換えの対象</td></tr>
+<tr><td><code>src/Miharikun.Core</code>：<code>Install/HookInstaller.cs</code>・<code>Git/GitClient.cs</code>・<code>Projects/ProjectPath.cs</code>・<code>Storage/AppPaths.cs</code>・<code>Sessions/ClaudeFolderName.cs</code>・<code>ClaudeLocations.cs</code>・<code>Documents/DocumentIndex.cs</code>・<code>DocumentLinkRule.cs</code></td><td>mac で効く所（名前・コピー・git・パスの比べ方）</td></tr>
+<tr><td><code>src/Miharikun.Hook</code>：<code>HookRunner.cs</code>・<code>GitProbe.cs</code>・<code>Program.cs</code>・<code>Miharikun.Hook.csproj</code></td><td>--probe の入れ所、git の起動、InvariantGlobalization</td></tr>
+<tr><td><code>tests/Miharikun.Tests</code>（<code>GitClientTests</code> ほか <code>C:\</code> を使う 24 ファイル）</td><td>mac で落ちる見込みの所</td></tr>
+<tr><td><code>.github/workflows/release.yml</code>・<code>scripts/publish.ps1</code>・<code>src/Miharikun/Miharikun.csproj</code></td><td>配布の作り</td></tr>
+<tr><td>外のソース（読んだだけ）</td><td>Avalonia 12.1.3（<code>SelectionNodeBase.cs</code>・<code>SelectionModel.cs</code>・<code>ClassicDesktopStyleApplicationLifetime.cs</code>・<code>NativeControlHost.cs</code>・<code>AvaloniaNativeApplicationPlatform.cs</code>・<code>Win32Platform.cs</code>・<code>DispatcherTimer.cs</code>）、Avalonia.Controls.WebView 12.1.0（<code>MaciosWebViewAdapter.cs</code>・<code>WKNavigationDelegate.cs</code>・<code>IWebViewAdapter.cs</code>・<code>WebViewAdapter.cs</code>・<code>WebView2BaseAdapter.cs</code>・<code>NativeWebView.cs</code>・<code>AppleWKWebViewEnvironmentRequestedEventArgs.cs</code>）、dotnet/wpf（<code>Selector.cs</code>・<code>DispatcherTimer.cs</code>）、WebKit main（<code>WebPageProxy::maybeInitializeSandboxExtensionHandle</code>）、dotnet/runtime の invariant mode の文書、Avalonia の不具合報告 <a href="https://github.com/AvaloniaUI/Avalonia/issues/16279">#16279</a>・<a href="https://github.com/AvaloniaUI/Avalonia/issues/17819">#17819</a>（どちらも未解決）</td></tr>
+<tr><td>できなかった確認</td><td>mac の実機での動き、WPF 版の実際の起動（今回はコードとソースで判断）。下の「要確認」はすべて実機か試作で確かめる</td></tr>
+</table>
+
+<h2>2. 概念図</h2>
+<h3>全体と、問題の箇所（赤）</h3>
+<svg viewBox="0 0 960 445" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="10" width="940" height="125" fill="#efe" stroke="#383"/>
+<text x="20" y="30" font-weight="bold">画面（Avalonia 12。Phase 30・31 で WPF から置き換え）</text>
+<rect x="20" y="42" width="220" height="84" fill="#fde" stroke="#b33"/>
+<text x="28" y="60" font-weight="bold">ListBox（カード一覧）</text>
+<text x="28" y="78" font-size="12">Move を「取り除く＋足す」と扱う</text>
+<text x="28" y="95" font-size="12">→ 選択中の要素なら選択が外れる</text>
+<text x="28" y="117" font-size="12" fill="#b33" font-weight="bold">← 問題 #1</text>
+<rect x="250" y="42" width="220" height="84" fill="#fde" stroke="#b33"/>
+<text x="258" y="60" font-weight="bold">TabControl と WebView</text>
+<text x="258" y="78" font-size="12">タブを外れると中の WebView を壊し</text>
+<text x="258" y="95" font-size="12">戻ると作り直して読み直す</text>
+<text x="258" y="117" font-size="12" fill="#b33" font-weight="bold">← 問題 #4</text>
+<rect x="480" y="42" width="220" height="84" fill="#fde" stroke="#b33"/>
+<text x="488" y="60" font-weight="bold">Window.Closing</text>
+<text x="488" y="78" font-size="12">✕・Alt+F4・⌘Q・Dock に加えて</text>
+<text x="488" y="95" font-size="12">OS のサインアウト等でも来る</text>
+<text x="488" y="117" font-size="12" fill="#b33" font-weight="bold">← 問題 #5</text>
+<rect x="710" y="42" width="230" height="84" fill="#fde" stroke="#b33"/>
+<text x="718" y="60" font-weight="bold">NativeWebView（12.1.0）</text>
+<text x="718" y="78" font-size="12">mac：loadRequest で file を開く</text>
+<text x="718" y="95" font-size="12">代わりの形（独自スキーム）は作れない</text>
+<text x="718" y="117" font-size="12" fill="#b33" font-weight="bold">← 問題 #2・#12・#16</text>
+<line x1="130" y1="150" x2="130" y2="137" stroke="#333" marker-end="url(#a)"/>
+<text x="140" y="146" font-size="11" fill="#555">ItemsSource・SelectedItem（TwoWay）</text>
+<rect x="10" y="150" width="610" height="125" fill="#dfd" stroke="#383"/>
+<text x="20" y="170" font-weight="bold">Miharikun.Presentation（Phase 28 で新設。net10.0）</text>
+<text x="20" y="192" font-size="12">MainViewModel：Cards → ViewList.SyncTo → VisibleCards（今は ICollectionView）</text>
+<text x="20" y="211" font-size="12">TimelineViewModel：VisibleItems（5,000 行でも 1 件ずつの通知）</text>
+<text x="20" y="230" font-size="12">MemoViewModel：キャンセル → ConfirmAsync（非同期）</text>
+<text x="20" y="249" font-size="12">HookSetup：導入 → 印の解除（mac）→ --probe</text>
+<text x="20" y="268" font-size="12">テスト：FakeUiServices（タイマーを手で進める）</text>
+<text x="560" y="192" font-size="12" fill="#b33" font-weight="bold">#1 #11</text>
+<text x="560" y="211" font-size="12" fill="#b33" font-weight="bold">#7</text>
+<text x="560" y="249" font-size="12" fill="#b33" font-weight="bold">#8</text>
+<line x1="620" y1="212" x2="640" y2="212" stroke="#333" stroke-dasharray="5,3"/>
+<rect x="640" y="150" width="310" height="125" fill="#fef" stroke="#a3a"/>
+<text x="650" y="170" font-weight="bold">IUiServices・IUiTimer（画面への口）</text>
+<text x="650" y="192" font-size="12">WpfUiServices（28。30 で消える）</text>
+<text x="650" y="211" font-size="12">AvaloniaUiServices（30）</text>
+<text x="650" y="230" font-size="12">FakeUiServices（テスト）</text>
+<rect x="10" y="290" width="940" height="145" fill="#eee" stroke="#888"/>
+<text x="20" y="310" font-weight="bold">Core・Hook と mac の環境（Phase 29。mac で直す）</text>
+<rect x="20" y="320" width="220" height="80" fill="#fde" stroke="#b33"/>
+<text x="28" y="338" font-weight="bold">GitClient</text>
+<text x="28" y="356" font-size="12">ルートは --show-toplevel</text>
+<text x="28" y="373" font-size="12">＝実パス（/private/…）</text>
+<text x="28" y="392" font-size="12" fill="#b33" font-weight="bold">問題 #3</text>
+<rect x="250" y="320" width="220" height="80" fill="#fde" stroke="#b33"/>
+<text x="258" y="338" font-weight="bold">Claude の cwd と $PWD</text>
+<text x="258" y="356" font-size="12">cwd は実パス（getcwd）</text>
+<text x="258" y="373" font-size="12">$PWD は論理パス</text>
+<text x="258" y="392" font-size="12" fill="#b33" font-weight="bold">問題 #3</text>
+<rect x="480" y="320" width="220" height="80" fill="#fde" stroke="#b33"/>
+<text x="488" y="338" font-weight="bold">DocumentIndex</text>
+<text x="488" y="356" font-size="12">走査した名前をそのままキーに</text>
+<text x="488" y="373" font-size="12">NFC と NFD を区別する</text>
+<text x="488" y="392" font-size="12" fill="#b33" font-weight="bold">問題 #13</text>
+<rect x="710" y="320" width="230" height="80" fill="#fde" stroke="#b33"/>
+<text x="718" y="338" font-weight="bold">HookInstaller</text>
+<text x="718" y="356" font-size="12">File.Copy で上書き</text>
+<text x="718" y="373" font-size="12">（同じファイルに書き込む）</text>
+<text x="718" y="392" font-size="12" fill="#b33" font-weight="bold">問題 #8</text>
+<text x="20" y="422" font-size="12" fill="#c05000">ほか：TCC（書類フォルダなどの許可 #9）・起動の順（#14）・git の場所（#15）・Hook の文言と案内（#19）</text>
+</svg>
+
+<h3>#1 並べ替えと選択：WPF は保つ、Avalonia は外す</h3>
+<svg viewBox="0 0 960 262" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="10" width="300" height="200" fill="#fff" stroke="#bbb"/>
+<text x="20" y="30" font-weight="bold">WPF（今・Phase 28）</text>
+<text x="20" y="50" font-size="11" fill="#666">前</text>
+<rect x="20" y="56" width="100" height="24" fill="#fff" stroke="#999"/><text x="28" y="73">A</text>
+<rect x="20" y="84" width="100" height="24" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2"/><text x="28" y="101">B ★選択中</text>
+<rect x="20" y="112" width="100" height="24" fill="#fff" stroke="#999"/><text x="28" y="129">C</text>
+<line x1="124" y1="96" x2="196" y2="96" stroke="#333" marker-end="url(#a)"/>
+<text x="128" y="89" font-size="10">Move(1→0)</text>
+<text x="200" y="50" font-size="11" fill="#666">後（B に動き）</text>
+<rect x="200" y="56" width="100" height="24" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2"/><text x="208" y="73">B ★選択中</text>
+<rect x="200" y="84" width="100" height="24" fill="#fff" stroke="#999"/><text x="208" y="101">A</text>
+<rect x="200" y="112" width="100" height="24" fill="#fff" stroke="#999"/><text x="208" y="129">C</text>
+<text x="20" y="162" fill="#2a7a2a" font-weight="bold">✓ 選択はそのまま</text>
+<text x="20" y="182" font-size="11" fill="#666">Selector.cs:1177-1187（Move）</text>
+<text x="20" y="198" font-size="11" fill="#666">Reset は残った選択を保つ：:1191-1213</text>
+<rect x="325" y="10" width="300" height="200" fill="#fff" stroke="#bbb"/>
+<text x="335" y="30" font-weight="bold">Avalonia（計画どおり Move）</text>
+<text x="335" y="50" font-size="11" fill="#666">前</text>
+<rect x="335" y="56" width="100" height="24" fill="#fff" stroke="#999"/><text x="343" y="73">A</text>
+<rect x="335" y="84" width="100" height="24" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2"/><text x="343" y="101">B ★選択中</text>
+<rect x="335" y="112" width="100" height="24" fill="#fff" stroke="#999"/><text x="343" y="129">C</text>
+<line x1="439" y1="96" x2="511" y2="96" stroke="#b33" marker-end="url(#a)"/>
+<text x="443" y="89" font-size="10">Move(1→0)</text>
+<text x="515" y="50" font-size="11" fill="#666">後</text>
+<rect x="515" y="56" width="100" height="24" fill="#fde" stroke="#b33"/><text x="523" y="73">B（外れる）</text>
+<rect x="515" y="84" width="100" height="24" fill="#fff" stroke="#999"/><text x="523" y="101">A</text>
+<rect x="515" y="112" width="100" height="24" fill="#fff" stroke="#999"/><text x="523" y="129">C</text>
+<text x="335" y="162" fill="#b33" font-weight="bold">✗ 選択が外れる → Selected=null</text>
+<text x="335" y="182" font-size="12">詳細・タイムラインが空、拡大も戻る</text>
+<text x="335" y="198" font-size="11" fill="#666">SelectionNodeBase.cs:155-170・#16279</text>
+<rect x="640" y="10" width="310" height="200" fill="#fff" stroke="#bbb"/>
+<text x="650" y="30" font-weight="bold">直した後（選択中は動かさない）</text>
+<text x="650" y="50" font-size="11" fill="#666">前</text>
+<rect x="650" y="56" width="100" height="24" fill="#fff" stroke="#999"/><text x="658" y="73">A</text>
+<rect x="650" y="84" width="100" height="24" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2"/><text x="658" y="101">B ★選択中</text>
+<rect x="650" y="112" width="100" height="24" fill="#fff" stroke="#999"/><text x="658" y="129">C</text>
+<line x1="754" y1="96" x2="836" y2="96" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<text x="757" y="89" font-size="10">A を Move(0→1)</text>
+<text x="840" y="50" font-size="11" fill="#666">後</text>
+<rect x="840" y="56" width="100" height="24" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2"/><text x="848" y="73">B ★選択中</text>
+<rect x="840" y="84" width="100" height="24" fill="#fff" stroke="#999"/><text x="848" y="101">A</text>
+<rect x="840" y="112" width="100" height="24" fill="#fff" stroke="#999"/><text x="848" y="129">C</text>
+<text x="650" y="162" fill="#2a7a2a" font-weight="bold">✓ 並びは同じ。B は動かない</text>
+<text x="650" y="182" font-size="12">SyncTo(target, desired, pinned)</text>
+<text x="650" y="198" font-size="11" fill="#666">pinned＝選択中。周りを動かして合わせる</text>
+<text x="10" y="232" font-size="12" fill="#c05000">※ 選んでいる（見ている）セッションほど新しい動きが来て上へ移る。Avalonia で Move のままだと、ほぼ毎回選択が外れる。</text>
+<text x="10" y="252" font-size="12" fill="#c05000">※ 絞り込みで隠れたとき（Remove）は、今の WPF も直した後も選択が外れて Selected=null（記録してから同じにする）。</text>
+</svg>
+
+<h3>#2 mac のプレビューの読み込み：主の形は通る見込み、代わりの形は作れない</h3>
+<svg viewBox="0 0 960 328" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="20" font-size="12" font-weight="bold">計画の主の形（7.11・31-1）</text>
+<rect x="10" y="30" width="200" height="72" fill="#dff" stroke="#08a"/>
+<text x="18" y="50" font-weight="bold">MarkdownPreview</text>
+<text x="18" y="68" font-size="12">一時 HTML（preview/）</text>
+<text x="18" y="86" font-size="12">＋ &lt;base&gt;＝md のフォルダ</text>
+<rect x="250" y="30" width="210" height="72" fill="#dfd" stroke="#383"/>
+<text x="258" y="50" font-weight="bold">NativeWebView.Navigate</text>
+<text x="258" y="68" font-size="12">mac：WKWebView の</text>
+<text x="258" y="86" font-size="12">loadRequest（file:///…）</text>
+<rect x="500" y="30" width="220" height="72" fill="#eee" stroke="#888"/>
+<text x="508" y="50" font-weight="bold">WebKit（OS の部品）</text>
+<text x="508" y="68" font-size="12">file の loadRequest では、まず</text>
+<text x="508" y="86" font-size="12">「/」全体を読める許可を作る</text>
+<rect x="760" y="30" width="190" height="72" fill="#efe" stroke="#383"/>
+<text x="768" y="50" font-weight="bold">&lt;base&gt; 先の画像・css</text>
+<text x="768" y="68" font-size="12">../・絶対パスも</text>
+<text x="768" y="86" font-size="12" fill="#2a7a2a" font-weight="bold">✓ 読める見込み（要確認）</text>
+<line x1="210" y1="66" x2="250" y2="66" stroke="#333" marker-end="url(#a)"/>
+<line x1="460" y1="66" x2="500" y2="66" stroke="#333" marker-end="url(#a)"/>
+<line x1="720" y1="66" x2="760" y2="66" stroke="#333" marker-end="url(#a)"/>
+<text x="250" y="118" font-size="11" fill="#666">MaciosWebViewAdapter.cs:181-185（@12.1.0）</text>
+<text x="500" y="118" font-size="11" fill="#666">WebPageProxy::maybeInitializeSandboxExtensionHandle</text>
+<text x="500" y="133" font-size="11" fill="#666">Miharikun は App Sandbox に入らない → 作れる見込み</text>
+<text x="10" y="153" font-size="12" font-weight="bold" fill="#b33">計画の代わりの形（7.11 の最後）</text>
+<rect x="10" y="162" width="300" height="80" fill="#fde" stroke="#b33"/>
+<text x="18" y="182" font-size="12">NavigateToString（HTML を直接）</text>
+<text x="18" y="200" font-size="12">＋ &lt;base href=miharikun-file:///…&gt;</text>
+<text x="18" y="218" font-size="12">＋ WebResourceRequested で返す</text>
+<text x="18" y="236" font-size="12" fill="#b33" font-weight="bold">← 問題 #2</text>
+<line x1="310" y1="202" x2="350" y2="202" stroke="#b33" marker-end="url(#a)"/>
+<rect x="350" y="162" width="600" height="80" fill="#fde" stroke="#b33"/>
+<text x="358" y="181" font-weight="bold">✗ Avalonia.Controls.WebView 12.1.0 では作れない</text>
+<text x="358" y="199" font-size="12">・返事（ファイルの中身）を返す口が無い（IWebViewAdapter.cs:57-60：Request だけ）</text>
+<text x="358" y="216" font-size="12">・mac ではページの移動の判断でしか出ない＝画像・css には来ない（:259-279）</text>
+<text x="358" y="233" font-size="12">・独自スキームを登録する口が無い（WKWebView を作る前に要る）</text>
+<rect x="10" y="258" width="300" height="62" fill="#dfd" stroke="#383"/>
+<text x="18" y="278" font-weight="bold">代わり（案。Q4）</text>
+<text x="18" y="298" font-size="12">TryGetPlatformHandle で WKWebView を取る</text>
+<line x1="310" y1="289" x2="350" y2="289" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<rect x="350" y="258" width="600" height="62" fill="#dfd" stroke="#383"/>
+<text x="358" y="278" font-size="12">loadFileURL:allowingReadAccessToURL: を objc_msgSend で呼ぶ</text>
+<text x="358" y="298" font-size="12">読める範囲＝一時 HTML とプロジェクトの共通の親（例：ホーム）。それでもだめなら相談</text>
+</svg>
+
+<h3>#3 mac のパスの形：論理パスと実パス</h3>
+<svg viewBox="0 0 960 300" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="20" font-size="12" fill="#c05000">例：~/work が /Volumes/SSD/work へのリンク（/tmp→/private/tmp、/var→/private/var も同じ形）</text>
+<rect x="10" y="35" width="270" height="70" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="55" font-weight="bold">利用者（ターミナル）</text>
+<text x="18" y="73" font-size="12">cd ~/work/proj</text>
+<text x="18" y="91" font-size="12">open -n -a Miharikun --args "$PWD"</text>
+<line x1="280" y1="61" x2="330" y2="61" stroke="#333" marker-end="url(#a)"/>
+<rect x="330" y="35" width="300" height="52" fill="#ffe9c8" stroke="#a70"/>
+<text x="338" y="54" font-weight="bold">App の対象フォルダ（引数）</text>
+<text x="338" y="74" font-size="12">/Users/x/work/proj（論理）</text>
+<rect x="330" y="97" width="300" height="52" fill="#ffe9c8" stroke="#a70"/>
+<text x="338" y="116" font-weight="bold">Claude Code の cwd（getcwd）</text>
+<text x="338" y="136" font-size="12">/Volumes/SSD/work/proj（実）</text>
+<rect x="330" y="159" width="300" height="52" fill="#ffe9c8" stroke="#a70"/>
+<text x="338" y="178" font-weight="bold">git rev-parse --show-toplevel</text>
+<text x="338" y="198" font-size="12">/Volumes/SSD/work/proj（実）</text>
+<line x1="630" y1="61" x2="680" y2="61" stroke="#333" marker-end="url(#a)"/>
+<line x1="630" y1="123" x2="680" y2="123" stroke="#333" marker-end="url(#a)"/>
+<line x1="630" y1="185" x2="680" y2="185" stroke="#333" marker-end="url(#a)"/>
+<rect x="680" y="35" width="270" height="176" fill="#fde" stroke="#b33"/>
+<text x="688" y="55" font-weight="bold">比べる所</text>
+<text x="688" y="75" font-size="12">ProjectPath.Matches</text>
+<text x="688" y="92" font-size="12">Uncommitted.Files</text>
+<text x="688" y="114" font-size="12">文字列で比べる → 合わない</text>
+<text x="688" y="134" font-size="12">・Claude のセッションが出ない</text>
+<text x="688" y="152" font-size="12">・未コミットが 0 件に見える</text>
+<text x="688" y="170" font-size="12">・GitClientTests が mac で落ちる</text>
+<text x="688" y="199" font-size="12" fill="#b33" font-weight="bold">← 問題 #3</text>
+<rect x="10" y="228" width="940" height="62" fill="#dfd" stroke="#383"/>
+<text x="20" y="250" font-size="12">直す：① App は対象フォルダの実パス（realpath）も持ち、論理・実のどちらかが合えば一致（Q5）</text>
+<text x="20" y="272" font-size="12">② GitClient は status のパスを、作業フォルダからの相対（--show-cdup）で論理のルートに付ける　③ README は "$(pwd -P)"</text>
+</svg>
+
+<h3>#4 タブと WebView：TabControl のままだと、切り替えのたびに壊れる</h3>
+<svg viewBox="0 0 960 222" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="10" width="460" height="200" fill="#efe" stroke="#383"/>
+<text x="20" y="30" font-weight="bold">いま（計画どおり TabControl）</text>
+<rect x="20" y="60" width="130" height="56" fill="#dfd" stroke="#383"/>
+<text x="28" y="82" font-weight="bold">ドキュメント</text>
+<text x="28" y="102" font-size="12">WebView あり</text>
+<line x1="150" y1="88" x2="185" y2="88" stroke="#333" marker-end="url(#a)"/>
+<rect x="185" y="60" width="125" height="56" fill="#fde" stroke="#b33"/>
+<text x="193" y="82" font-weight="bold">ダッシュボードへ</text>
+<text x="193" y="102" font-size="12">WebView を壊す</text>
+<line x1="310" y1="88" x2="335" y2="88" stroke="#333" marker-end="url(#a)"/>
+<rect x="335" y="60" width="125" height="56" fill="#fde" stroke="#b33"/>
+<text x="343" y="82" font-weight="bold">戻る</text>
+<text x="343" y="102" font-size="12">作り直し・読み直し</text>
+<text x="20" y="145" font-size="12" fill="#b33">スクロールは先頭へ・作り直しは重い・白く光る恐れ（問題 #4）</text>
+<text x="20" y="166" font-size="11" fill="#666">NativeControlHost.cs:131・197-201（Avalonia 12.1.3）</text>
+<text x="20" y="183" font-size="11" fill="#666">NativeWebView.cs:391-399（BeginReparenting が無ければ必ず壊す）</text>
+<rect x="490" y="10" width="460" height="200" fill="#efe" stroke="#383"/>
+<text x="500" y="30" font-weight="bold">直した後（Q3＝A）</text>
+<rect x="500" y="46" width="440" height="26" fill="#dfd" stroke="#383"/>
+<text x="508" y="64" font-size="12">見出し：TabControl（中身は持たせない）</text>
+<rect x="500" y="78" width="440" height="26" fill="#dfd" stroke="#383"/>
+<text x="508" y="96" font-size="12">ダッシュボード：IsVisible=true</text>
+<rect x="500" y="110" width="440" height="26" fill="#eee" stroke="#888"/>
+<text x="508" y="128" font-size="12">ドキュメント：IsVisible=false（WebView は隠すだけ。壊さない）</text>
+<rect x="500" y="142" width="440" height="26" fill="#eee" stroke="#888"/>
+<text x="508" y="160" font-size="12">メモ：IsVisible=false</text>
+<text x="500" y="192" font-size="12" fill="#2a7a2a">✓ 戻ってもそのまま。WebView は最初のプレビューで作る（今と同じ）</text>
+</svg>
+
+<h3>#5 閉じる流れ（直した後）</h3>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="30" width="190" height="84" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="50" font-weight="bold">閉じる要求</text>
+<text x="18" y="68" font-size="12">✕・Alt+F4・⌘Q・Dock</text>
+<text x="18" y="85" font-size="12">OS のサインアウト・</text>
+<text x="18" y="102" font-size="12">ログアウト（扱いは Q2）</text>
+<line x1="200" y1="72" x2="235" y2="72" stroke="#333" marker-end="url(#a)"/>
+<rect x="235" y="30" width="150" height="84" fill="#dff" stroke="#08a"/>
+<text x="243" y="50" font-weight="bold">Closing</text>
+<text x="243" y="68" font-size="12">確定済み？</text>
+<text x="243" y="85" font-size="12">はい → 閉じる</text>
+<line x1="385" y1="72" x2="420" y2="72" stroke="#333" marker-end="url(#a)"/>
+<rect x="420" y="30" width="180" height="84" fill="#dff" stroke="#08a"/>
+<text x="428" y="50" font-weight="bold">セッションのメモを保存</text>
+<text x="428" y="68" font-size="12">（Flush。今と同じ）</text>
+<text x="428" y="85" font-size="12">プロジェクトのメモは</text>
+<text x="428" y="102" font-size="12">未保存？ いいえ → 閉じる</text>
+<line x1="600" y1="72" x2="635" y2="72" stroke="#333" marker-end="url(#a)"/>
+<rect x="635" y="30" width="315" height="84" fill="#dfd" stroke="#383"/>
+<text x="643" y="50" font-weight="bold">はい：e.Cancel = true（先に）</text>
+<text x="643" y="68" font-size="12">最小化なら戻す・Activate()</text>
+<text x="643" y="85" font-size="12">ダイアログは Dispatcher.UIThread.Post で出す</text>
+<text x="643" y="102" font-size="12">（Closing の中では待たない）</text>
+<line x1="790" y1="114" x2="790" y2="150" stroke="#333" marker-end="url(#a)"/>
+<rect x="635" y="150" width="315" height="96" fill="#dfd" stroke="#383"/>
+<text x="643" y="168" font-weight="bold">UnsavedMemoDialog</text>
+<text x="643" y="186" font-size="12">［保存］成功 → 確定 → Close()</text>
+<text x="643" y="202" font-size="12">　　　失敗 → 閉じない（理由はバー）</text>
+<text x="643" y="220" font-size="12">［保存しない］→ 確定 → Close()</text>
+<text x="643" y="238" font-size="12">［キャンセル］・✕ → 閉じない</text>
+<line x1="310" y1="114" x2="310" y2="150" stroke="#b33" stroke-dasharray="5,3" marker-end="url(#a)"/>
+<text x="318" y="136" font-size="11" fill="#b33">ダイアログ中</text>
+<rect x="235" y="150" width="365" height="96" fill="#fde" stroke="#b33"/>
+<text x="243" y="168" font-weight="bold">ダイアログ中にもう一度 Closing</text>
+<text x="243" y="186" font-size="12">→ e.Cancel = true だけ（2 つ目は出さない）</text>
+<text x="243" y="204" font-size="12">メモの破棄の確認・設定・Hook の</text>
+<text x="243" y="222" font-size="12">ダイアログ中の終了も同じ扱い</text>
+<text x="243" y="240" font-size="12" fill="#b33" font-weight="bold">← 7.6-5 に足す（問題 #5）</text>
+<text x="10" y="270" font-size="11" fill="#c05000">※ 終了の取り消しは Closing で効く（ClassicDesktopStyleApplicationLifetime.cs:209-216・AvaloniaNativeApplicationPlatform.cs:114-124）。</text>
+<text x="10" y="287" font-size="11" fill="#c05000">※ Shutdown() は取り消しを無視する（同 :205 の force）ので、閉じる流れでは使わない。閉じ直しは Close()。</text>
+<text x="10" y="304" font-size="11" fill="#c05000">※ OS のサインアウト・ログアウトでも Closing が来る（Win32Platform.cs:151-172）。WPF とは違う → Q2 で決める。</text>
+<text x="10" y="321" font-size="11" fill="#c05000">※ Info.plist に NSSupportsSuddenTermination を入れない（入れると確認なしに終わる）。</text>
+</svg>
+
+<h2>3. 問題一覧</h2>
+<p>重大度：<b>高</b>＝計画の作りを直してから進める／<b>中</b>＝計画に書き足す（実装の前に決める）／<b>低</b>＝実装のときに気をつければよい。行番号は、このリポジトリは今の作業ツリー、外のソースは書いた版のもの。<code>plan.md</code> は <code>docs/macos-support/macos-support-plan.md</code>、<code>requirements.md</code> は <code>docs/miharikun-requirements.md</code>。</p>
+<table>
+<tr><th style="width:3%">#</th><th style="width:5%">重大度</th><th style="width:50%">何が問題か（根拠）</th><th>どう解決するか</th></tr>
+
+<tr><td>1</td><td class="ng">高</td><td>① <b>Avalonia の ListBox は Move で選択を外す。</b>計画 7.3（plan.md:223・230）は「並びが変わる → Move（選択が外れない）。WPF も Avalonia も同じ」。WPF は正しい（Selector.cs:1177-1187 で選択を保つ）。Avalonia 12.1.3 は Move を「取り除く＋足す」として扱い、動かした要素が選択中なら外す（SelectionNodeBase.cs:155-170 → SelectionModel.cs:408-415・460）。未解決の不具合報告 #16279・#17819 も同じ症状。<br>影響：Avalonia 版で、選んでいるセッションに新しい動きが来て上へ移るたびに <code>Selected = null</code> → 詳細・タイムラインが空になり、拡大モードも戻る（MainViewModel.cs:224-234）。見ているセッションほど動くので、ほぼ毎回起きる。28-1 の ViewListTests（集まりだけのテスト）では見つからない。</td>
+<td>① <code>ViewList.SyncTo(target, desired, pinned)</code> にして、pinned（選択中）は Move しない。ほかの要素を前後に動かして同じ並びにする（上の図）。7.3 の表に「選択中の要素の位置が変わる → 選択中は動かさず、周りを動かす」を足し、ViewListTests に「pinned に Move が出ない」「結果は desired と同じ並び」を足す（28-1）。<br>② 保険：MainViewModel は同期の間に ListBox から来た null を無視し、終わったら選び直す（DocumentsViewModel の <code>_syncing</code> と同じ考え：DocumentsViewModel.cs:369-386）。<br>③ 30-3 で Avalonia.Headless のテスト（並べ替え・追加・絞り込みで SelectedItem が保たれる／隠れたら null）を足し、両 OS の CI で回す。<br>④ 7.3 の「WPF も Avalonia も同じ」の文を直す（Q1）。</td></tr>
+
+<tr><td>2</td><td class="ng">高</td><td>③ <b>7.11 の代わりの形（NavigateToString＋独自スキーム＋WebResourceRequested）は、Avalonia.Controls.WebView 12.1.0 では作れない。</b>（plan.md:337。要件 12.7：requirements.md:557 も同じ形）<br>・<code>WebResourceRequestedEventArgs</code> は <code>Request</code> だけで、中身を返す口が無い（IWebViewAdapter.cs:57-60）。<br>・mac ではページの移動の判断（decidePolicyForNavigationAction）の中でしか出ない＝画像・css の読み込みには来ない（MaciosWebViewAdapter.cs:259-279）。<br>・mac の EnvironmentRequested に、独自スキームの登録（WKURLSchemeHandler。WKWebView を作る前に要る）の口が無い（AppleWKWebViewEnvironmentRequestedEventArgs.cs）。<br>・Windows の NavigateToString は baseUri を捨てる（WebView2BaseAdapter.cs:147-149）。<br>・作れたとしても、対象フォルダの外（../・絶対パス）が読めず、要件 12.7 の「相対・絶対のローカルパスはそのまま効く」が崩れる。<br>一方、<b>主の形は通る見込みが高い</b>：mac の Navigate は <code>loadRequest</code>（MaciosWebViewAdapter.cs:181-185。<code>loadFileURL:allowingReadAccessToURL:</code> ではない）。WebKit は file の loadRequest のとき、まず「/」全体の読み取り許可を作る（WebKit の <code>WebPageProxy::maybeInitializeSandboxExtensionHandle</code>）。Miharikun はサンドボックスに入らないので作れる見込み（要確認）。</td>
+<td>① 試作を前倒しする（#6）。組み合わせ：一時 HTML＋&lt;base&gt; の画像・css、html の ../ と絶対パス、書類フォルダの中のプロジェクト（#9）、iframe（#16）、<code>Refresh()</code> でスクロールが保たれるか、Runtime の見分け（#12）。<br>② 代わりの形を書き直す（Q4）：<code>TryGetPlatformHandle()</code> で WKWebView を取り、<code>loadFileURL:allowingReadAccessToURL:</code>（読める範囲＝一時 HTML とプロジェクトの共通の親）を objc_msgSend で呼ぶ。それでもだめなら相談。独自スキーム案は消す。<br>③ 試作の結果で、要件 12.7 の「読めなければ…独自のスキーム」の文も直す。</td></tr>
+
+<tr><td>3</td><td class="ng">高</td><td>④⑤ <b>mac のシンボリックリンク（論理パスと実パス）が抜けている。</b>mac は /tmp→/private/tmp、/var→/private/var（一時フォルダ）など、リンクが多い。<br>・git：<code>GetStatus</code> は <code>git rev-parse --show-toplevel</code>（実パスを返す）にパスを足し（GitClient.cs:56・131-135）、<code>Uncommitted.Files</code> は対象フォルダ（論理パス）で比べる（GitClient.cs:187-201）→ 合わず、未コミットが 0 件に見える（完了チェックが ✓ になる）。<br>・Claude Code の <code>cwd</code> は実パス（getcwd）。<code>open -n -a Miharikun --args "$PWD"</code> の $PWD は論理パス → リンク経由のフォルダでは照合（ClaudeLocations.cs:77-79・ProjectPath.cs:30-42）が合わず、Claude のセッションが出ない（要確認）。<br>・テスト：GitClientTests は <code>Path.GetTempPath()</code>（mac は /var/folders/…）で作り（GitClientTests.cs:11）、<code>Path.GetFullPath(P(…))</code> と比べる（:107・120-121・134-135・148・194）→ mac で落ちる見込み。29-1（plan.md:84・365-368）は「Windows の意味」「たまたま C:\」の 2 つに分けるので、どちらに入れても本物の不具合を隠す。</td>
+<td>① 29-1 に 3 つ目の分け方「mac で本当に動かない → 製品のコードを直す（テストはそのまま）」を足す。<br>② 29-4：GitClient は status のパスを、作業フォルダからの相対（<code>git rev-parse --show-cdup</code>）で論理のルートに付ける。<br>③ App は mac で対象フォルダの実パス（realpath。Core で libc を LibraryImport すれば AOT 互換）も持ち、<code>ProjectPath.Matches</code> は論理・実のどちらかが合えば一致にする（Q5）。<br>④ README の 1 行を <code>open -n -a Miharikun --args "$(pwd -P)"</code> に。<br>⑤ 14.3・27-1 に「リンク経由のフォルダで、cwd・workspace_roots・git のルートがどちらの形か」を足す。mac のテストに「リンク経由のプロジェクト」を足す。</td></tr>
+
+<tr><td>4</td><td>中</td><td>③ <b>タブを切り替えると NativeWebView が壊され、戻ると作り直される。</b>Avalonia の TabControl は選んだタブの中身だけを画面に載せる（計画 7.17 もこれが前提：plan.md:376）。画面から外れた NativeControlHost は、次の Background の処理で中を壊す（NativeControlHost.cs:131・197-201）。NativeWebView の説明も「BeginReparenting を使わなければ、外れたときは必ず壊す」（NativeWebView.cs:391-399）。戻ると作り直し、最後のページを開き直す（:602-611）。<br>影響：タブを行き来するたびに WebView の作り直し（重い）・読み直し・スクロールが先頭へ・ダークで白く光る恐れ。品質ゲートの「タブを切り替えて戻っても表示が戻る」（plan.md:39）の中身が、WPF（WebView2 が残る）と変わる。</td>
+<td>Q3＝A：見出しだけ TabControl、中身 3 つは 1 つの Grid に重ねて <code>IsVisible</code> で切り替える（見えないときは隠すだけで壊さない：NativeControlHost.cs:186-193）。WebView は今と同じく最初のプレビューのときに作る（起動を遅くしない）。7.17 の「AttachedToVisualTree で Start()」を「最初に見えたとき」に直す。31-2 の確認に「タブを行き来しても、スクロール位置が保たれる」を足す。</td></tr>
+
+<tr><td>5</td><td>中</td><td>② <b>OS のサインアウト・ログアウト・シャットダウンでも Closing が来る（WPF と違う）。ダイアログが見えないこともある。</b>Avalonia は Windows の WM_QUERYENDSESSION（Win32Platform.cs:151-172）と mac のログアウト（AvaloniaNativeApplicationPlatform.cs:114-124）を終了の要求にし、窓の Closing を出す（ClassicDesktopStyleApplicationLifetime.cs:175-216）。取り消すと OS の終了そのものが止まる。計画 7.6-8（plan.md:264）の「既知の制限（今と同じ：確認なしに失われる）」は WPF（Closing が来ない）の話で、Avalonia では成り立たない。memo-tab のレビューの Q2（既知の制限）も WPF が前提。<br>ほかの抜け：<br>・最小化中・別の操作スペースにあるとき、オーナー付きのダイアログが見えず、⌘Q が黙って取り消されたように見える恐れ（要確認）。強制終了されると失う。<br>・7.6-5（plan.md:261）：ダイアログ中の 2 回目の Closing で <code>e.Cancel = true</code> と書いていない。メモの破棄の確認（ConfirmAsync）・設定・Hook のダイアログを開いている間の終了も、同じ扱いが要る。<br>・<code>Shutdown()</code> は取り消しを無視する（ClassicDesktopStyleApplicationLifetime.cs:205 の force）。閉じる流れの中で使うと確認が飛ぶ。</td>
+<td>Q2 で OS の終了の扱いを決め、7.6-8 と要件 12.10 に書く（推奨：Avalonia の既定のまま確認を出す）。<br>どれを選んでも共通：ダイアログを出す前に最小化を戻して <code>Activate()</code>；ダイアログは Closing の中で待たず <code>Dispatcher.UIThread.Post</code> で出す（mac の終了の処理の最中に入れ子の画面を作らない）；7.6-5 に「<code>e.Cancel = true</code> だけ」を書く；閉じ直しは <code>Close()</code>（<code>Shutdown()</code> は使わない）；Info.plist に NSSupportsSuddenTermination を入れない。31-3 の確認に「最小化した状態で ⌘Q・Dock の終了」「サインアウト（Windows）・ログアウト（mac）」を足す。上の図。</td></tr>
+
+<tr><td>6</td><td>中</td><td>⑤ <b>試作の順番：WebView（31-1）が遅く、mac の .app が 32-2 まで無い。</b><br>・#2 のとおり代わりの形が作れないので、31-1 で読めないと分かったときの手戻りが大きい（30 の 6 コミットの後）。計画のリスク表も「難しい所（WebView…）を先に試す」（plan.md:426）。<br>・30-1 の確認「<code>open -n -a</code> で 2 つ開ける」（plan.md:97）、⌘Q のメニュー・アプリ名・Dock、TCC（#9）、隔離の印は、.app にまとめて Finder・Dock から開かないと再現しない（<code>dotnet run</code> では、許可がターミナルに付くので出ない）。.app を作る手順は 32-2（plan.md:124）で初めて出る。</td>
+<td>30-1 に「開発用の .app を作るスクリプト（<code>publish-mac.sh</code> の最小版：Info.plist・配置・アドホック署名）」と「WKWebView の試作（捨てる小さな画面。#2 の組み合わせ）」を入れる。30・31 の mac の確認は、この .app を Finder から開いて行う。32-2 は配布用に仕上げるだけにする。</td></tr>
+
+<tr><td>7</td><td>中</td><td>① <b>タイムラインまで SyncTo（1 件ずつの通知）にすると、5,000 行で重い。</b>今は種別・検索の変更が <code>View.Refresh()</code>（通知 1 回：TimelineViewModel.cs:114-118）、30 件超の差し替えは入れ物ごと差し替え（:157-164・182-188）。計画 7.3（plan.md:232・236）は「Remove と Insert だけで合わせる（Reset を出さない）」を、選択を使わないタイムラインにも使う。5,000 行で「ツール」を ON・検索で 1 文字・セッションの切り替えをすると、数千回の通知で ListBox が並べ直す（要件 13 章「5,000 イベントで操作がもたつかない」）。</td>
+<td>タイムラインは「末尾の追記は Add、それ以外（種別・検索・切り替え・30 件超）は入れ物ごと差し替え（通知 1 回）」。行の強調は <code>IsHighlighted</code>（MainWindow.xaml:344-346）で、選択は使わないので困らない。SyncTo はカードだけ。28-2 の品質ゲートに「5,000 行（ClaudeLogBuilder のダミー）で、ツールの ON/OFF・検索の 1 文字・切り替えにかかる時間」を足す（今の WPF 版で測って記録し、同じくらいであること）。</td></tr>
+
+<tr><td>8</td><td>中</td><td>④ <b>mac で Hook を上書き更新するとき、同じファイルに書き込む。</b>導入・更新（ExeOutdated）は <code>File.Copy(…, overwrite: true)</code>（HookInstaller.cs:341）。Apple Silicon の mac では、署名つきの実行ファイルを同じ場所（同じ inode）で書き換えると、カーネルが覚えている署名と合わず、次の起動で強制終了（Killed: 9）されることがある（よく知られた落とし穴。.NET の File.Copy が上書きのとき inode を保つかは要確認）。Cursor が Hook を動かしている最中の書き換えも危ない。--probe はこれを拾えるが、案内が「xattr の 1 行」なので的外れになる。</td>
+<td>mac は同じフォルダの一時ファイルにコピー → <code>File.Move(tmp, dest, overwrite: true)</code>（名前の付け替え＝新しい inode）→ 印の解除 → --probe。Windows は今のまま（使用中のやり直しあり）。29-3 のテストに「上書きで中身が新しくなる」、32 の通し確認に「版を上げて再導入 → Cursor で会話」を足す。probe の失敗の案内に「もう一度『Hook を導入』」も添える。</td></tr>
+
+<tr><td>9</td><td>中</td><td>④ <b>mac のファイルとフォルダの許可（TCC）が計画に無い。</b>書類・デスクトップ・ダウンロード・iCloud Drive・外付けの中は、アプリが初めて読むとき macOS が許可を求める。プロジェクトを ~/Documents/GitHub（GitHub Desktop の既定）などに置く人は多い。拒否すると、ドキュメントの走査・git・監視・プレビューが黙って空になる恐れ。アドホック署名は版ごとに署名が変わるので、版を入れ替えるたびに聞き直される見込み（要確認）。<code>dotnet run</code> だと許可はターミナルに付くので、開発中は出ない（#6）。</td>
+<td>14.3／30-1 に「書類フォルダの中のプロジェクトを、Finder から開いた .app で開く」を足す。README（mac）に「許可を求められたら『許可』。版を入れ替えると、もう一度聞かれることがある」。読めないときに、ドキュメントタブ・git が理由を出すか（黙って空にならないか）も見る。Info.plist の NSDocumentsFolderUsageDescription などの説明文は任意（要確認）。</td></tr>
+
+<tr><td>10</td><td>中</td><td>⑤ <b>CI の確認と OS の行き来には push が要るが、計画に「いつ頼むか」が無い。</b>29 は「Windows は CI で確かめる」（plan.md:22・85）、30・31 は「区切りごとに Windows でも起動」。どれも作業した OS からもう一方へコミットを運ぶ（push → pull）。CLAUDE.md は「コミット・push は頼まれたときだけ」で、計画は最初の 1 回（10.1：plan.md:457）しか書いていない。また 29-1（テストの OS 対応）が 29-2（CI）より先なので、mac で直したテストが Windows で壊れても気づけない。</td>
+<td>1 章の表に「OS を移る前・CI を見る前に、利用者にコミットと push を頼む」区切り（27 の後、28 の後、29-2 の後、30・31 の各区切り）を書く。29-2（CI）を 29-1 より先にする（CI の mac のジョブで落ちた一覧が、29-1 の材料にもなる）。</td></tr>
+
+<tr><td>11</td><td>中</td><td>①⑤ <b>28-3 の ViewModel のテストの前提（git・async void・UI スレッド）が決まっていない。</b>MainViewModel は GitClient（具体的なクラス）を受け取り、<code>RefreshGit</code>・<code>LoadCommits</code> は async void（MainViewModel.cs:284-308・314-332）で、Task.Run の後に一覧を触る。Apply に新しいカードを渡すと RefreshGit が走る（:209-210）。テストでは本物の git が起動し、終わりを待てず、別スレッドで一覧が変わる → 不安定なテストになる。計画 7.5（plan.md:251）は「async void は使わない」だが、この 2 つをどうするか書いていない（今の <code>MarkdownPreview.OnPreviewChanged</code> も async void＋try/catch：MarkdownPreview.xaml.cs:43-55）。</td>
+<td>28-2 で、git の状態を取る所を差し替えられる形に（<code>Func&lt;GitStatus?&gt;</code> か小さな interface）。RefreshGit・LoadCommits は「Task を返す中身」＋「イベント用の包み（例外をログ）」に分ける。テストは、その場で実行する SynchronizationContext を使い、中身を await する。7.5 の文を「イベントから呼ぶ所だけ、async void＋try/catch の包み」に直す。</td></tr>
+
+<tr><td>12</td><td>中</td><td>③ <b>Windows：WebView2 Runtime が無いと、NativeWebView は WebView1（EdgeHTML）に切り替える。</b>Avalonia.Controls.WebView 12.1.0 は Runtime が見つからないと WebView1 を試す（WebViewAdapter.cs:86-121）。計画 7.11（plan.md:329）は「NativeWebView が作れなかったことで見分ける」。作れてしまうと、要件 12.7 の「WebView2 Runtime が必要です」が出ず、振る舞いの違う古いエンジンで表示される（Windows 11 で WebView1 が使えるかは要確認）。</td>
+<td><code>NativeWebView.AdapterInfo.Type</code> が WebView2 でなければ、案内を出してプレビューを作らない（要件どおり）。31-1 で AdapterInfo の値の見方を確かめる（実機は Runtime 入りなので、値を見るだけでよい）。これで足りれば、<code>Microsoft.Web.WebView2</code> を戻す（7.11）必要は無い。</td></tr>
+
+<tr><td>13</td><td>中</td><td>④ <b>NFD：ドキュメントのリンク・最後のファイルは、名前の形が違うと見つからない。</b>7.14（plan.md:357-361）は ProjectPath だけ。索引は走査で得た名前をそのままキーにする（DocumentIndex.cs:9・17-18。大文字小文字は無視するが、NFC と NFD は別の文字列）。Finder など mac のアプリが作る日本語の名前は NFD のことが多く、md に打ったリンク（IME）は NFC（要確認）。<br>影響：md・メモのリンクがアプリ内で開けず、既定のアプリで開く（DocumentsViewModel.cs:132-143・153-176）。lastOpened の復元・除外の判定も同じ。日本語の名前の多いプロジェクトで目立つ。</td>
+<td>29-4 で、索引に入れるとき・探すとき（リンク・メモのリンク・lastOpened・Watcher の差分・除外の判定）の相対パスを NFC にそろえる（開くときは、APFS が形の違いを無視するので、そのままで開ける見込み）。テスト：NFD の名前のファイルに NFC のリンク（両 OS で動く形）。27-1 の「日本語を含むフォルダ」（7.1 の最後の行）で、ファイル名の形も 1 件見る。</td></tr>
+
+<tr><td>14</td><td>低</td><td>④ <b>起動の順：ログ・テーマがフォルダ選択の後。</b>7.7（plan.md:269-272）と図は「先に空のウィンドウ → 選ぶ → 組み立て（ログ → 設定 → テーマ…）」。選ぶ前の例外がログに残らず、空のウィンドウが OS の色で出てから保存したテーマに変わる（ダークを選んでいる人には白く光る）。今の <code>App.OnStartup</code> は、ログ・テーマを窓より先に作る（App.xaml.cs:27-32・58-60）。</td>
+<td>「フォルダに依らないもの（ログ・未処理の例外・設定・テーマ）」を先に、「フォルダに依るもの（Source・Store・VM…）」を選んだ後に分ける。MainWindow は「選ぶ前の中身」と「組み立て後の中身」の 2 段にし、選ぶ前の Closing は何もしない（VM がまだ無い）。キャンセルは <code>desktop.Shutdown()</code> でよい（守るものが無い）。</td></tr>
+
+<tr><td>15</td><td>低</td><td>④ <b>git の場所：フォルダがあるかでなく、git の実体を見る。</b>7.13④（plan.md:352）は「/Library/Developer/CommandLineTools か /Applications/Xcode.app が在るときだけ /usr/bin/git」。macOS を上げた後などは、フォルダがあっても中が使えず、/usr/bin/git がインストールのダイアログを出すことがある（要確認）。</td>
+<td>選ばれている開発フォルダ（<code>/var/db/xcode_select_link</code> のリンク先）か、<code>/Library/Developer/CommandLineTools/usr/bin/git</code>・<code>/Applications/Xcode.app/Contents/Developer/usr/bin/git</code> の<b>ファイル</b>を見て、在ればそれを直接使う（/usr/bin/git の中継を通らないので、ダイアログも出ず少し速い。プロセスは起動しない）。「起動中に入れたら再起動が要る（結果を覚えるため）」を 7.13 に書く。</td></tr>
+
+<tr><td>16</td><td>低</td><td>③ <b>mac では iframe の読み込みにも NavigationStarted が来る。</b>mac の adapter は、移動の判断で対象のフレームがあれば NavigationStarted を出し、一番上のページかどうかを見ていない（MaciosWebViewAdapter.cs:282-292・WKNavigationDelegate.cs:64-68）。Windows の NavigationStarting は一番上のページだけ。https の iframe を含む html を開くと、今の振り分け（MarkdownPreview.xaml.cs:200-214 と同じ形）で取り消され、既定のブラウザが勝手に開く恐れ。</td>
+<td>31-1 の試作に「iframe を含む html」を足す。出たら相談（例：自分で開いたページの読み込みが終わる（NavigationCompleted）までの http(s) は通す）。</td></tr>
+
+<tr><td>17</td><td>低</td><td>① <b>行の「コピーしました」の見え方は少し変わる。</b>7.4（plan.md:244）は「バブルはマウスを載せた行にしか出ないので、見え方は変わらない」。実際は JustCopied の間はマウスが無くても出る（MainWindow.xaml:325-328）。タイマーを 1 つにすると、1.5 秒以内に別の行をコピーしたとき、前の行の「✓ コピーしました」が早く消える。</td>
+<td>害は小さいので作りはこのまま。計画の文を「ほぼ変わらない（1.5 秒以内に別の行をコピーすると、前の行の表示が早く戻る）」に直し、28-2 の記録に入れる。</td></tr>
+
+<tr><td>18</td><td>低</td><td>① <b>28-2 の前の記録に、隠れるきっかけと「変わる所」を足す。</b>7.3（plan.md:235）の記録は「選択中のカードが絞り込みで隠れたとき」だけ。利用者の操作のほかに、時間・git・メタでも隠れる：「実行中のみ」で 1 秒ごとに停止に変わる（MainViewModel.cs:256-266）、「未コミットあり」で 5 秒ごとの git（:248-249・298）、「メモあり」でメモを消す（:404-413）。拡大中なら拡大も戻る（:229-230）。<br>また今の WPF は 5 秒ごとに <code>CardsView.Refresh()</code>（Reset。:298）で行を作り直している。カードの ✏️ で入力中に 5 秒待つと、入力欄が作り直されて確定される可能性がある（要確認。TextBoxBehaviors.cs:55-59）。SyncTo は変化が無ければ通知しないので、ここは良い方向に変わる。タイムラインで 31 件以上が一度に増えると、今は入れ物ごと差し替え（TimelineViewModel.cs:182-188）でスクロールが飛ぶ。</td>
+<td>28-2 の前の記録に、上の 3 つのきっかけ・拡大中に隠れる・「カードの ✏️ で 6 秒待つ」・「31 件以上の追加」を足す。結果を「変えない」と「変わってよい（良い方向）」に分けて書き、品質ゲートで照らす。</td></tr>
+
+<tr><td>19</td><td>低</td><td>④⑤ <b>細かい点</b><br>a. Hook の文言に <code>Miharikun.exe</code>・「Hook exe」がある（HookInstaller.cs:139、HookSetup.cs:31・54・79）。要件 12.11（requirements.md:624）は「文言は両 OS で同じ（エクスプローラーだけ替える）」。<br>b. 印の解除の案内は <code>/Applications/Miharikun.app</code> 固定（plan.md:344）。別の場所に置いた人・App Translocation の人（場所に /AppTranslocation/ を含む）には合わない。自前の MessageDialog だと、案内の 1 行をコピーできない（今の MessageBox は Ctrl+C で文を写せる）。<br>c. mac の既定のアプリのメニューに「About Avalonia」などが出る（Avalonia の既定。要確認）。<br>d. Info.plist に CFBundlePackageType=APPL が無い（plan.md:390-392）。署名にハードンドランタイム（--options runtime）を付けると、.NET の JIT に権限が要る。<br>e. 30-1 の csproj に <code>IncludeNativeLibrariesForSelfExtract</code>（Miharikun.csproj:23）を引き継ぐ記述が無い（Avalonia の Skia などのネイティブ DLL を単一ファイルに入れるため）。32-1 は Windows の作業だが、1 章の表は「mac＋CI」（plan.md:24）。<br>f. <code>ShellOpen</code>・<code>AppLog</code> は internal（ShellOpen.cs:8・AppLog.cs:7）で、Presentation に移すと画面のプロジェクトから呼べない。計画の <code>ShellOpen.Reveal</code> は今 <code>RevealInExplorer</code>（ShellOpen.cs:24）。<code>IUiServices.FileManagerName</code>（plan.md:214）は使い道が無い（画面の文字は「フォルダで開く」：DocumentsView.xaml:176、mac は「Finder で表示」：12.11）。<br>g. 7.14 の NFC は Hook では効かない（Hook は InvariantGlobalization：Miharikun.Hook.csproj:13。この設定では Normalize は元の文字列を返す）。<br>h. 色の辞書：要件 12.5（requirements.md:524）は Colors.Light/Dark に分ける、計画は Colors.axaml 1 つ（plan.md:278）。<br>i. 27-1 の「mac で落ちたテスト」の一覧（plan.md:462）には、28 で増える Presentation のテストが入らない。<br>j. 30-1 で WPF が消えた後、見比べの基準が無い（設計の資料のリスク #4「main の WPF 版と見比べ」）。</td>
+<td>a. mac の言い方を決めて（例「Miharikun.app の中に Hook が見つかりません」）、12.11 の例外に足す。<br>b. 実際の .app の場所（Environment.ProcessPath から）を出す。/AppTranslocation/ を含むときは「アプリケーションに移してから」を添える。1 行は SelectableTextBlock か「コピー」ボタンで写せる形に。<br>c. 30-1 で App.axaml の Name="Miharikun" と、既定の項目を出さない設定（12.11「メニューバーは作らない」の範囲で）。<br>d. 7.19 に CFBundlePackageType=APPL を足し、「--options runtime は付けない」と書く。<br>e. 30-1 に「IncludeNativeLibrariesForSelfExtract・SatelliteResourceLanguages・DebugType を引き継ぐ」。1 章の表の 32 を「32-1 は Windows、32-2 は mac、32-3 は CI」に。<br>f. 28-1 で public に（または InternalsVisibleTo）。名前は計画か実装のどちらかにそろえる。FileManagerName は「フォルダで開く／Finder で表示」のボタンの文字を返す形に。<br>g. 7.14 に注記（NFC で比べるのは App の中だけ。Hook は git の場所に使うだけなので害は無い）。<br>h. ThemeDictionaries から 2 つのファイル（Colors.Light.axaml・Colors.Dark.axaml）を ResourceInclude で読む（要件どおり）か、要件の文を直す。<br>i. 29 の始めに mac でもう一度テストを回し、基準を取り直す。<br>j. 30-1 の前に、WPF 版（28 の終わり）を別の場所にビルドして残す（-p:OutDir=）。30・31 の Windows の確認で並べて見る。</td></tr>
+</table>
+
+<h3>問題なしと判断した観点</h3>
+<p><span class="ok">OK</span> ① WPF での選択の保ち方：WPF の ListBox は Move で選択を保ち（Selector.cs:1177-1187）、Reset では残っている選択を保ち、無くなった選択を外す（:1191-1213）。SyncTo の Move・Insert・Remove は、今の <code>CardsView.Refresh()</code>（Reset）と同じ結果になる。Phase 28 の WPF 版で「選択の保ち方」は変わらない。</p>
+<p><span class="ok">OK</span> ① 選択中のカードが隠れたとき：今の WPF は Reset で外れる → <code>Selected = null</code>（MainWindow.xaml:463-464 の TwoWay）→ <code>OnSelectedChanged(null)</code>：入力途中のメモを保存・タイムラインを空・検索語を消す・拡大を戻す・詳細を空（MainViewModel.cs:224-234）。SyncTo の Remove でも同じ（WPF の RemoveFromSelection：Selector.cs:1167）。計画の見込みは正しく、記録してから進める方針も妥当。隠れたカードを「最近の入力」から選ぶとフィルタを外す動き（:136-152）も、同期で一覧に戻ってから <code>Selected</code> を入れるので変わらない。</p>
+<p><span class="ok">OK</span> ① <code>Refresh()</code> の呼び所 11 か所（MainViewModel.cs:204・264・298・334-337・342・363・365・410）は計画の数と合う。Apply の順（カード → 一覧 → 件数 → 最近の入力：:178-206）を変えない注意も正しい。DataTrigger 30 か所（MainWindow.xaml 29・DocumentsView.xaml 1）も合う。</p>
+<p><span class="ok">OK</span> ① タイマー：今のタイマーはどれも Background（WPF の <code>DispatcherTimer()</code> の既定：DispatcherTimer.cs:16。ドキュメントは明示：DocumentsViewModel.cs:59）。Avalonia の <code>DispatcherTimer()</code> の既定も Background（DispatcherTimer.cs:18-19 @12.1.3）。<code>CreateTimer</code> に優先度の引数が無くても、両方 Background で作れば今と同じ。</p>
+<p><span class="ok">OK</span> ① 確認の非同期化：WPF の <code>ConfirmAsync</code> は MessageBox の結果をそのまま返す（完了した Task）ので、Phase 28 の時点で動きは同じ。AsyncRelayCommand は実行中に押し直せない（既定）。答えの後に IsEditing・IsDirty を見直す決め（plan.md:248）で、確認中の変化にも耐える。閉じる流れは 28 では変えない（WPF の同期の ShowDialog のまま：MainWindow.xaml.cs:65-85）。</p>
+<p><span class="ok">OK</span> ① ViewModel は Docs（Markdig）を使っていない（ViewModels を grep して確認）。Presentation が Core だけを参照する方針は成り立つ。PreviewFiles は VM から呼ばれていない（コメントだけ：DocumentsViewModel.cs:73）。</p>
+<p><span class="ok">OK</span> ② ⌘Q・Dock の「終了」：Avalonia は終了の要求で窓の Closing を出し、取り消された窓が残れば終了そのものを取り消す（ClassicDesktopStyleApplicationLifetime.cs:209-216。mac 側は ShutdownReplyCancel：AvaloniaNativeApplicationPlatform.cs:124）。計画の「取り消すと終了も取り消される見込み」は正しい。7.6-6 の ShutdownRequested の保険は要らない見込み（31-3 で確かめる計画はそのままでよい）。</p>
+<p><span class="ok">OK</span> ② セッションのメモ：入力欄は PropertyChanged で VM に入る（MainWindow.xaml:786）ので、⌘Q のようにフォーカスが動かない閉じ方でも Flush（MainWindow.xaml.cs:67）で最新が保存される。閉じ直しを <code>_closeConfirmed</code> で通す形は、今の WPF の流れ（保存失敗なら閉じない・キャンセルなら閉じない）と同じ結果になる。</p>
+<p><span class="ok">OK</span> ③ NavigationStarted（Cancel・Request）・NewWindowRequested（Handled）・Refresh・Windows の EnvironmentRequested の UserDataFolder（作業フォルダ）と AdditionalBrowserArguments（DevTools での確認に使える）は 12.1.0 にある（IWebViewAdapter.cs:108-116・WindowsWebView2EnvironmentRequestedEventArgs.cs）。7.11 の「作られる前の表示の頼みは覚えておく」は NativeWebView 自体がしている（最後のページを覚え、作られたら開く：NativeWebView.cs:363-372・602-609）。背景も <code>Background</code> を adapter に渡す（:611）ので、ダークで白く光らせない口はある。</p>
+<p><span class="ok">OK</span> ④ <code>-psn_</code> を除く・引数の 1 つ目をフルパスにする：妥当（古い macOS の Finder だけが付ける。今は付かないが害は無い）。</p>
+<p><span class="ok">OK</span> ④ 空白を含むパス：hooks.json のコマンドは空白で引用符（HookInstaller.cs:93-97）、git・Finder はシェルを通さず ArgumentList（GitClient.cs:150-151・GitProbe.cs:33-36、計画 7.2 の <code>open -R</code>）。--probe も ProcessStartInfo で直接起動するので引用符の問題は無い。Cursor がシェル経由で起動するかは 27 で確かめる計画のまま。</p>
+<p><span class="ok">OK</span> ④ --probe がデータのフォルダに触らない：Hook の Program.cs は <code>AppPaths.Default()</code>（パスを作るだけでフォルダは作らない：AppPaths.cs:11-19）の後に HookRunner を呼ぶので、<code>--probe</code> を <code>--agent</code> より先に見れば、何も書かずに終われる（Program.cs:4・HookRunner.cs:28）。</p>
+<p><span class="ok">OK</span> ④ 同梱の Hook の場所：<code>Environment.ProcessPath</code> のフォルダ（App.xaml.cs:49-50）は .app では Contents/MacOS で、計画 7.19 の配置と <code>CreateDefault</code>（HookInstaller.cs:66-75）がそのまま合う。App Translocation で場所が変わっても、コピー元に使うだけなので困らない。</p>
+<p><span class="ok">OK</span> ⑤ Phase の順（27 mac で事実 → 28 Windows で切り出し → 29 mac で Core → 30・31 画面 → 32 配布 → 33）、Phase の終わりで止まって報告、Hook の NativeAOT はその OS でしか作れない点の扱いは妥当。md と html の図解も、主な語・図の文字で食い違いは無かった。</p>
+
+<h2>4. 決めたこと</h2>
+<table>
+<tr><th style="width:26%">問い</th><th>決定（2026-10-06）</th></tr>
+<tr><td>Q2. OS の終了で、プロジェクトのメモが未保存（#5）</td><td>B：Avalonia の既定のまま、いつもと同じ確認（［保存］［保存しない］［キャンセル］）を出す。OS のサインアウト・ログアウト・シャットダウンは止まる。計画 7.6-8 と要件 12.10 に書く（memo-tab のレビューの Q2「既知の制限」を置き換える）。31-3 でサインアウト（Windows）・ログアウト（mac）を確かめる</td></tr>
+<tr><td>Q3. タブの中身の載せ方（#4）</td><td>A：見出しだけ TabControl、中身 3 つは 1 つの Grid に重ねて IsVisible で切り替える。WebView は最初のプレビューのときに作る（今と同じ）。Start() は最初に見えたとき</td></tr>
+<tr><td>Q4. WKWebView が読めなかったときの代わり（#2）</td><td>A：TryGetPlatformHandle() で WKWebView を取り、loadFileURL:allowingReadAccessToURL:（読める範囲＝一時 HTML とプロジェクトの共通の親）を呼ぶ。試作で主の形が通れば作らない。だめなら相談。独自スキーム案は消す</td></tr>
+<tr><td>Q5. シンボリックリンク（#3）</td><td>A：App は対象フォルダの実パスも持ち、論理・実のどちらかが合えば一致。git は作業フォルダ基準（--show-cdup）。README は "$(pwd -P)"</td></tr>
+<tr><td>Q1. 並べ替えで選択が外れる（#1）</td><td>A：並べ替えるとき、選んでいるカードは動かさず、ほかのカードを前後に動かして同じ並びにする（<code>ViewList.SyncTo</code> の <code>pinned</code>）。VM の保険（同期中に来た null は無視して選び直す）も入れる。30-3 の Avalonia.Headless のテストで確かめる。要件 12.2 に書いた</td></tr>
+</table>
+<div class="sync"><b>反映済み（2026-10-06）</b>：要件定義 8・8.1・9・12.2・12.7・12.10・12.11・14.3・15（Phase 27〜33）・16 章、計画 md・html の 1〜10 章（5 章の表の各行）。計画の状態は「レビュー済み」。レビューに無かった 1 点も足した：検索欄のクリアの ✕（<code>ClearButtonEnabled</code>。要件 12.4）を 7.9 の書き換え表に。</div>
+
+<div class="q"><b>Q1.</b>（決定：A）並べ替えで選択が外れる（#1）<br>
+<b>どういうときに、どうなるか</b>（Avalonia 版＝Phase 30 から。今の WPF 版と、WPF のままの Phase 28 では起きない）：<br>
+・左の一覧は「最後の動き」の新しい順。セッションに動き（依頼・返事・ツールなど）が来ると、そのカードが一番上へ移る。<br>
+・起きるのは、<b>見ている（選んでいる）カードに動きが来て、そのカードが上へ移るとき</b>。例：Cursor のセッション A（上）と Claude Code のセッション B（下）を並行して動かしていて、B を見ている → B に返事が来る → B が A の上へ移る。<br>
+・このとき Avalonia の一覧は、B を選んでいたことを忘れる → 左の選択の色が消え、<b>中央の詳細と右のタイムラインが空になる</b>。拡大していれば元に戻り、タイムラインの検索語・スクロール位置も消える。B をもう一度押すまで空のまま。次に B が上へ移ると、また起きる。<br>
+・起きないとき：見ているカードがすでに一番上にあるとき（位置が変わらない）。ほかのカードが上へ来るとき（動くのはそのカードの方）。<br>
+・原因：Avalonia の一覧の部品は「移動」を「いったん取り除いて足し直す」として扱い、取り除いた項目の選択を外す（Avalonia の未解決の不具合。WPF は選択を保つ）。<br>
+<b>選択肢</b>：<br>
+A) 並べ替えるとき、見ているカードは動かさず、ほかのカードを前後に動かして同じ並びにする（一覧の部品から見ると、選んだカードは動いていない）。念のため、それでも「選択が外れた」と来たら、アプリ側で無視して選び直す保険も入れる … 利点：今の WPF と同じ見え方。テストで確かめられる／欠点：並べ替えのコードが少し複雑になる<br>
+B) 並べ替えは今の計画のまま。選択が外れたら、アプリ側ですぐ選び直す … 利点：並べ替えのコードは単純／欠点：選択の色が一瞬消えて付き直す（ちらつく）。一覧のスクロール位置やキーボードのフォーカスが動く恐れ<br>
+C) Avalonia の不具合（#16279・#17819）が直るのを待つ … 欠点：いつ直るか分からない。それまで上の症状が出る<br>
+<span class="rec">推奨：A</span>（B の保険も一緒に入れる。30-3 の Avalonia.Headless のテストで、並べ替えても選択が残ることを確かめる）</div>
+
+<p>下は Q2〜Q5 を検討したときの選択肢（記録。決定は 4 章の表）。</p>
+<div class="q"><b>Q2.</b>（決定：B）OS のサインアウト・ログアウト・シャットダウンで、プロジェクトのメモが未保存のとき（#5）<br>
+A) 今の WPF と同じく確認しない（OS の終了のときは e.Cancel しない＝失う）… 利点：OS の終了を止めない／欠点：見分けるコードが要る。しかも印がそろっていない（Windows のサインアウトは ApplicationShutdown、シャットダウンは OSShutdown、mac のログアウトは OSShutdown：Win32Platform.cs:165）<br>
+B) Avalonia の既定のまま、いつもと同じ確認を出す（OS の終了を止める）… 利点：コードが増えない。要件 12.10「未保存のまま閉じるときは確認」とそろい、入力を失わない／欠点：Windows は「このアプリがサインアウトを妨げています」の画面になる（「強制的に…」を選べば失う）。mac はログアウトが取り消される<br>
+C) 黙って保存してから終わる … 欠点：［保存しない］の意味が変わる。書きかけを保存してしまう<br>
+<span class="rec">推奨：B</span>（memo-tab のレビューの Q2＝A は「WPF では SessionEnding を足すコードが要る」前提だった。Avalonia では B のほうがコードが少なく、入力も失わない）。決めたら 7.6-8 と要件 12.10 に書く。</div>
+
+<div class="q"><b>Q3.</b>（決定：A）タブの中身の載せ方（#4）<br>
+A) 見出しだけ TabControl、中身 3 つは 1 つの Grid に重ねて IsVisible で切り替える … 利点：WebView が壊れない（今の WPF と同じ見え方）。仕組みが単純／欠点：3 つの View が起動時から載る（中の WebView は今と同じく最初のプレビューで作るので、起動は遅くならない）。Start() を「最初に見えたとき」に変える<br>
+B) TabControl のまま、切り替えの前後で BeginReparenting … 欠点：切り替えのたびに作法が要り、取りこぼすと壊れる<br>
+C) 作り直しを受け入れる … 欠点：スクロールが先頭に戻る・重い・白く光る恐れ<br>
+<span class="rec">推奨：A</span></div>
+
+<div class="q"><b>Q4.</b>（決定：A）mac の WKWebView がプロジェクトのファイルを読めなかったときの代わり（#2）<br>
+A) <code>TryGetPlatformHandle()</code> で WKWebView を取り、<code>loadFileURL:allowingReadAccessToURL:</code>（読める範囲＝一時 HTML とプロジェクトの共通の親）を objc_msgSend で呼ぶ … 利点：小さい（P/Invoke 数行）。見え方とリンクの振り分けは今と同じ／欠点：NativeWebView の外から操作する（版を上げたら確かめ直す）<br>
+B) md の画像だけ data URI で埋める … 欠点：html の相対 css・js は救えない。大きな画像で重い<br>
+C) 127.0.0.1 の小さな HTTP サーバーで配る … 欠点：大きい。ポートとセキュリティ（ほかのアプリからも読める）<br>
+<span class="rec">推奨：A</span>（試作で主の形が通れば、作らなくてよい）。A でもだめなら相談。</div>
+
+<div class="q"><b>Q5.</b>（決定：A）シンボリックリンク（#3）<br>
+A) App は対象フォルダの実パスも持ち、比べるときは論理・実のどちらかが合えば一致。git は作業フォルダ基準（--show-cdup）… 利点：どの形で来ても合う。表示は今のまま（論理）／欠点：比べる所が少し増える<br>
+B) 起動時に対象フォルダを実パスに置き換える … 利点：単純／欠点：Cursor の workspace_roots が論理パスで来ると合わない恐れ（要確認）。タイトルの表示も変わる<br>
+C) README の "$(pwd -P)" だけ … 欠点：Finder で選んだとき・リンクを含む作業フォルダは直らない<br>
+<span class="rec">推奨：A</span>（27 で workspace_roots の形を見て、B で足りると分かれば B でもよい）</div>
+
+<h2>5. 計画の直し方（まとめ）</h2>
+<table>
+<tr><th style="width:22%">計画の場所</th><th>直すこと</th></tr>
+<tr><td>1 章の表・10.1</td><td>32 の OS を「32-1 は Windows、32-2 は mac、32-3 は CI」に（#19e）。OS を移る前・CI を見る前に「利用者にコミットと push を頼む」区切りを書く（#10）。29 の始めに mac のテストの基準を取り直す（#19i）。</td></tr>
+<tr><td>1 章 品質ゲート 3（一覧・右ペイン）</td><td>隠れるきっかけ（時間・git・メタ）・拡大中に隠れる・カードの ✏️ で待つ・31 件以上の追加を記録の項目に（#18）。5,000 行での種別・検索・切り替えの速さ（#7）。</td></tr>
+<tr><td>28-1・7.3</td><td>ViewList.SyncTo に「動かさない要素」を足し、表に行を足す。「WPF も Avalonia も同じ」を直す（#1・Q1）。タイムラインは入れ物ごとの差し替えを許す（#7）。ShellOpen・AppLog を public に（#19f）。</td></tr>
+<tr><td>28-2・28-3・7.5</td><td>git の差し替え口・Task を返す中身・テストの SynchronizationContext（#11）。async void の文を直す（#11）。</td></tr>
+<tr><td>7.2・7.4</td><td>FileManagerName → ボタンの文字を返す形に（#19f）。コピーの表示の文を直す（#17）。</td></tr>
+<tr><td>29-1・29-2・7.15</td><td>3 つ目の分け方「mac で本当に動かない → 製品のコードを直す」（#3）。29-2（CI）を 29-1 より先に（#10）。</td></tr>
+<tr><td>29-3・7.12</td><td>mac の上書きは一時ファイル → 名前の付け替え（#8）。案内は実際の .app の場所・コピーできる形（#19b）。Hook の文言の mac の言い方（#19a）。</td></tr>
+<tr><td>29-4・7.13・7.14</td><td>git のルートを作業フォルダ基準に・実パスも持つ（#3・Q5）。git の実体のファイルを見る（#15）。ドキュメントの相対パスも NFC に（#13）。Hook では NFC が効かない注記（#19g）。</td></tr>
+<tr><td>30-1・7.7・7.19</td><td>開発用の .app と WKWebView の試作を前倒し（#6・#2）。書類フォルダの中のプロジェクトで TCC を確かめる（#9）。ログ・テーマを選ぶ前に（#14）。csproj の引き継ぎ（#19e）。既定のアプリのメニュー（#19c）。Info.plist（#19d）。WPF 版を残す（#19j）。</td></tr>
+<tr><td>30-3</td><td>Avalonia.Headless の選択のテスト（#1）。</td></tr>
+<tr><td>7.6・31-3</td><td>OS の終了の扱い（Q2）・最小化を戻す・2 回目の Closing・Post で出す・Shutdown() を使わない・Info.plist（#5）。</td></tr>
+<tr><td>7.11・31-1</td><td>代わりの形を書き直す（#2・Q4）。iframe（#16）。Runtime 未導入は AdapterInfo で見分ける（#12）。</td></tr>
+<tr><td>7.17・31-2</td><td>タブの中身を載せたまま IsVisible で切り替え。Start() は最初に見えたとき（#4・Q3）。</td></tr>
+<tr><td>7.8</td><td>色の辞書のファイルの分け方（#19h）。</td></tr>
+<tr><td>8 章（リスク）</td><td>#1・#2・#3・#4・#5・#9 を足す。「Avalonia 12 が新しい」の行に、選択（#16279・#17819）と WebView の口の不足を具体的に書く。</td></tr>
+</table>
+
+<h3>Phase ごとの作業 OS と、足す確認（直した後の案）</h3>
+<table>
+<tr><th style="width:8%">Phase</th><th style="width:22%">主に作業する OS</th><th>足すこと</th></tr>
+<tr><td>27</td><td>mac</td><td>14.3 に、リンク経由のフォルダ（#3）と、日本語のファイル名の形（#13）を足す。任意で WKWebView の試作（捨てる。#2）。終わったら、コミットと push を頼む（#10）。</td></tr>
+<tr><td>28</td><td>Windows</td><td>記録の項目（#18）と 5,000 行の速さ（#7）を、切り出す前に取る。終わったら、コミットと push を頼む。</td></tr>
+<tr><td>29</td><td>mac（29-2 の CI を先に）</td><td>始めに mac でテストの基準を取り直す（#19i）。29-1 の 3 つ目の分け方（#3）。CI を見る前に push を頼む。</td></tr>
+<tr><td>30</td><td>mac（区切りで Windows）</td><td>30-1 で開発用 .app・WKWebView の試作・TCC（#6・#2・#9）。30-3 で Avalonia.Headless の選択のテスト（#1）。Windows の確認：Mica・Alt+F4・UI Automation の ID・IME。</td></tr>
+<tr><td>31</td><td>mac（区切りで Windows）</td><td>タブの載せ方（#4）。Windows：Runtime 未導入の見分け（#12）・サインアウト（#5）。mac：⌘Q・Dock・最小化・ログアウト（#5）。</td></tr>
+<tr><td>32</td><td>32-1 Windows・32-2 mac・32-3 CI</td><td>版を上げての再導入 → 会話（#8）。.app を /Applications 以外に置いたときの案内（#19b）。</td></tr>
+<tr><td>33</td><td>両方</td><td>—（上で足した確認を通しで）</td></tr>
+</table>
+
+<div class="sync"><b>反映先</b>（計画を直すときに一緒に。計画は md と html の両方：連動ルール）<br>
+・要件 12.7：代わりの形の文（#2）、Runtime 未導入の見分け方（#12）<br>
+・要件 12.10 と計画 7.6-8：OS の終了での未保存の扱い（Q2＝B に決定：いつもと同じ確認を出し、OS の終了を止める。memo-tab のレビューの Q2「既知の制限」を置き換える）<br>
+・要件 12.11：Hook の文言の mac の言い方を例外に足す（#19a）<br>
+・要件 14.3：リンク経由のフォルダの形・書類フォルダの許可（TCC）・日本語のファイル名の形（#3・#9・#13）<br>
+・要件 12.5：色の辞書のファイルの分け方（#19h）</div>
+</body></html>
