@@ -41,11 +41,11 @@
                 </StackPanel>
             </Grid>
 
-            <!-- タブの中身：3 つとも画面に載せたまま IsVisible で切り替える（WebView を壊さないため。計画 7.17）。メモは 31-3 で作る -->
+            <!-- タブの中身：3 つとも画面に載せたまま IsVisible で切り替える（WebView を壊さないため。計画 7.17）。 -->
             <Grid Grid.Row="1" Margin="0,8,0,0">
                 <views:DashboardView x:Name="DashboardHost" IsVisible="True" />
                 <views:DocumentsView x:Name="DocumentsHost" IsVisible="False" />
-                <Border x:Name="MemoHost" IsVisible="False" />
+                <views:MemoView x:Name="MemoHost" IsVisible="False" />
             </Grid>
         </Grid>
     </Grid>

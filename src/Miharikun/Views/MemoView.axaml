@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:Miharikun.Views"
+             x:Class="Miharikun.Views.MemoView">
+    <!-- プロジェクトのメモ（要件 12.10）。DataContext は MemoViewModel。保存は Ctrl/⌘+S（編集中だけ。コードで登録：計画 7.18） -->
+    <Border Classes="section" Margin="0,8,0,0" Padding="12,8">
+        <Grid RowDefinitions="Auto,*">
+            <!-- 上のバー。WebView の外に置く（WebView の上に Avalonia の要素を重ねると隠れる） -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                    <Button Content="✎ 編集" Command="{Binding BeginEditCommand}" Padding="10,3" FontSize="12"
+                            IsVisible="{Binding IsPreviewing}" AutomationProperties.AutomationId="MemoEditButton" />
+                    <Button Content="保存" Classes="accent" Command="{Binding SaveCommand}" Padding="10,3" FontSize="12"
+                            IsVisible="{Binding IsEditing}" AutomationProperties.AutomationId="MemoSaveButton" />
+                    <Button Content="キャンセル" Command="{Binding CancelCommand}" Padding="10,3" FontSize="12"
+                            IsVisible="{Binding IsEditing}" AutomationProperties.AutomationId="MemoCancelButton" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="12">
+                    <TextBlock Text="プロジェクトのメモ" FontSize="15" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Opacity="0.7" VerticalAlignment="Center"
+                               AutomationProperties.AutomationId="MemoStatus" />
+                    <TextBlock Text="{Binding ErrorText}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource StateErrorBrush}" ToolTip.Tip="{Binding ErrorText}"
+                               IsVisible="{Binding HasError}" AutomationProperties.AutomationId="MemoError" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- プレビューと入力欄は同じ場所に置き、IsVisible で入れ替える（重ねない） -->
+            <Grid Grid.Row="1">
+                <views:MarkdownPreview IsVisible="{Binding IsPreviewing}" />
+                <TextBox x:Name="Editor" Classes="mono" Text="{Binding Draft}" IsVisible="{Binding IsEditing}"
+                         AcceptsReturn="True" AcceptsTab="False" TextWrapping="Wrap" FontSize="13" VerticalContentAlignment="Top"
+                         AutomationProperties.AutomationId="MemoEditor" />
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

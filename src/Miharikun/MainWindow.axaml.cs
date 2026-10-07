@@ -24,6 +24,7 @@ public partial class MainWindow : Window
         _composition = composition;
         DataContext = composition.ViewModel;
         DocumentsHost.DataContext = composition.Documents;
+        MemoHost.DataContext = composition.Memo;
         Title = $"Miharikun - {composition.ViewModel.ProjectFolder}";
         PickerPanel.IsVisible = false;
         MainPanel.IsVisible = true;
@@ -72,6 +73,8 @@ public partial class MainWindow : Window
         MemoHost.IsVisible = index == 2;
         if (index == 1)
             _composition?.Documents.Start();   // 最初に見えたとき、監視と走査を始める（起動を遅くしない）
+        if (index == 2)
+            _composition?.Memo.Start();        // 最初に見えたとき、読み込みと監視を始める（読めていなければ読み直す）
     }
 
     /// <summary>メモのリンクから：ドキュメントタブに切り替えてから、そのファイルを選ぶ。</summary>

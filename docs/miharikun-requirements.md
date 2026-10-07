@@ -951,6 +951,8 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 状況（31-2、2026-10-08、mac）：ドキュメントタブを作った（`Views/DocumentsView`：ツリー（`TreeDataTemplate`。展開・選択は VM と双方向）・一覧・絞り込み・読み直し・件数・概要カード・「既定のアプリで開く」「フォルダで開く（mac は Finder で表示）」「再読み込み」・空の表示。内容は 31-1 の `MarkdownPreview`）と、`Views/DocumentSettingsDialog`（除外パターン。保存で監視と走査をやり直す）。`MainWindow` の「ドキュメントの設定…」を有効にし、タブが最初に見えたとき（`OnTabChanged`）に `DocumentsViewModel.Start()` を呼ぶ。タブの中身は画面に載せたまま `IsVisible` で切り替える（WebView を作り直さない）。テスト：`DocumentsViewTests`（5 件。一覧・ツリー・概要とボタン・絞り込み・空・設定ダイアログ）。mac で Tests 1106 合格・スキップ 29、UiTests 49 合格・スキップ 3。`dist/mac/Miharikun.app` をビルドした。
   - 確認済み（利用者の目視、2026-10-08）：mac で md・html が出る。
   - 後回し（利用者が了承）：Windows での確認（md・html が出ること、`AdapterInfo`（Runtime 入りで `WebView2` か）と Runtime 未導入の案内）、iframe を含む html で既定のブラウザが勝手に開かないこと（手元に該当の html が無い）。未確認のまま残るもの：再読み込み・タブを行き来したあとのスクロール位置、ライト/ダークの見た目。
+- 状況（31-3、2026-10-08、mac）：メモタブを作った（`Views/MemoView`：バー（✎ 編集／保存／キャンセル・状態・エラー）、プレビューと入力欄を同じ場所で `IsVisible` で入れ替え、入力欄は等幅フォント・Tab はフォーカス移動、保存は Windows が Ctrl+S・mac が ⌘+S（`PlatformSettings.HotkeyConfiguration.CommandModifiers`。編集中だけ効く）、「✎ 編集」の後に入力欄へフォーカスしてカーソルは先頭（`FocusEditorRequested`））。`MainWindow` がメモタブを最初に見せたとき `MemoViewModel.Start()` を呼ぶ。閉じるときの流れ（7.6）・`UnsavedMemoDialog`・メモのリンク → ドキュメントタブは 30-1 で済んでいた。テスト：`MemoViewTests`（3 件：編集の入れ替えとフォーカス・保存のキーで保存・変更なしのキャンセル）。`dist/mac/Miharikun.app` をビルドした。
+  - 未確認（目視）：mac の ⌘Q・Dock の「終了」・ウィンドウの閉じるボタンで、未保存のメモの確認が出ること（最小化した状態でも）、mac のログアウトで確認が出てキャンセルでログアウトが止まること、⌘+S、日本語入力（IME）、メモの md のプレビュー（チェックボックス・mermaid・相対パスの画像・リンク）、メモのリンクからドキュメントタブへ移ること、タブを行き来したときのスクロール位置。Windows の Alt+F4・サインアウト・Ctrl+S、およびこれらすべての Windows での確認は後回し。
 - 完了条件：12.7・12.10 が Windows と mac の両方で動く（md のチェックボックス・mermaid・相対パスの画像・リンク・タブを行き来してもスクロール位置が保たれる）
 
 ## [ ] Phase 32: 配布
