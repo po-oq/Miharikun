@@ -952,7 +952,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - 確認済み（利用者の目視、2026-10-08）：mac で md・html が出る。
   - 後回し（利用者が了承）：Windows での確認（md・html が出ること、`AdapterInfo`（Runtime 入りで `WebView2` か）と Runtime 未導入の案内）、iframe を含む html で既定のブラウザが勝手に開かないこと（手元に該当の html が無い）。未確認のまま残るもの：再読み込み・タブを行き来したあとのスクロール位置、ライト/ダークの見た目。
 - 状況（31-3、2026-10-08、mac）：メモタブを作った（`Views/MemoView`：バー（✎ 編集／保存／キャンセル・状態・エラー）、プレビューと入力欄を同じ場所で `IsVisible` で入れ替え、入力欄は等幅フォント・Tab はフォーカス移動、保存は Windows が Ctrl+S・mac が ⌘+S（`PlatformSettings.HotkeyConfiguration.CommandModifiers`。編集中だけ効く）、「✎ 編集」の後に入力欄へフォーカスしてカーソルは先頭（`FocusEditorRequested`））。`MainWindow` がメモタブを最初に見せたとき `MemoViewModel.Start()` を呼ぶ。閉じるときの流れ（7.6）・`UnsavedMemoDialog`・メモのリンク → ドキュメントタブは 30-1 で済んでいた。テスト：`MemoViewTests`（3 件：編集の入れ替えとフォーカス・保存のキーで保存・変更なしのキャンセル）。`dist/mac/Miharikun.app` をビルドした。
+  - 確認済み（利用者の目視、2026-10-08。ざっくり）：mac で下の項目はおおむね問題なし。細かい確認（最小化中の終了・ログアウト・IME ほか）は個別には行っていない。
   - 未確認（目視）：mac の ⌘Q・Dock の「終了」・ウィンドウの閉じるボタンで、未保存のメモの確認が出ること（最小化した状態でも）、mac のログアウトで確認が出てキャンセルでログアウトが止まること、⌘+S、日本語入力（IME）、メモの md のプレビュー（チェックボックス・mermaid・相対パスの画像・リンク）、メモのリンクからドキュメントタブへ移ること、タブを行き来したときのスクロール位置。Windows の Alt+F4・サインアウト・Ctrl+S、およびこれらすべての Windows での確認は後回し。
+- 状況（31-4、2026-10-08、mac）：`MarkdownPreview` で `NativeWebView.Background` を、md のダークは `#1E1E1E`（md のダークの地と同じ）・それ以外（ライト・html）は白にした（表示のたびに）。**html をダークで `#1E1E1E` にすると、地を指定しない html は暗い文字が見えなくなる（利用者の目視で発覚、2026-10-08）ので、html は白のまま。**テーマの切り替えで md を作り直すのは 31-1〜3 までに入っていた（`theme.Changed` → `Documents.OnThemeChanged`・`Memo.OnThemeChanged` → 同じ一時 HTML を書き直して `Refresh()`）。Windows の Runtime 未導入の案内（`AdapterInfo.Type != WebView2`）も 31-1 で入れてある。mac で Tests 1106 合格・スキップ 29、UiTests 52 合格・スキップ 3。`dist/mac/Miharikun.app` をビルドした。
+  - 未確認（目視）：mac でダークに切り替えたあと、ドキュメント・メモの md が作り直されること、読み込みの間に白く光らないこと（`Background` が効かなければ、`NavigationCompleted` まで案内の領域を出す形に替える）、OS のライト/ダークを実行中に変えたとき（「OS に合わせる」）の追従。Windows の確認（Runtime 入り・未導入）は後回し。
 - 完了条件：12.7・12.10 が Windows と mac の両方で動く（md のチェックボックス・mermaid・相対パスの画像・リンク・タブを行き来してもスクロール位置が保たれる）
 
 ## [ ] Phase 32: 配布

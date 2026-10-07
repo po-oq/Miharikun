@@ -1,6 +1,7 @@
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Miharikun.Core.Documents;
@@ -111,6 +112,9 @@ public partial class MarkdownPreview : UserControl
         WebHost.IsVisible = true;
 
         var web = _web!;
+        // md はダークの地を自分で持つので、読み込みの間に白く光らないよう同じ色にする。html はファイルの見た目を尊重する
+        // （地を指定しないページは、暗い文字を白い地の前提で書いているので、ダークでも白のまま）。
+        web.Background = BackgroundFor((_vm?.IsDark ?? false) && source is not PreviewSource.File { Kind: DocumentKind.Html });
         var sameAsCurrent = string.Equals(_pagePath, pagePath, StringComparison.OrdinalIgnoreCase);
         _pagePath = pagePath;
         if (sameAsCurrent && reload)
@@ -129,6 +133,9 @@ public partial class MarkdownPreview : UserControl
             web.Navigate(new Uri(MarkdownRenderer.FileUri(pagePath)));
         }
     }
+
+    /// <summary>WebView の地の色（読み込み前・ページの外に見える色）。md のダークの地（MarkdownRenderer）と同じ。</summary>
+    private static IBrush BackgroundFor(bool dark) => new SolidColorBrush(dark ? Color.FromRgb(0x1E, 0x1E, 0x1E) : Colors.White);
 
     private static string NameOf(PreviewSource source) => source switch
     {
@@ -174,7 +181,7 @@ public partial class MarkdownPreview : UserControl
 
         try
         {
-            var web = new NativeWebView();
+            var web = new NativeWebView { Background = BackgroundFor(false) };
             web.EnvironmentRequested += OnEnvironmentRequested;
             web.NavigationStarted += OnNavigationStarted;
             web.NavigationCompleted += OnNavigationCompleted;

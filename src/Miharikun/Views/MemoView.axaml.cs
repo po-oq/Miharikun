@@ -29,7 +29,8 @@ public partial class MemoView : UserControl
         if (_vm is not null)
             _vm.FocusEditorRequested -= OnFocusEditorRequested;
         _vm = DataContext as MemoViewModel;
-        _saveKey.Command = _vm?.SaveCommand;
+        if (_vm is not null)
+            _saveKey.Command = _vm.SaveCommand;
         if (_vm is not null)
             _vm.FocusEditorRequested += OnFocusEditorRequested;
     }
