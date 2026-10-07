@@ -30,6 +30,7 @@ public partial class App : Application
     {
         var paths = AppPaths.Default();
         AppLog.Init(paths);
+        Views.MarkdownPreview.WebView2UserDataFolder = paths.WebView2Dir;
         LogUnhandledExceptions();
 
         var settings = new AppSettingsStore(paths, AppLog.Write);

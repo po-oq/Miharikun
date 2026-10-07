@@ -944,6 +944,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - 未確認（目視）：mac・Windows の「参照…」の OS のフォルダ選択（WPF 版では未確認だった項目）、設定を保存したあとの導入し直しの流れ、「ドキュメントの設定…」は 31-2。**Windows での確認（見た目・Hook の `--probe`・日本語入力ほか）は、利用者が 2026-10-08 に行い、問題なし（OK）。Phase 30 は完了（`[x]`）。**
 ## [ ] Phase 31: ドキュメント・メモタブ
 - NativeWebView（WKWebView の読み取り範囲の試作は Phase 30 の最初に済ませる。12.7）。リンクの振り分け・自動再読み込み・テーマの追従・タブを切り替えても WebView を作り直さない・Runtime 未導入の見分け（使う部品が WebView2 か）・未保存で閉じるときの確認（OS のサインアウト・ログアウトでも。12.10）・メモのリンクからドキュメントタブへ
+- 状況（31-1、2026-10-08、mac）：`Views/MarkdownPreview`（Avalonia。`Avalonia.Controls.WebView` 12.1.0）を作った。`IPreviewHost` はそのまま。WebView は最初に出すときに 1 つ作り、以降は `IsVisible` で隠すだけ。リンクの判断は `PreviewNavigationPolicy`（Presentation。`Allow`／`Route`）に切り出してテストした。Windows は `EnvironmentRequested` で `UserDataFolder` を `webview2\` に、Runtime 未導入は `AdapterInfo.Type != WebView2` で見分ける。`Refresh()` の前に `window.scrollY` を取り、`NavigationCompleted` で `scrollTo` して戻す。
+  - mac の iframe（`NavigationStarted` が iframe にも来る）：自分で開いたページを読み込んでいる間（`Navigate`／`Refresh` から `NavigationCompleted` まで）は、ほかの移動も通す。読み込みが終わってからの移動は、リンクのクリックとして振り分ける。この間にリンクを押すと、通ってしまう（まれ）。
+  - テスト：`PreviewNavigationPolicyTests`（21 件）、`MarkdownPreviewTests`（案内の出し入れ 3 件）。mac で Tests 1106 合格・スキップ 29、UiTests 44 合格・スキップ 3。
+  - 未確認（目視）：プレビューをはめる画面（ドキュメントタブ）は 31-2 なので、mac・Windows とも実際に md・html を出す確認、iframe を含む html で既定のブラウザが勝手に開かないこと、`Refresh()` 後のスクロール位置、Windows の `AdapterInfo` の値（Runtime 入りで `WebView2` か）と Runtime 未導入の案内は、31-2 の後。
 - 完了条件：12.7・12.10 が Windows と mac の両方で動く（md のチェックボックス・mermaid・相対パスの画像・リンク・タブを行き来してもスクロール位置が保たれる）
 
 ## [ ] Phase 32: 配布
