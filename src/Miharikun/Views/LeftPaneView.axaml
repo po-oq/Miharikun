@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Miharikun.Converters"
+             xmlns:views="clr-namespace:Miharikun.Views"
+             x:Class="Miharikun.Views.LeftPaneView">
+    <!-- 左ペイン：セッション一覧（要件 12.2）。DataContext は MainViewModel -->
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
+        <StackPanel Grid.Row="0">
+            <!-- Hook が記録していないときの警告（Issue #17。閉じられない。NoHook が 0 件になれば消える。要件 12.11） -->
+            <Border IsVisible="{Binding HasNoHook}" Margin="0,0,0,8" Padding="8,6" CornerRadius="6" BorderThickness="1"
+                    BorderBrush="{DynamicResource HookWarningBorderBrush}" Background="{DynamicResource HookWarningBackgroundBrush}"
+                    AutomationProperties.AutomationId="HookWarning">
+                <StackPanel>
+                    <TextBlock Text="{Binding HookWarningText}" TextWrapping="Wrap" FontSize="12"
+                               Foreground="{DynamicResource HookWarningTextBrush}" />
+                    <Button Content="hook-error.log を開く" Command="{Binding OpenHookErrorLogCommand}" Margin="0,6,0,0"
+                            FontSize="12" AutomationProperties.AutomationId="OpenHookErrorLog" />
+                </StackPanel>
+            </Border>
+
+            <!-- 状態ごとの件数 -->
+            <ItemsControl ItemsSource="{Binding Counts}" AutomationProperties.AutomationId="StateCounts">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,10,2">
+                            <Ellipse Classes="dot"
+                                     Classes.running="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Running}"
+                                     Classes.yourturn="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=YourTurn}"
+                                     Classes.aborted="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Aborted}"
+                                     Classes.error="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Error}" />
+                            <TextBlock FontSize="12" Margin="4,0,0,0">
+                                <Run Text="{Binding Name, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding Count, Mode=OneWay}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ステータスの絞り込み（件数は他のフィルタに関係なく全体から数える）。「全て」以外は複数選べる（OR）。何も選ばなければ「全て」 -->
+            <ItemsControl ItemsSource="{Binding StatusTabs}" Margin="0,8,0,0" AutomationProperties.AutomationId="StatusTabs">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <CheckBox Classes="chip" Content="{Binding Label}" IsChecked="{Binding IsChecked, Mode=TwoWay}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- エージェントの絞り込み（全て / Cursor / Claude Code。1 つだけ選ぶ。件数は全体から数える） -->
+            <ListBox x:Name="AgentList" Classes="chips" ItemsSource="{Binding AgentTabs}" SelectionChanged="OnAgentSelectionChanged"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                     AutomationProperties.AutomationId="AgentTabs">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate><TextBlock Text="{Binding Label}" /></DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </StackPanel>
+
+        <!-- 検索：プロンプト・概要・メモ・タイトル・変更ファイル名（✕ でクリア） -->
+        <TextBox Grid.Row="1" Margin="0,8,0,0" Classes="clearButton" AutomationProperties.AutomationId="SearchBox"
+                 PlaceholderText="🔍 プロンプト・概要・メモ・変更ファイルを検索" Text="{Binding SearchText}" />
+
+        <WrapPanel Grid.Row="2" Margin="0,6,0,6">
+            <CheckBox Classes="chip" Content="実行中のみ" IsChecked="{Binding RunningOnly}" />
+            <CheckBox Classes="chip" Content="未コミットあり" IsChecked="{Binding UncommittedOnly}" IsEnabled="{Binding UncommittedFilterAvailable}" />
+            <CheckBox Classes="chip" Content="メモあり" IsChecked="{Binding MemoOnly}" IsEnabled="{Binding MemoFilterAvailable}" />
+        </WrapPanel>
+
+        <!-- カードの一覧：仮想化・選択。並べ替えでも選択が外れないよう、VM が選択中のカードを動かさずに合わせる（計画 7.3） -->
+        <ListBox x:Name="CardList" Grid.Row="3" Classes="cards" ItemsSource="{Binding VisibleCards}"
+                 SelectedItem="{Binding Selected, Mode=TwoWay}" Background="Transparent"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 AutomationProperties.AutomationId="CardList">
+            <ListBox.ItemTemplate>
+                <DataTemplate><views:SessionCardView /></DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

@@ -3,6 +3,7 @@
 <!-- ウィンドウの地と文字（テーマに任せず、自前で決める。SukiUI は ふつうの Window の地・文字の色を替えないため。30-2） -->
     <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#202020" />
     <SolidColorBrush x:Key="WindowTextBrush" Color="#F3F3F3" />
+    <SolidColorBrush x:Key="PaneBackgroundBrush" Color="#2B2B2B" />
     <!-- 状態の丸・完了チェックの印 -->
     <SolidColorBrush x:Key="StateIdleBrush" Color="#9AA0A6" />
     <SolidColorBrush x:Key="StateRunningBrush" Color="#4C9AFF" />

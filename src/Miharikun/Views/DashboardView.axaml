@@ -4,14 +4,10 @@
              x:Class="Miharikun.Views.DashboardView">
     <!-- ダッシュボードの 3 ペイン。DataContext は MainViewModel -->
     <Grid ColumnDefinitions="360,Auto,*,Auto,340">
-                    <!-- 左：セッション一覧（30-3 で件数・チップ・検索・警告の帯などを足す） -->
-                    <ListBox Grid.Column="0" Classes="cards" ItemsSource="{Binding VisibleCards}" SelectedItem="{Binding Selected}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" Background="Transparent"
-                             AutomationProperties.AutomationId="CardList">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate><views:SessionCardView /></DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                    <!-- 左：セッション一覧 -->
+                    <Border Grid.Column="0" Classes="pane">
+                        <views:LeftPaneView />
+                    </Border>
                     <GridSplitter Grid.Column="1" Width="8" Background="Transparent" />
                     <!-- 中央：詳細（30-4 で残りのブロックを足す） -->
                     <Grid Grid.Column="2">

@@ -162,6 +162,47 @@
         <Setter Property="Margin" Value="0,0,3,0" />
     </Style>
 
+    <!-- 1 つだけ選ぶチップ（エージェントの絞り込み）。ListBox で、ListBoxItem をチップの形にする -->
+    <Style Selector="ListBox.chips">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.chips ListBoxItem">
+        <Setter Property="Margin" Value="0,0,6,4" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Name="Chip" CornerRadius="12" BorderThickness="1" Padding="9,2"
+                        Background="{DynamicResource CardItemBackgroundBrush}" BorderBrush="{DynamicResource CardItemBorderBrush}">
+                    <ContentPresenter Name="ChipContent" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      VerticalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="ListBox.chips ListBoxItem:pointerover /template/ Border#Chip">
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
+    </Style>
+    <Style Selector="ListBox.chips ListBoxItem:selected /template/ Border#Chip">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBrush}" />
+    </Style>
+    <Style Selector="ListBox.chips ListBoxItem:selected /template/ ContentPresenter#ChipContent">
+        <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- ペイン（左・中央・右の地） -->
+    <Style Selector="Border.pane">
+        <Setter Property="Background" Value="{DynamicResource PaneBackgroundBrush}" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="8" />
+    </Style>
+
     <!-- 詳細のステータスボタン。選択中（.primary）はアクセント色 -->
     <Style Selector="Button.statusbtn">
         <Setter Property="Margin" Value="0,0,6,0" />
