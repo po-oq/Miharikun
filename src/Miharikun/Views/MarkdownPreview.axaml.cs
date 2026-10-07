@@ -19,6 +19,12 @@ public partial class MarkdownPreview : UserControl
     /// <summary>Windows の WebView2 の作業フォルダ（App 起動時に決める）。mac では使わない。</summary>
     public static string? WebView2UserDataFolder { get; set; }
 
+    /// <summary>
+    /// テスト用：true のとき WebView を作らず、案内の文字だけ出す。ヘッドレスのテストは STA でないスレッドで動くので、
+    /// Windows で本物の WebView2 を作ると失敗する（RPC_E_CHANGED_MODE）。製品では使わない。
+    /// </summary>
+    public static bool WebViewDisabled { get; set; }
+
     private IPreviewHost? _vm;
     private NativeWebView? _web;
     private bool _initDone;
@@ -79,14 +85,14 @@ public partial class MarkdownPreview : UserControl
                 return;
         }
 
-        if (!EnsureWebView())
-            return;
-
         if (source is PreviewSource.File file && !System.IO.File.Exists(file.FullPath))
         {
             ShowMessage("ファイルが見つかりません");
             return;
         }
+
+        if (!EnsureWebView())
+            return;
 
         string pagePath;
         try
@@ -175,6 +181,11 @@ public partial class MarkdownPreview : UserControl
     /// <summary>最初に出すときに 1 つだけ作る（以降は隠すだけで作り直さない）。作れなければ案内を出して false。</summary>
     private bool EnsureWebView()
     {
+        if (WebViewDisabled)
+        {
+            ShowMessage("（テスト：WebView は作りません）");
+            return false;
+        }
         if (_initDone)
             return _web is not null;
         _initDone = true;
