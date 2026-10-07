@@ -964,6 +964,8 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：手動実行のワークフローで両 OS の zip ができる。展開 → （mac は印を外す）→ 起動 → Hook の導入 → 会話 → 表示、が両 OS で通る。mac は版を上げての再導入（Hook の更新）でも通る
 - 状況（32-2、2026-10-08、mac）：`scripts/publish-mac.sh` に `--zip` を足した（`publish-mac.sh <版> <出力フォルダ> --zip`）。`Miharikun-v<版>-osx-arm64/`（`Miharikun.app` と `README.txt`）を作り、`ditto -c -k --keepParent` で `Miharikun-v<版>-osx-arm64.zip`、`shasum -a 256` で `.zip.sha256`。配布 zip の README は `scripts/dist/README-mac.txt`（`{VERSION}` を置き換える。隔離の印の外し方・起動（`open -n -a`）・ファイルとフォルダの許可・Cursor の Hook の導入と動かないとき・「Hook なし」の帯・Claude Code・ドキュメント・メモ。画面の文言は `HookCheck`・`HookWording`・`HookSetup` と合わせた）。mac で作った zip（約 47MB）を別の場所に展開して、署名の検証（`codesign --verify --deep --strict`）・実行の権限・同梱の Hook の `--probe`（`ok`）・SHA-256 の照合・版の置き換えを確かめた。
   - 未確認：利用者が mac で zip を展開 → `xattr` の 1 行 → 起動 → Hook の導入（印の解除と `--probe`）→ Cursor で会話 → 表示、版を上げて再導入（Hook の更新）、`.app` を「アプリケーション」以外に置いたときの案内。`LSMinimumSystemVersion=14.0` と実行ファイルの `minos 12.0` の食い違い（要確認）。32-1（Windows の発行）・32-3・32-4 は未着手。
+- 状況（32-3、2026-10-08、mac で書いた。CI での実行は未確認）：`.github/workflows/release.yml` を、`version`（バージョンの決定。ubuntu）・`windows`（今のもの。テスト → `publish.ps1` → zip の SHA-256 を `.zip.sha256` に）・`macos`（`macos-latest`＝Apple Silicon。テスト → `publish-mac.sh <版> <一時> --zip`）・`release`（タグのときだけ。両 OS の zip と `.sha256` の 4 つを Release に載せる。Release が先にあれば追加）の 4 ジョブにした。手動実行（`workflow_dispatch`）では、両 OS の zip を artifact に残すだけ。YAML の構文（Ruby で読み込み）・バージョンの正規表現・ファイル名の展開はローカルで確かめた。
+  - 未確認：手動実行で、両 OS の zip と `.sha256` が artifact にできること。`macos-latest` で NativeAOT の Hook と署名が通ること。Windows の単一ファイルの App が Avalonia で動くこと（32-1）。
 
 ## [ ] Phase 33: 両 OS の通し確認・仕上げ
 - Windows：Cursor・Claude Code。mac：Cursor（Hobby）・Claude Code。リリースの zip で通す。`CLAUDE.md`・本書（状況）の更新
