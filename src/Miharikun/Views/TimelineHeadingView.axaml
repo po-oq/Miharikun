@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Miharikun.Views.TimelineHeadingView">
+    <!-- 右ペインの見出し（要件 12.4）：種別のチップ 5 つと検索ボックス。通常の幅 340px で 1 行に収める。DataContext は MainViewModel -->
+    <StackPanel>
+        <TextBlock Margin="10,0,10,6">
+            <Run Text="タイムライン" FontWeight="SemiBold" />
+            <Run Text="{Binding Timeline.CountText, Mode=OneWay}" FontSize="11" Foreground="Gray" />
+        </TextBlock>
+        <Grid Margin="10,0,10,6" ColumnDefinitions="Auto,*">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Classes="chip compact" Content="入力" IsChecked="{Binding Timeline.ShowInput}" />
+                <CheckBox Classes="chip compact" Content="返事" IsChecked="{Binding Timeline.ShowResponse}" />
+                <CheckBox Classes="chip compact" Content="思考" IsChecked="{Binding Timeline.ShowThought}" />
+                <CheckBox Classes="chip compact" Content="ツール" IsChecked="{Binding Timeline.ShowTool}" />
+                <CheckBox Classes="chip compact" Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
+            </StackPanel>
+            <!-- 検索：含む行だけを表示（種別のチップとは AND）。✕ は FluentTheme の TextBox の clearButton -->
+            <TextBox Grid.Column="1" Margin="4,0,0,0" FontSize="12" Padding="6,2" MinHeight="26"
+                     PlaceholderText="🔍 検索" Text="{Binding Timeline.SearchText}"
+                     AutomationProperties.AutomationId="TimelineSearch" />
+        </Grid>
+    </StackPanel>
+</UserControl>

@@ -20,6 +20,7 @@ jobs:
           dotnet-version: '10.0.x'
       - run: dotnet build Miharikun.slnx -c Release
       - run: dotnet test tests/Miharikun.Tests -c Release --no-build
+      - run: dotnet test tests/Miharikun.UiTests -c Release --no-build
 
   macos:
     runs-on: macos-latest
@@ -30,5 +31,6 @@ jobs:
           dotnet-version: '10.0.x'
       - run: dotnet build Miharikun.slnx -c Release
       - run: dotnet test tests/Miharikun.Tests -c Release --no-build
+      - run: dotnet test tests/Miharikun.UiTests -c Release --no-build
       - name: Hook の NativeAOT（osx-arm64）が通るか
         run: dotnet publish src/Miharikun.Hook -c Release -r osx-arm64 -o "$RUNNER_TEMP/hook"

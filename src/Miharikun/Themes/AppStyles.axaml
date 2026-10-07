@@ -1,14 +1,182 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- 自前の見た目はここに置き、テーマの後ろで上書きする（どちらのテーマでも同じファイルで動くように。計画 7.8） -->
+    <!-- 自前の見た目はここに置き、テーマの後ろで上書きする（どちらのテーマでも同じファイルで動くように。計画 7.8）。
+         状態・ステータス・エージェントの色の出し分けは、クラス（.running など）＋セレクタで行う（計画 7.9）。 -->
     <Style Selector="Window">
         <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
         <Setter Property="FontSize" Value="13" />
+        <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource WindowTextBrush}" />
     </Style>
+    <!-- 部品ごとにフォントを決めるテーマ（SukiUI は独自のフォントを指定する）でも、日本語は OS のフォントで出す（計画 7.10） -->
+    <Style Selector="TextBlock"><Setter Property="FontFamily" Value="{DynamicResource UiFont}" /></Style>
+    <Style Selector="Button"><Setter Property="FontFamily" Value="{DynamicResource UiFont}" /></Style>
+    <Style Selector="TextBox"><Setter Property="FontFamily" Value="{DynamicResource UiFont}" /></Style>
+    <Style Selector="CheckBox"><Setter Property="FontFamily" Value="{DynamicResource UiFont}" /></Style>
+    <Style Selector="MenuItem"><Setter Property="FontFamily" Value="{DynamicResource UiFont}" /></Style>
     <Style Selector="TextBlock.mono">
         <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
     </Style>
     <Style Selector="TextBox.mono">
         <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+    </Style>
+    <Style Selector="TextBlock.dim">
+        <Setter Property="Opacity" Value="0.65" />
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+
+    <!-- ふつうのボタン：地は白（ダークは暗い）、細い枠、丸み（SukiUI に近い見た目。テーマは FluentTheme。30-2） -->
+    <Style Selector="Button">
+        <Setter Property="Background" Value="{DynamicResource CardItemBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="12,6" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
+    </Style>
+
+    <!-- 状態の丸（絵文字は環境で色が変わるので、色つきの丸で示す） -->
+    <Style Selector="Ellipse.dot">
+        <Setter Property="Width" Value="9" />
+        <Setter Property="Height" Value="9" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Fill" Value="{DynamicResource StateIdleBrush}" />
+    </Style>
+    <Style Selector="Ellipse.dot.running"><Setter Property="Fill" Value="{DynamicResource StateRunningBrush}" /></Style>
+    <Style Selector="Ellipse.dot.yourturn"><Setter Property="Fill" Value="{DynamicResource StateOkBrush}" /></Style>
+    <Style Selector="Ellipse.dot.aborted"><Setter Property="Fill" Value="{DynamicResource StateWarnBrush}" /></Style>
+    <Style Selector="Ellipse.dot.error"><Setter Property="Fill" Value="{DynamicResource StateErrorBrush}" /></Style>
+
+    <!-- エージェントのバッジ（枠線と文字だけ。塗りつぶしのステータスのバッジと区別する） -->
+    <Style Selector="Border.agent">
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="5,0" />
+        <Setter Property="Margin" Value="6,0,0,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StateIdleBrush}" />
+    </Style>
+    <Style Selector="Border.agent.cursor"><Setter Property="BorderBrush" Value="{DynamicResource AgentCursorBrush}" /></Style>
+    <Style Selector="Border.agent.claude"><Setter Property="BorderBrush" Value="{DynamicResource AgentClaudeBrush}" /></Style>
+    <Style Selector="Border.agent > TextBlock">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource StateIdleBrush}" />
+    </Style>
+    <Style Selector="Border.agent.cursor > TextBlock"><Setter Property="Foreground" Value="{DynamicResource AgentCursorBrush}" /></Style>
+    <Style Selector="Border.agent.claude > TextBlock"><Setter Property="Foreground" Value="{DynamicResource AgentClaudeBrush}" /></Style>
+
+    <!-- ステータスのバッジ（カード）。塗りつぶし。未設定のときは出さない（IsVisible で） -->
+    <Style Selector="Border.status">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="7,0" />
+        <Setter Property="Margin" Value="6,0,0,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource StateIdleBrush}" />
+    </Style>
+    <Style Selector="Border.status.working"><Setter Property="Background" Value="{DynamicResource StateRunningBrush}" /></Style>
+    <Style Selector="Border.status.paused"><Setter Property="Background" Value="{DynamicResource StateWarnBrush}" /></Style>
+    <Style Selector="Border.status.done"><Setter Property="Background" Value="{DynamicResource StateOkBrush}" /></Style>
+    <Style Selector="Border.status > TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource BadgeTextBrush}" />
+    </Style>
+
+    <!-- 一覧のカード：枠と背景で区切る。選択中は薄い地＋太い枠（枠が太るぶん余白を減らし、選んでも中身がずれない）。
+         テンプレートごと置き換えて、どのテーマでも同じ形にする（SukiUI の ListBoxItem はガラス調の枠と ✔ を持つため）。 -->
+    <Style Selector="ListBox.cards ListBoxItem">
+        <Setter Property="Margin" Value="0,0,12,8" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Name="Box" Background="{DynamicResource CardItemBackgroundBrush}" BorderBrush="{DynamicResource CardItemBorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="8,6">
+                    <ContentPresenter Name="CardContent" Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="ListBox.cards ListBoxItem:pointerover /template/ Border#Box">
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
+    </Style>
+    <Style Selector="ListBox.cards ListBoxItem:selected /template/ Border#Box">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="Padding" Value="7,5" />
+    </Style>
+
+    <!-- 区切りのセクション（詳細のヘッダー・概要など） -->
+    <Style Selector="Border.section">
+        <Setter Property="Background" Value="{DynamicResource CardItemBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="10" />
+        <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+
+    <!-- 絞り込みのチップ。選択中は塗りつぶし -->
+    <Style Selector="CheckBox.chip">
+        <Setter Property="Margin" Value="0,0,6,4" />
+        <Setter Property="Padding" Value="9,2" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Cursor" Value="Hand" />
+        <!-- FluentTheme の CheckBox は最小の高さ 32 を持つので、外さないと枠が伸びて文字が上に寄る -->
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Name="Chip" CornerRadius="12" BorderThickness="1" Padding="{TemplateBinding Padding}"
+                        Background="{DynamicResource CardItemBackgroundBrush}" BorderBrush="{DynamicResource CardItemBorderBrush}">
+                    <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="CheckBox.chip:pointerover /template/ Border#Chip">
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
+    </Style>
+    <Style Selector="CheckBox.chip:checked /template/ Border#Chip">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBrush}" />
+        <Setter Property="TextElement.Foreground" Value="White" />
+    </Style>
+    <!-- タイムラインのチップ：狭い幅（340px）でも、チップ 5 つと検索ボックスが 1 行に収まるよう、余白を詰める -->
+    <Style Selector="CheckBox.chip.compact">
+        <Setter Property="Padding" Value="6,1" />
+        <Setter Property="Margin" Value="0,0,3,0" />
+    </Style>
+
+    <!-- 詳細のステータスボタン。選択中（.primary）はアクセント色 -->
+    <Style Selector="Button.statusbtn">
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="MinWidth" Value="72" />
+        <Setter Property="Padding" Value="14,7" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.statusbtn.primary">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+        <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.statusbtn.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+        <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- タイトルの鉛筆ボタン -->
+    <Style Selector="Button.pencil">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="4,0" />
+        <Setter Property="Content" Value="✏️" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 </Styles>

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テーマの見比べ（Phase 30-2）</title>
+<style>
+  :root { --fg:#1b1b1b; --muted:#666; --bg:#fafafa; --line:#d8d8d8; --accent:#0b63c5; }
+  body { font-family: "Hiragino Sans","Yu Gothic UI",sans-serif; color:var(--fg); background:var(--bg); margin:0; padding:24px 16px 48px; line-height:1.7; }
+  main { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 32px 0 8px; border-left:4px solid var(--accent); padding-left:8px; }
+  p.lead { color:var(--muted); margin:0 0 16px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+  figure { margin:0; background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  figure img { width:100%; display:block; }
+  figcaption { padding:6px 10px; font-size:13px; color:var(--muted); border-top:1px solid var(--line); }
+  table { border-collapse:collapse; width:100%; background:#fff; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; vertical-align:top; text-align:left; }
+  th { background:#f0f0f0; }
+  .ok { color:#1a7f37; font-weight:600; } .warn { color:#9a6700; font-weight:600; } .ng { color:#cf222e; font-weight:600; }
+  code { background:#f0f0f0; padding:1px 4px; border-radius:3px; font-size:12.5px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>テーマの見比べ：FluentTheme と SukiUI</h1>
+<p class="lead">Phase 30-2。同じ画面（カード一覧・詳細のヘッダー・右ペインの見出し）を、テーマだけ替えて撮った。mac（Hiragino Sans）・ダミーのデータ・幅 1280px。
+  左が FluentTheme（Avalonia 標準）、右が SukiUI 7.0.1。<b>配置・項目はどちらも同じ</b>（変わるのは部品の見た目だけ）。</p>
+
+<div class="grid">
+  <figure><img src="fluent-light.png" alt="FluentTheme ライト"><figcaption>FluentTheme・ライト</figcaption></figure>
+  <figure><img src="suki-light.png" alt="SukiUI ライト"><figcaption>SukiUI・ライト</figcaption></figure>
+  <figure><img src="fluent-dark.png" alt="FluentTheme ダーク"><figcaption>FluentTheme・ダーク</figcaption></figure>
+  <figure><img src="suki-dark.png" alt="SukiUI ダーク"><figcaption>SukiUI・ダーク</figcaption></figure>
+</div>
+
+<h2>見た目の違い</h2>
+<table>
+  <tr><th></th><th>FluentTheme</th><th>SukiUI</th></tr>
+  <tr><th>ボタン・検索ボックス</th><td>角が小さく、WPF 版（WPF-UI）に近い</td><td>角が丸く、一回り大きい。検索ボックスの地が薄く、無効のように見える</td></tr>
+  <tr><th>ステータスのボタン</th><td>灰色の塗り。選択中は青</td><td>白（ダークは暗い）の地に枠。選択中は青</td></tr>
+  <tr><th>カード一覧</th><td colspan="2">どちらも同じ（カードの枠・選択の見た目は、こちらでテンプレートを置き換えて統一した）</td></tr>
+  <tr><th>チップ</th><td colspan="2">どちらも同じ（こちらで作った見た目）</td></tr>
+</table>
+
+<h2>SukiUI で確かめたこと（要件 12.5 の ①〜④）</h2>
+<table>
+  <tr><th>項目</th><th>結果</th><th>説明</th></tr>
+  <tr><td>① ふつうの <code>Window</code> で崩れない</td><td class="warn">手直しで解決</td>
+    <td>そのままだと、ダークで窓の地が明るいまま・文字が暗いままになり、読めない（SukiUI は専用の <code>SukiWindow</code> で地と文字を決める）。要件 12.12 のとおり OS 標準のタイトルバーを使うので専用ウィンドウは使えない。窓の地と文字の色を自前の色（<code>WindowBackgroundBrush</code>・<code>WindowTextBrush</code>）で決めて解決した。</td></tr>
+  <tr><td>② 3 ペインに収まる</td><td class="ok">収まる</td>
+    <td>右ペインの種別チップ 5 つと検索ボックスは、340px で 1 行に収まる（両テーマとも）。SukiUI の一覧項目は余白が大きく ✔ が出るので、カードのテンプレートを置き換えた（置き換えた後は両テーマで同じ密度）。</td></tr>
+  <tr><td>③ 日本語が OS のフォントで出る</td><td class="warn">手直しで解決</td>
+    <td>SukiUI は部品ごとに独自の欧文フォントを指定する（英字だけ丸い字形になる）。<code>TextBlock</code>・<code>Button</code>・<code>TextBox</code>・<code>CheckBox</code>・<code>MenuItem</code> のフォントを自前で上書きして、日本語は Hiragino Sans で出た。</td></tr>
+  <tr><td>④ 「OS に合わせる」で、実行中の OS のライト/ダークの変更に追従する</td><td class="warn">未確認</td>
+    <td>画面を出さない環境では OS の設定を変えられない。実機で、アプリを開いたまま OS の外観を切り替えて確かめる必要がある（FluentTheme は <code>ThemeVariant.Default</code> で追従する）。</td></tr>
+</table>
+
+<h2>そのほかの判断材料</h2>
+<ul>
+  <li><b>依存</b>：SukiUI は <code>Avalonia.Controls.DataGrid</code>・<code>Avalonia.Controls.ColorPicker</code>・<code>Avalonia.Themes.Simple</code>・<code>System.Linq.Dynamic.Core</code> も連れてくる（Miharikun では使わない）。FluentTheme は Avalonia 本体の一部。</li>
+  <li><b>上書きの量</b>：SukiUI は上の ①③ と一覧の項目のほか、ダイアログ（<code>SukiUI</code> の重ねて出す形は使わない）にも手が要る見込み。FluentTheme は今のところ上書きがほぼ要らない。</li>
+  <li><b>Windows の見え方</b>：この撮影は mac。Windows の見え方は、同じテストを Windows で <code>MIHARIKUN_SHOTS=&lt;フォルダ&gt; dotnet test tests/Miharikun.UiTests</code> と回すと同じ 4 枚が撮れる。</li>
+</ul>
+
+<h2>決定（2026-10-07）</h2>
+<p><b>FluentTheme を使い、見た目は SukiUI に寄せる。</b>角の丸み・ボタン（白地に細い枠）・チップの余白を手直しした（下は採用した見た目）。SukiUI のパッケージは外した。</p>
+<div class="grid">
+  <figure><img src="adopted/light.png" alt="採用・ライト"><figcaption>採用（FluentTheme＋SukiUI 寄せ）・ライト</figcaption></figure>
+  <figure><img src="adopted/dark.png" alt="採用・ダーク"><figcaption>採用・ダーク</figcaption></figure>
+</div>
+
+<h2>（決める前の）おすすめ</h2>
+<p><b>FluentTheme</b>。WPF 版に近く、手直しがほぼ要らず、依存が増えない。SukiUI の丸みのある見た目が好みなら、上の手直し（①③と一覧項目。済み）に加えて、④の実機確認と、ダイアログまわりの確認が残る。決めるのは利用者。</p>
+</main>
+</body>
+</html>

@@ -24,6 +24,9 @@
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
+            <!-- 丸み（SukiUI に近い見た目。FluentTheme の部品すべての角に効く） -->
+            <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
+
             <!-- フォント（計画 7.10）：OS ごとに指定しないと、日本語の漢字が中国語の字形で描かれることがある -->
             <OnPlatform x:Key="UiFont" x:TypeArguments="FontFamily">
                 <On Options="Windows" Content="Yu Gothic UI, Meiryo UI, Segoe UI" />

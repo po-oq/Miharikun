@@ -1,0 +1,48 @@
+using Avalonia;
+using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
+using Avalonia.Controls;
+using Avalonia.Styling;
+using Avalonia.Threading;
+using Miharikun.Tests.Presentation;
+using Miharikun.Views;
+
+namespace Miharikun.UiTests;
+
+/// <summary>
+/// 30-2：見た目の確認用に、同じ画面（カード一覧・詳細のヘッダー・右ペインの見出し）をライトとダークで撮る（テーマは FluentTheme に決まった。
+/// 見比べのとき撮った SukiUI の画像は <c>docs/macos-support/theme-compare/</c>）。
+/// <c>MIHARIKUN_SHOTS=&lt;フォルダ&gt;</c> のときだけ動く（普段の <c>dotnet test</c> では飛ばす）。
+/// </summary>
+public sealed class ThemeScreenshots
+{
+    [AvaloniaTheory]
+    [InlineData("light")]
+    [InlineData("dark")]
+    public void Capture(string variant)
+    {
+        var dir = Environment.GetEnvironmentVariable("MIHARIKUN_SHOTS");
+        if (string.IsNullOrEmpty(dir))
+        {
+            Assert.Skip("MIHARIKUN_SHOTS=<フォルダ> のときだけ動く");
+            return;
+        }
+
+        Directory.CreateDirectory(dir);
+        var app = Application.Current!;
+        app.RequestedThemeVariant = variant == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
+
+        using var h = new MainVmHarness();
+        Scene.Fill(h);
+        var window = new Window { Width = 1280, Height = 560, Content = new DashboardView { DataContext = h.Vm } };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+
+        var frame = window.CaptureRenderedFrame();
+        Assert.NotNull(frame);
+        frame.Save(Path.Combine(dir, $"{variant}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        window.Close();
+    }
+}

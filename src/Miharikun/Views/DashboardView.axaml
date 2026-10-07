@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:Miharikun.Views"
+             x:Class="Miharikun.Views.DashboardView">
+    <!-- ダッシュボードの 3 ペイン。DataContext は MainViewModel -->
+    <Grid ColumnDefinitions="360,Auto,*,Auto,340">
+                    <!-- 左：セッション一覧（30-3 で件数・チップ・検索・警告の帯などを足す） -->
+                    <ListBox Grid.Column="0" Classes="cards" ItemsSource="{Binding VisibleCards}" SelectedItem="{Binding Selected}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" Background="Transparent"
+                             AutomationProperties.AutomationId="CardList">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate><views:SessionCardView /></DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <GridSplitter Grid.Column="1" Width="8" Background="Transparent" />
+                    <!-- 中央：詳細（30-4 で残りのブロックを足す） -->
+                    <Grid Grid.Column="2">
+                        <TextBlock Text="左の一覧からセッションを選んでください" Opacity="0.6" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNull}}" />
+                        <ScrollViewer DataContext="{Binding Detail}" VerticalScrollBarVisibility="Auto"
+                                      IsVisible="{Binding, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <StackPanel Margin="0,0,14,0">
+                                <views:DetailHeaderView />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                    <GridSplitter Grid.Column="3" Width="8" Background="Transparent" />
+                    <!-- 右：タイムライン（30-5 で一覧・メモ・最近の入力を足す） -->
+                    <views:TimelineHeadingView Grid.Column="4" VerticalAlignment="Top" />
+                </Grid>
+</UserControl>

@@ -1,6 +1,9 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-<!-- 状態の丸・完了チェックの印 -->
+<!-- ウィンドウの地と文字（テーマに任せず、自前で決める。SukiUI は ふつうの Window の地・文字の色を替えないため。30-2） -->
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#202020" />
+    <SolidColorBrush x:Key="WindowTextBrush" Color="#F3F3F3" />
+    <!-- 状態の丸・完了チェックの印 -->
     <SolidColorBrush x:Key="StateIdleBrush" Color="#9AA0A6" />
     <SolidColorBrush x:Key="StateRunningBrush" Color="#4C9AFF" />
     <SolidColorBrush x:Key="StateOkBrush" Color="#3FB950" />
