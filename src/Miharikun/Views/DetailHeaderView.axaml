@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:Miharikun.Converters"
+             xmlns:b="clr-namespace:Miharikun.Behaviors"
              xmlns:meta="clr-namespace:Miharikun.Core.Meta;assembly=Miharikun.Core"
              x:Class="Miharikun.Views.DetailHeaderView">
     <!-- 詳細のヘッダー（要件 12.3）。DataContext は SessionDetailViewModel -->
@@ -24,8 +25,9 @@
                         IsVisible="{Binding !Rename.IsEditing}" />
                 <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                            IsVisible="{Binding !Rename.IsEditing}" />
-                <TextBox FontSize="16" Text="{Binding Rename.Text}" IsVisible="{Binding Rename.IsEditing}"
-                         AutomationProperties.AutomationId="DetailRenameBox">
+                <TextBox FontSize="16" Margin="0,0,12,0" Text="{Binding Rename.Text}" IsVisible="{Binding Rename.IsEditing}"
+                         AutomationProperties.AutomationId="DetailRenameBox"
+                         b:TextBoxBehaviors.FocusWhenVisible="True" b:TextBoxBehaviors.LostFocusCommand="{Binding Rename.CommitCommand}">
                     <TextBox.KeyBindings>
                         <KeyBinding Gesture="Enter" Command="{Binding Rename.CommitCommand}" />
                         <KeyBinding Gesture="Escape" Command="{Binding Rename.CancelCommand}" />

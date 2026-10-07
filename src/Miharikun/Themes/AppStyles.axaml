@@ -36,6 +36,13 @@
         <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBorderBrush}" />
     </Style>
 
+    <!-- ヘッダーのタブ（ダッシュボード・ドキュメント・メモ）。既定は大きいので、本文に近い大きさにする -->
+    <Style Selector="TabStripItem">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="12,6" />
+    </Style>
+
     <!-- 状態の丸（絵文字は環境で色が変わるので、色つきの丸で示す） -->
     <Style Selector="Ellipse.dot">
         <Setter Property="Width" Value="9" />
