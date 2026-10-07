@@ -1,0 +1,40 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Miharikun.App"
+             Name="Miharikun"
+             RequestedThemeVariant="Default">
+    <Application.Styles>
+        <!-- テーマ（FluentTheme か SukiTheme）だけを先頭に置く。30-2 で 1 行を差し替えて見比べる（計画 7.8） -->
+        <FluentTheme />
+        <StyleInclude Source="avares://Miharikun/Themes/AppStyles.axaml" />
+    </Application.Styles>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <ResourceDictionary.MergedDictionaries>
+                        <ResourceInclude Source="avares://Miharikun/Themes/Colors.Light.axaml" />
+                    </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <ResourceDictionary.MergedDictionaries>
+                        <ResourceInclude Source="avares://Miharikun/Themes/Colors.Dark.axaml" />
+                    </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- フォント（計画 7.10）：OS ごとに指定しないと、日本語の漢字が中国語の字形で描かれることがある -->
+            <OnPlatform x:Key="UiFont" x:TypeArguments="FontFamily">
+                <On Options="Windows" Content="Yu Gothic UI, Meiryo UI, Segoe UI" />
+                <On Options="macOS" Content="Hiragino Sans, Hiragino Kaku Gothic ProN" />
+                <On Options="Default" Content="Noto Sans CJK JP, sans-serif" />
+            </OnPlatform>
+            <OnPlatform x:Key="MonoFont" x:TypeArguments="FontFamily">
+                <On Options="Windows" Content="Consolas, BIZ UDGothic, MS Gothic" />
+                <On Options="macOS" Content="Menlo, Osaka-Mono, Hiragino Sans" />
+                <On Options="Default" Content="monospace" />
+            </OnPlatform>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Miharikun.MainWindow"
+        Title="Miharikun"
+        Width="1280" Height="820" MinWidth="900" MinHeight="500"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <!-- 対象のフォルダを選ぶ前（mac で引数なしのとき）。組み立てが終わると隠れる（計画 7.7） -->
+        <TextBlock x:Name="PickerPanel" Text="対象のフォルダを選んでください" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Opacity="0.7" />
+
+        <Grid x:Name="MainPanel" IsVisible="False" RowDefinitions="Auto,*" Margin="8,4,8,8">
+            <!-- 共通ヘッダー：タブ 3 つ・対象フォルダ・⚙（どのタブでも見える） -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                <TabStrip x:Name="MainTabs" Grid.Column="0" SelectedIndex="0" SelectionChanged="OnTabChanged">
+                    <TabStripItem Content="ダッシュボード" AutomationProperties.AutomationId="TabDashboard" />
+                    <TabStripItem Content="ドキュメント" AutomationProperties.AutomationId="TabDocuments" />
+                    <TabStripItem Content="メモ" AutomationProperties.AutomationId="TabMemo" />
+                </TabStrip>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ProjectFolder}" Opacity="0.7" VerticalAlignment="Center" />
+                    <Button Content="⚙" Padding="8,2" Background="Transparent" AutomationProperties.AutomationId="MenuButton"
+                            ToolTip.Tip="Hook の導入・削除、テーマ、設定、ドキュメントの設定">
+                        <Button.Flyout>
+                            <MenuFlyout Opened="OnMenuOpened">
+                                <MenuItem Header="Hook を導入 / 再導入" Click="OnInstallHookClick" />
+                                <MenuItem Header="Hook を削除" Click="OnUninstallHookClick" />
+                                <Separator />
+                                <MenuItem Header="テーマ">
+                                    <MenuItem x:Name="ThemeSystem" Header="OS に合わせる" Tag="System" ToggleType="Radio" GroupName="Theme" Click="OnThemeClick" />
+                                    <MenuItem x:Name="ThemeLight" Header="ライト" Tag="Light" ToggleType="Radio" GroupName="Theme" Click="OnThemeClick" />
+                                    <MenuItem x:Name="ThemeDark" Header="ダーク" Tag="Dark" ToggleType="Radio" GroupName="Theme" Click="OnThemeClick" />
+                                </MenuItem>
+                                <Separator />
+                                <!-- 30-6・31-2 で作る -->
+                                <MenuItem Header="設定…" IsEnabled="False" AutomationProperties.AutomationId="SettingsMenu" />
+                                <MenuItem Header="ドキュメントの設定…" IsEnabled="False" AutomationProperties.AutomationId="DocumentSettingsMenu" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- タブの中身：3 つとも画面に載せたまま IsVisible で切り替える（WebView を壊さないため。計画 7.17）。中身は 30-3〜31 で作る -->
+            <Grid Grid.Row="1" Margin="0,8,0,0">
+                <Border x:Name="DashboardHost" IsVisible="True" />
+                <Border x:Name="DocumentsHost" IsVisible="False" />
+                <Border x:Name="MemoHost" IsVisible="False" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

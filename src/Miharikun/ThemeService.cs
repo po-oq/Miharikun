@@ -1,40 +1,29 @@
-using System.Windows;
+using Avalonia;
+using Avalonia.Styling;
 using Miharikun.Core.Settings;
-using Wpf.Ui.Appearance;
-using Wpf.Ui.Controls;
 
 namespace Miharikun;
 
 /// <summary>
-/// テーマの適用。System のときは OS のライト/ダーク変更に実行中も追従する。
-/// WPF-UI のコントロール色は ApplicationThemeManager が、アプリ独自の色（Themes\Colors.*.xaml）はここで差し替える。
+/// テーマの適用（計画 7.8）。System のときは OS のライト/ダークの変更に、実行中も追従する（<c>ThemeVariant.Default</c>）。
+/// 色は <c>App.axaml</c> の <c>ThemeDictionaries</c>（<c>Themes/Colors.*.axaml</c>）から読まれるので、辞書の差し替えは要らない。
 /// </summary>
 public sealed class ThemeService(AppSettingsStore settings)
 {
-    private const string ColorsDictionaryPrefix = "Themes/Colors.";
-
-    private Window? _window;
-
     public AppTheme Mode { get; private set; } = AppTheme.System;
 
     /// <summary>いま、ダークで表示しているか。</summary>
-    public bool IsDark { get; private set; }
+    public bool IsDark => Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
 
     /// <summary>見た目が変わった（⚙ からの変更・OS の変更の両方）。引数は変更後の IsDark。UI スレッドで呼ばれる。</summary>
     public event Action<bool>? Changed;
 
-    /// <summary>ウィンドウが出来てから呼ぶ（OS の変更の監視にウィンドウが要る）。</summary>
-    public void Start(Window window)
+    /// <summary>保存したテーマを適用する。ウィンドウを出す前に呼ぶ（空のウィンドウも、保存したテーマで出る）。</summary>
+    public void Start()
     {
-        _window = window;
-        ApplicationThemeManager.Changed += (theme, _) =>
-        {
-            IsDark = theme == ApplicationTheme.Dark;
-            Changed?.Invoke(IsDark);
-        };
+        var app = Application.Current!;
+        app.ActualThemeVariantChanged += (_, _) => Changed?.Invoke(IsDark);
         Apply(settings.LoadTheme());
-        // 監視の開始・解除は、ウィンドウが読み込まれてからでないとできない。
-        window.Loaded += (_, _) => UpdateWatcher();
     }
 
     public void Set(AppTheme mode)
@@ -48,37 +37,11 @@ public sealed class ThemeService(AppSettingsStore settings)
     private void Apply(AppTheme mode)
     {
         Mode = mode;
-        UpdateWatcher();
-
-        var dark = mode switch
+        Application.Current!.RequestedThemeVariant = mode switch
         {
-            AppTheme.Light => false,
-            AppTheme.Dark => true,
-            _ => ApplicationThemeManager.GetSystemTheme() != SystemTheme.Light,
+            AppTheme.Light => ThemeVariant.Light,
+            AppTheme.Dark => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
         };
-        IsDark = dark;
-        ApplicationThemeManager.Apply(dark ? ApplicationTheme.Dark : ApplicationTheme.Light, WindowBackdropType.Mica);
-        SetColors(dark);
-    }
-
-    private void UpdateWatcher()
-    {
-        if (_window is not { IsLoaded: true })
-            return;
-        if (Mode == AppTheme.System)
-            SystemThemeWatcher.Watch(_window, WindowBackdropType.Mica);
-        else
-            SystemThemeWatcher.UnWatch(_window);
-    }
-
-    /// <summary>独自の色の辞書を、ライト用／ダーク用に差し替える。</summary>
-    private static void SetColors(bool dark)
-    {
-        var merged = Application.Current.Resources.MergedDictionaries;
-        var uri = new Uri($"{ColorsDictionaryPrefix}{(dark ? "Dark" : "Light")}.xaml", UriKind.Relative);
-        var existing = merged.FirstOrDefault(d => d.Source?.OriginalString.StartsWith(ColorsDictionaryPrefix, StringComparison.Ordinal) == true);
-        if (existing is not null)
-            merged.Remove(existing);
-        merged.Add(new ResourceDictionary { Source = uri });
     }
 }
