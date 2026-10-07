@@ -1,0 +1,21 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Miharikun.Views.DocumentSettingsDialog"
+        Title="ドキュメントの設定"
+        Width="640" Height="520" MinWidth="480" MinHeight="360"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+    <!-- プロジェクトごとの除外パターン（gitignore 形式。要件 12.7）。WebView の上に重ならないよう、別ウィンドウにしている -->
+    <DockPanel Margin="16">
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" LastChildFill="False">
+            <Button x:Name="ResetButton" DockPanel.Dock="Left" Content="既定に戻す" Click="OnResetClick" AutomationProperties.AutomationId="ResetButton" />
+            <Button DockPanel.Dock="Right" Content="キャンセル" IsCancel="True" Margin="8,0,0,0" Click="OnCancelClick" />
+            <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="保存" Classes="accent" Click="OnSaveClick" AutomationProperties.AutomationId="SaveButton" />
+        </DockPanel>
+        <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0" Opacity="0.7" TextWrapping="Wrap" FontSize="12"
+                   Text="# コメント　! 除外の取り消し　末尾の / はフォルダのみ　* ? **　大文字小文字は区別しない　後ろの行が優先。除外したフォルダの中身は ! で戻せません（git と同じ）。" />
+        <TextBlock DockPanel.Dock="Top" x:Name="ProjectText" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+        <TextBlock DockPanel.Dock="Top" Margin="0,8,0,4" Text="除外するフォルダ・ファイル（gitignore 形式。1 行に 1 つ）" FontWeight="SemiBold" />
+        <TextBox x:Name="IgnoreBox" Classes="mono" AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap"
+                 AutomationProperties.AutomationId="IgnoreBox" />
+    </DockPanel>
+</Window>

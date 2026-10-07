@@ -948,6 +948,9 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - mac の iframe（`NavigationStarted` が iframe にも来る）：自分で開いたページを読み込んでいる間（`Navigate`／`Refresh` から `NavigationCompleted` まで）は、ほかの移動も通す。読み込みが終わってからの移動は、リンクのクリックとして振り分ける。この間にリンクを押すと、通ってしまう（まれ）。
   - テスト：`PreviewNavigationPolicyTests`（21 件）、`MarkdownPreviewTests`（案内の出し入れ 3 件）。mac で Tests 1106 合格・スキップ 29、UiTests 44 合格・スキップ 3。
   - 未確認（目視）：プレビューをはめる画面（ドキュメントタブ）は 31-2 なので、mac・Windows とも実際に md・html を出す確認、iframe を含む html で既定のブラウザが勝手に開かないこと、`Refresh()` 後のスクロール位置、Windows の `AdapterInfo` の値（Runtime 入りで `WebView2` か）と Runtime 未導入の案内は、31-2 の後。
+- 状況（31-2、2026-10-08、mac）：ドキュメントタブを作った（`Views/DocumentsView`：ツリー（`TreeDataTemplate`。展開・選択は VM と双方向）・一覧・絞り込み・読み直し・件数・概要カード・「既定のアプリで開く」「フォルダで開く（mac は Finder で表示）」「再読み込み」・空の表示。内容は 31-1 の `MarkdownPreview`）と、`Views/DocumentSettingsDialog`（除外パターン。保存で監視と走査をやり直す）。`MainWindow` の「ドキュメントの設定…」を有効にし、タブが最初に見えたとき（`OnTabChanged`）に `DocumentsViewModel.Start()` を呼ぶ。タブの中身は画面に載せたまま `IsVisible` で切り替える（WebView を作り直さない）。テスト：`DocumentsViewTests`（5 件。一覧・ツリー・概要とボタン・絞り込み・空・設定ダイアログ）。mac で Tests 1106 合格・スキップ 29、UiTests 49 合格・スキップ 3。`dist/mac/Miharikun.app` をビルドした。
+  - 確認済み（利用者の目視、2026-10-08）：mac で md・html が出る。
+  - 後回し（利用者が了承）：Windows での確認（md・html が出ること、`AdapterInfo`（Runtime 入りで `WebView2` か）と Runtime 未導入の案内）、iframe を含む html で既定のブラウザが勝手に開かないこと（手元に該当の html が無い）。未確認のまま残るもの：再読み込み・タブを行き来したあとのスクロール位置、ライト/ダークの見た目。
 - 完了条件：12.7・12.10 が Windows と mac の両方で動く（md のチェックボックス・mermaid・相対パスの画像・リンク・タブを行き来してもスクロール位置が保たれる）
 
 ## [ ] Phase 32: 配布

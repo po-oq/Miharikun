@@ -33,19 +33,18 @@
                                     <MenuItem x:Name="ThemeDark" Header="ダーク" Tag="Dark" ToggleType="Radio" GroupName="Theme" Click="OnThemeClick" />
                                 </MenuItem>
                                 <Separator />
-                                <!-- ドキュメントの設定は 31-2 で作る -->
                                 <MenuItem Header="設定…" Click="OnSettingsClick" AutomationProperties.AutomationId="SettingsMenu" />
-                                <MenuItem Header="ドキュメントの設定…" IsEnabled="False" AutomationProperties.AutomationId="DocumentSettingsMenu" />
+                                <MenuItem Header="ドキュメントの設定…" Click="OnDocumentSettingsClick" AutomationProperties.AutomationId="DocumentSettingsMenu" />
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
                 </StackPanel>
             </Grid>
 
-            <!-- タブの中身：3 つとも画面に載せたまま IsVisible で切り替える（WebView を壊さないため。計画 7.17）。中身は 30-3〜31 で作る -->
+            <!-- タブの中身：3 つとも画面に載せたまま IsVisible で切り替える（WebView を壊さないため。計画 7.17）。メモは 31-3 で作る -->
             <Grid Grid.Row="1" Margin="0,8,0,0">
                 <views:DashboardView x:Name="DashboardHost" IsVisible="True" />
-                <Border x:Name="DocumentsHost" IsVisible="False" />
+                <views:DocumentsView x:Name="DocumentsHost" IsVisible="False" />
                 <Border x:Name="MemoHost" IsVisible="False" />
             </Grid>
         </Grid>

@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     {
         _composition = composition;
         DataContext = composition.ViewModel;
+        DocumentsHost.DataContext = composition.Documents;
         Title = $"Miharikun - {composition.ViewModel.ProjectFolder}";
         PickerPanel.IsVisible = false;
         MainPanel.IsVisible = true;
@@ -69,6 +70,8 @@ public partial class MainWindow : Window
         DashboardHost.IsVisible = index == 0;
         DocumentsHost.IsVisible = index == 1;
         MemoHost.IsVisible = index == 2;
+        if (index == 1)
+            _composition?.Documents.Start();   // 最初に見えたとき、監視と走査を始める（起動を遅くしない）
     }
 
     /// <summary>メモのリンクから：ドキュメントタブに切り替えてから、そのファイルを選ぶ。</summary>
@@ -143,6 +146,24 @@ public partial class MainWindow : Window
         if (sender is MenuItem { Tag: string tag } && Enum.TryParse<AppTheme>(tag, out var mode))
             _composition?.Theme.Set(mode);
     }
+
+    /// <summary>プロジェクトごとの除外パターン（要件 12.7）。保存すると監視と走査をやり直す。</summary>
+    private void OnDocumentSettingsClick(object? sender, RoutedEventArgs e) => RunSafe(async () =>
+    {
+        var documents = _composition!.Documents;
+        _settingsOpen = true;
+        string? text;
+        try
+        {
+            text = await DocumentSettingsDialog.ShowAsync(this, documents.ProjectFolder, documents.CurrentIgnoreText, documents.DefaultIgnoreText);
+        }
+        finally
+        {
+            _settingsOpen = false;
+        }
+        if (text is not null)
+            documents.ApplyIgnoreText(text);
+    });
 
     private void OnInstallHookClick(object? sender, RoutedEventArgs e) => RunSafe(_composition!.HookSetup.InstallFromMenuAsync);
 
