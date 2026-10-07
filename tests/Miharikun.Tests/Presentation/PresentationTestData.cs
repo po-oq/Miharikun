@@ -8,6 +8,16 @@ using Miharikun.ViewModels;
 namespace Miharikun.Tests.Presentation;
 
 /// <summary>ViewModel のテスト用の部品。本物の git・画面・ファイル監視は使わない（メタだけ一時フォルダに書く）。</summary>
+/// <summary>背景の処理を、呼んだスレッドの上で同期的に実行する（背景の続きがテストの最中に一覧を触って競合しないように）。</summary>
+internal sealed class InlineRunner : Miharikun.Services.IBackgroundRunner
+{
+    public Task<T> Run<T>(Func<T> work)
+    {
+        try { return Task.FromResult(work()); }
+        catch (Exception ex) { return Task.FromException<T>(ex); }
+    }
+}
+
 internal sealed class MainVmHarness : IDisposable
 {
     public static readonly DateTimeOffset Now = DateTimeOffset.Now;
@@ -28,7 +38,7 @@ internal sealed class MainVmHarness : IDisposable
     public int CommitCalls { get; private set; }
     public Func<GitStatus?>? GitStatusOverride { get; set; }
 
-    public MainVmHarness(int runningTimeoutMinutes = 10, string? hookErrorLogPath = null)
+    public MainVmHarness(int runningTimeoutMinutes = 10, string? hookErrorLogPath = null, Miharikun.Services.IBackgroundRunner? background = null)
     {
         Paths = new AppPaths(Dir);
         Directory.CreateDirectory(Project);
@@ -45,7 +55,7 @@ internal sealed class MainVmHarness : IDisposable
                 CommitCalls++;
                 return Commits;
             },
-            runningTimeoutMinutes, hookErrorLogPath, Log.Add);
+            runningTimeoutMinutes, hookErrorLogPath, Log.Add, background ?? new InlineRunner());
     }
 
     public void Dispose()

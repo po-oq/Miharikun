@@ -323,9 +323,12 @@ public sealed class MainViewModelTests : IDisposable
     [Fact]
     public async Task Git_refresh_does_not_overlap_and_a_failure_is_logged_not_thrown()
     {
+        // 実際に背景で動かす（重なりを止める動きは、ほかのテストの同期実行では確かめられない）。一覧は触らないので競合しない。
+        using var h = new MainVmHarness(background: new Miharikun.Services.ThreadPoolRunner());
+        var Vm = h.Vm;
         var gate = new TaskCompletionSource();
         var calls = 0;
-        _h.GitStatusOverride = () =>
+        h.GitStatusOverride = () =>
         {
             Interlocked.Increment(ref calls);
             gate.Task.Wait();
@@ -339,9 +342,9 @@ public sealed class MainViewModelTests : IDisposable
         gate.SetResult();
         await first;
 
-        _h.GitStatusOverride = () => throw new InvalidOperationException("壊れた");
+        h.GitStatusOverride = () => throw new InvalidOperationException("壊れた");
         await Vm.RefreshGitAsync();
-        Assert.Contains(_h.Log, l => l.Contains("git の更新に失敗") && l.Contains("壊れた"));
+        Assert.Contains(h.Log, l => l.Contains("git の更新に失敗") && l.Contains("壊れた"));
     }
 
     [Fact]

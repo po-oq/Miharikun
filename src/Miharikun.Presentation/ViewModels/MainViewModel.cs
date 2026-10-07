@@ -28,6 +28,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly Func<SessionSummary, IReadOnlyList<GitCommit>?> _loadCommits;
     private GitStatus? _gitStatus;
     private bool _gitBusy;
+    private readonly IBackgroundRunner _background;
     private DateTimeOffset _lastGitRefresh = DateTimeOffset.MinValue;
     private int _ticks;
     private (string?, string?, string?, DateTimeOffset, DateTimeOffset) _commitKey;
@@ -128,8 +129,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public MainViewModel(string projectFolder, SessionMonitor monitor, SynchronizationContext ui,
         Func<SessionKey, IReadOnlyList<AgentEvent>> getEvents, SessionMetaService meta, IUiServices services,
         Func<GitStatus?> getGitStatus, Func<SessionSummary, IReadOnlyList<GitCommit>?> loadCommits,
-        int runningTimeoutMinutes = StalledRule.DefaultTimeoutMinutes, string? hookErrorLogPath = null, Action<string>? log = null)
+        int runningTimeoutMinutes = StalledRule.DefaultTimeoutMinutes, string? hookErrorLogPath = null, Action<string>? log = null,
+        IBackgroundRunner? background = null)
     {
+        _background = background ?? new ThreadPoolRunner();
         RunningTimeoutMinutes = runningTimeoutMinutes;
         _hookErrorLogPath = hookErrorLogPath;
         _services = services;
@@ -372,7 +375,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _gitBusy = true;
         try
         {
-            _gitStatus = await Task.Run(_getGitStatus);
+            _gitStatus = await _background.Run(_getGitStatus);
             _lastGitRefresh = DateTimeOffset.Now;
 
             foreach (var card in Cards)
@@ -406,7 +409,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         try
         {
-            var commits = await Task.Run(() => _loadCommits(s));
+            var commits = await _background.Run(() => _loadCommits(s));
             // 待っている間に選択や範囲が変わっていたら捨てる
             if (Detail is not null && Detail.Key == s.Key && _commitKey == key)
                 Detail.SetCommits(commits);
