@@ -1,3 +1,5 @@
+using Miharikun.Core.Install;
+
 namespace Miharikun.Core.Settings;
 
 /// <summary>
@@ -16,7 +18,7 @@ public static class HookDirInput
             return "フォルダを指定してください";
         return TryNormalize(text, out var dir)
             ? (Directory.Exists(dir) || IsDefault(dir, defaultDir) ? null : "フォルダが見つかりません")
-            : "C:\\ から始まるフォルダを指定してください";
+            : HookWording.NotAbsoluteMessage;
     }
 
     private static bool IsDefault(string dir, string? defaultDir) =>

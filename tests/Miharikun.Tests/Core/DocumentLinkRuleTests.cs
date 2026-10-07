@@ -4,12 +4,16 @@ namespace Miharikun.Tests.Core;
 
 public sealed class DocumentLinkRuleTests
 {
-    private const string Root = @"C:\work\proj";
+    private static readonly string Root = TestPaths.Abs("work", "proj");
+
+    /// <summary>Windows の形のパス（<c>C:\work\…</c>）を、この OS の形にする（mac は <c>/work/…</c>）。</summary>
+    private static string Os(string windowsPath) =>
+        OperatingSystem.IsWindows() ? windowsPath : windowsPath[2..].Replace('\\', '/');
 
     private static readonly GitIgnoreMatcher Matcher = GitIgnoreMatcher.Parse("node_modules/\n*.secret.md\nbuild/\n");
 
     private static bool Check(string fullPath, out string rel, GitIgnoreMatcher? matcher = null) =>
-        DocumentLinkRule.TryGetInAppPath(Root, fullPath, matcher ?? Matcher, out rel);
+        DocumentLinkRule.TryGetInAppPath(Root, Os(fullPath), matcher ?? Matcher, out rel);
 
     [Theory]
     [InlineData(@"C:\work\proj\README.md", "README.md")]
@@ -26,7 +30,7 @@ public sealed class DocumentLinkRuleTests
     [Fact]
     public void Root_may_have_a_trailing_separator()
     {
-        Assert.True(DocumentLinkRule.TryGetInAppPath(Root + @"\", @"C:\work\proj\a.md", Matcher, out var rel));
+        Assert.True(DocumentLinkRule.TryGetInAppPath(Root + Path.DirectorySeparatorChar, Os(@"C:\work\proj\a.md"), Matcher, out var rel));
         Assert.Equal("a.md", rel);
     }
 
@@ -35,10 +39,16 @@ public sealed class DocumentLinkRuleTests
     [InlineData(@"C:\work\a.md")]
     [InlineData(@"C:\work\proj\..\a.md")]
     [InlineData(@"C:\work\proj2\a.md")]
-    [InlineData(@"D:\work\proj\a.md")]
     public void Documents_outside_the_root_are_not(string full)
     {
         Assert.False(Check(full, out var rel));
+        Assert.Equal("", rel);
+    }
+
+    [WindowsFact]
+    public void A_document_on_another_drive_is_not_inside()
+    {
+        Assert.False(Check(@"D:\work\proj\a.md", out var rel));
         Assert.Equal("", rel);
     }
 
@@ -71,8 +81,17 @@ public sealed class DocumentLinkRuleTests
     }
 
     [Fact]
+    public void A_link_written_in_NFC_to_a_file_with_an_NFD_name_gives_the_NFC_relative_path()
+    {
+        var nfd = "がっこう.md".Normalize(System.Text.NormalizationForm.FormD);
+
+        Assert.True(DocumentLinkRule.TryGetInAppPath(Root, Path.Combine(Root, nfd), Matcher, out var rel));
+        Assert.Equal("がっこう.md", rel);   // 索引（NFC で比べる）と同じ形
+    }
+
+    [Fact]
     public void The_root_itself_is_not()
     {
-        Assert.False(Check(Root, out _));
+        Assert.False(DocumentLinkRule.TryGetInAppPath(Root, Root, Matcher, out _));
     }
 }

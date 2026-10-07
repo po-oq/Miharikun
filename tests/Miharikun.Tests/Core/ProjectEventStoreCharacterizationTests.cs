@@ -15,7 +15,7 @@ public sealed class ProjectEventStoreCharacterizationTests : IDisposable
     private readonly AppPaths _paths;
     private readonly List<string> _logs = [];
     private readonly ProjectEventStore _store;
-    private const string ProjectSlug = "c-work-proj";
+    private static readonly string ProjectSlug = RootSlug;
 
     public ProjectEventStoreCharacterizationTests()
     {
@@ -56,7 +56,7 @@ public sealed class ProjectEventStoreCharacterizationTests : IDisposable
         _store.Refresh();
         Assert.Equal([Key("s1")], _store.Sessions);
 
-        File.WriteAllText(_paths.EventFile("cursor", "s1"), Line("sessionStart", "", 0, "s1", root: @"C:\elsewhere") + "\n");
+        File.WriteAllText(_paths.EventFile("cursor", "s1"), Line("sessionStart", "", 0, "s1", root: TestPaths.Abs("elsewhere")) + "\n");
         var changed = _store.Refresh();
 
         Assert.Equal([Key("s1")], changed);

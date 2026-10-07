@@ -19,11 +19,14 @@ public sealed class HookSetup
     private readonly AppSettingsStore _settings;
     private readonly AppPaths _paths;
     private readonly IUiServices _ui;
+    private readonly IHookCheck _check;
     private HookInstaller _installer;
 
     /// <param name="create">置き場所（null なら既定）から installer を作る。</param>
-    public HookSetup(Func<string?, HookInstaller> create, AppSettingsStore settings, AppPaths paths, IUiServices ui)
+    public HookSetup(Func<string?, HookInstaller> create, AppSettingsStore settings, AppPaths paths, IUiServices ui,
+        IHookCheck? check = null)
     {
+        _check = check ?? new HookCheck(AppLog.Write);
         _create = create;
         _settings = settings;
         _paths = paths;
@@ -76,7 +79,7 @@ public sealed class HookSetup
                 return;
 
             case HookInstallState.ExeOutdated:
-                await OfferAsync("導入済みの Hook exe が、同梱のものと違います（更新）。");
+                await OfferAsync($"導入済みの {HookWording.Noun} が、同梱のものと違います（更新）。");
                 return;
         }
     }
@@ -111,7 +114,7 @@ public sealed class HookSetup
 
         var yes = await _ui.ConfirmAsync(Title,
             "この場所に Hook を導入し直しますか？\n" +
-            $"（{_installer.HooksJsonPath} の Miharikun の登録をこの場所に書き換え、Hook exe をコピーします）\n\n" +
+            $"（{_installer.HooksJsonPath} の Miharikun の登録をこの場所に書き換え、{HookWording.Noun} をコピーします）\n\n" +
             newFolder);
         if (yes)
             await InstallFromMenuAsync();
@@ -122,7 +125,7 @@ public sealed class HookSetup
     {
         if (!_installer.CanInstall)
         {
-            await ShowAsync($"{HookInstaller.HookExeName} が見つかりません。\nMiharikun.exe と同じフォルダに置いてください。", MessageKind.Warning);
+            await ShowAsync($"{HookInstaller.HookExeName} が見つかりません。\n{HookWording.BundledPlace}に置いてください。", MessageKind.Warning);
             return;
         }
         await RunInstallAsync();
@@ -133,7 +136,7 @@ public sealed class HookSetup
         var yes = await _ui.ConfirmAsync("Miharikun - Hook の削除",
             $"{_installer.HooksJsonPath} から Miharikun の hook を外します。\n" +
             "ほかのツールの設定は変えず、変更前にバックアップを作ります。\n" +
-            "記録済みのデータと Hook exe は残ります。\n\n外しますか？");
+            $"記録済みのデータと {HookWording.Noun} は残ります。\n\n外しますか？");
         if (!yes)
             return;
 
@@ -146,7 +149,7 @@ public sealed class HookSetup
     {
         var yes = await _ui.ConfirmAsync(Title,
             reason + "\n\n" +
-            $"・Hook exe を {_installer.InstalledExePath} にコピーします\n" +
+            $"・{HookWording.Noun} を {_installer.InstalledExePath} にコピーします\n" +
             $"・{_installer.HooksJsonPath} に Miharikun の登録を追加します\n" +
             "　（既存の設定はそのまま。変更前に hooks.json.bak-日時 を作ります）\n\n導入しますか？");
         if (yes)
@@ -157,9 +160,23 @@ public sealed class HookSetup
     {
         var result = _installer.Install();
         AppLog.Write("hook の導入: " + result.Message);
-        await ShowAsync(
-            result.Success ? result.Message + "\n\nCursor 側に反映されない場合は、Cursor を再起動してください。" : result.Message,
-            result.Success ? MessageKind.Information : MessageKind.Warning);
+        if (!result.Success)
+        {
+            await ShowAsync(result.Message, MessageKind.Warning);
+            return;
+        }
+
+        // 導入のあと（メニュー・置き場所の変更の「はい」とも）：mac は「隔離」の印を外し、両 OS で試しに起動する（要件 8.1）。
+        // 起動時の受け入れ・確認では走らせない（RunInstall を通らない）。
+        await _check.ClearQuarantineAsync(_installer.InstalledExePath);
+        if (!await _check.ProbeAsync(_installer.InstalledExePath))
+        {
+            await ShowAsync(result.Message + "\n\n" +
+                            HookGuidance.Build(OperatingSystem.IsMacOS(), Environment.ProcessPath), MessageKind.Warning);
+            return;
+        }
+
+        await ShowAsync(result.Message + "\n\nCursor 側に反映されない場合は、Cursor を再起動してください。", MessageKind.Information);
     }
 
     private Task ShowAsync(string text, MessageKind kind) => _ui.ShowMessageAsync(Title, text, kind);

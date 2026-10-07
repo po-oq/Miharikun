@@ -20,16 +20,27 @@ public static class ShellOpen
         }
     }
 
-    /// <summary>ファイラーでファイルを選んだ状態で開く（Windows はエクスプローラー。mac は 29-4 で足す）。</summary>
+    /// <summary>「フォルダで開く」ボタンの文字（要件 12.12）。Windows は「フォルダで開く」、mac は「Finder で表示」。</summary>
+    public static string RevealButtonText => OperatingSystem.IsMacOS() ? "Finder で表示" : "フォルダで開く";
+
+    /// <summary>ファイラーでファイルを選んだ状態で開くコマンド（Windows は <c>explorer.exe /select,</c>、mac は <c>open -R</c>）。</summary>
+    public static (string FileName, string[] Arguments) BuildRevealCommand(bool isMac, string file) =>
+        isMac ? ("open", ["-R", file]) : ("explorer.exe", [$"/select,{file}"]);
+
+    /// <summary>ファイラーでファイルを選んだ状態で開く（Windows はエクスプローラー、mac は Finder）。</summary>
     public static void Reveal(string file)
     {
         try
         {
-            Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = false, ArgumentList = { $"/select,{file}" } });
+            var (fileName, arguments) = BuildRevealCommand(OperatingSystem.IsMacOS(), file);
+            var info = new ProcessStartInfo(fileName) { UseShellExecute = false };
+            foreach (var a in arguments)
+                info.ArgumentList.Add(a);
+            Process.Start(info);
         }
         catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
-            AppLog.Write($"{file} をエクスプローラーで開けない: {ex.Message}");
+            AppLog.Write($"{file} をファイラーで開けない: {ex.Message}");
         }
     }
 }

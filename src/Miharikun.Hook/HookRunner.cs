@@ -11,6 +11,7 @@ public static class HookRunner
 {
     private const int AppendRetryCount = 10;
     private const int AppendRetryDelayMs = 20;
+    private static readonly FileShare AppendShare = OperatingSystem.IsWindows() ? FileShare.Read : FileShare.None;
     private const int MaxBadInputFiles = 20;
 
     private static readonly UTF8Encoding Utf8NoBom = new(false);
@@ -22,6 +23,13 @@ public static class HookRunner
     public static int Run(string[] args, Stream stdin, TextWriter stdout, AppPaths paths, Func<DateTimeOffset>? clock = null,
         string? tempDir = null)
     {
+        // 試しの起動（導入の確認用。要件 8.1）：何も読まず・書かず、ok を出して 0 で終わる。--agent より先に見る。
+        if (args.Contains("--probe"))
+        {
+            stdout.Write("ok");
+            return 0;
+        }
+
         var eventName = "unknown";
         try
         {
@@ -144,7 +152,9 @@ public static class HookRunner
         {
             try
             {
-                using var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
+                // Windows は FileShare.Read で、ほかの書き手を締め出せる。Unix の .NET は FileShare.None のときだけ排他ロックをかけ
+                // （Read は共有ロック）、同時に追記すると互いに上書きしてしまうので、Unix では None にする（読む側は IOException で次回に回す）。
+                using var fs = new FileStream(path, FileMode.Append, FileAccess.Write, AppendShare);
                 fs.Write(bytes);
                 return;
             }

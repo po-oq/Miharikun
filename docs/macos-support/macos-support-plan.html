@@ -527,7 +527,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 </li>
 <li><b>シンボリックリンク</b>（レビュー Q5＝A）：mac は <code>/tmp</code> → <code>/private/tmp</code>、<code>/var</code> → <code>/private/var</code>（一時フォルダ）など、リンクが多い。Claude Code の <code>cwd</code> と git のルート（<code>rev-parse --show-toplevel</code>）は実パスで来る。ターミナルの <code>$PWD</code> は論理パスになりうる。
 <ul>
-<li>App は対象フォルダの実パスも持つ（<code>Core/Projects/RealPath</code>：libc の <code>realpath</code> を <code>LibraryImport</code>。AOT 互換。mac だけ。Windows は今のまま）。<code>ProjectPath.Matches</code> は、論理パス・実パスのどちらかが一致すれば対象。
+<li>App は対象フォルダの実パスも持つ（<code>Core/Projects/RealPath</code>：部品を 1 つずつ <code>FileInfo.LinkTarget</code> でたどる managed の実装（libc の <code>realpath</code> を呼ぶ案をやめた：unsafe を Core に入れずに済み、AOT 互換。2026-10-07、29-4）。mac だけ。Windows は今のまま）。<code>ProjectPath.Matches</code> は、論理パス・実パスのどちらかが一致すれば対象。
 </li>
 <li><code>GitClient.GetStatus</code> は、status のパスを <code>rev-parse --show-toplevel</code>（実パス）でなく、作業フォルダからの相対（<code>git rev-parse --show-cdup</code>）で論理のルートに付ける（<code>Uncommitted.Files</code> が対象フォルダ（論理）で比べるため）。
 </li>

@@ -57,7 +57,7 @@ public sealed class ProjectEventStoreTests : IDisposable
     [Fact]
     public void Matches_case_insensitively_and_with_multi_root()
     {
-        Write("a", Line("stop", "\"status\":\"completed\"", 0, "a", root: @"c:\WORK\PROJ"));
+        Write("a", Line("stop", "\"status\":\"completed\"", 0, "a", root: Root.ToUpperInvariant()));
 
         Assert.Single(_store.Refresh());
     }

@@ -61,7 +61,27 @@ public sealed class HookInstallerTests : IDisposable
         Assert.Equal(HookInstallState.Installed, Installer().GetState());
     }
 
-    [Fact]
+    [MacTheory]
+    [InlineData("/Users/boss/dev/Miharikun.Hook", "/Users/boss/dev/Miharikun.Hook --agent cursor")]
+    [InlineData("/Users/boss/Library/Application Support/Miharikun/bin/Miharikun.Hook",
+        "\"/Users/boss/Library/Application Support/Miharikun/bin/Miharikun.Hook\" --agent cursor")]   // 27-1 で実機で動くと確認した形
+    public void Mac_command_quotes_only_a_path_with_spaces(string exe, string expected)
+    {
+        var command = HookInstaller.BuildCommand(exe);
+
+        Assert.Equal(expected, command);
+        Assert.True(HookInstaller.IsOurs(command));
+        Assert.Equal(exe, HookInstaller.TryParseExePath(command));
+    }
+
+    [MacFact]
+    public void Mac_name_has_no_extension_and_a_backslash_in_a_path_is_kept()
+    {
+        Assert.Equal("Miharikun.Hook", HookInstaller.HookExeName);
+        Assert.Equal("/Users/x/a\\b/Miharikun.Hook --agent cursor", HookInstaller.BuildCommand("/Users/x/a\\b/Miharikun.Hook"));
+    }
+
+    [WindowsFact]
     public void Command_uses_forward_slashes_and_the_agent_argument()
     {
         var command = HookInstaller.BuildCommand(@"C:\Users\boss\AppData\Local\Miharikun\bin\Miharikun.Hook.exe");
@@ -69,7 +89,7 @@ public sealed class HookInstallerTests : IDisposable
         Assert.Equal("C:/Users/boss/AppData/Local/Miharikun/bin/Miharikun.Hook.exe --agent cursor", command);
     }
 
-    [Fact]
+    [WindowsFact]
     public void Command_quotes_a_path_with_spaces()
     {
         var command = HookInstaller.BuildCommand(@"C:\Users\Boss Name\AppData\Local\Miharikun\bin\Miharikun.Hook.exe");
@@ -81,11 +101,26 @@ public sealed class HookInstallerTests : IDisposable
     [Theory]
     [InlineData("C:/x/Miharikun.Hook.exe --agent cursor", true)]
     [InlineData("\"C:/a b/miharikun.hook.EXE\" --agent cursor", true)]
+    [InlineData("/Users/x/bin/Miharikun.Hook --agent cursor", true)]           // mac は拡張子なし
+    [InlineData("\"/Users/x/my dev/Miharikun.Hook\" --agent cursor", true)]
     [InlineData("C:/x/MiharikunDump.exe", false)]            // Step 0 のダンプ用は別物
     [InlineData("node ./other-hook.js", false)]
     [InlineData(null, false)]
     public void Recognises_only_its_own_entries(string? command, bool expected) =>
         Assert.Equal(expected, HookInstaller.IsOurs(command));
+
+    [Fact]
+    public void Updating_the_exe_gives_the_new_content_and_leaves_no_temporary_file_behind()
+    {
+        Installer().Install();
+        File.WriteAllText(_bundled, "fake hook exe v2 (longer)");
+
+        var result = Installer().Install();
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal("fake hook exe v2 (longer)", File.ReadAllText(_installed));
+        Assert.Equal([_installed], Directory.GetFiles(Path.GetDirectoryName(_installed)!));   // mac の一時ファイル（名前の付け替え）が残らない
+    }
 
     // ---------------------------------------------------------------- 既存設定を壊さない
 

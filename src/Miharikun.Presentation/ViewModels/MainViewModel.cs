@@ -1,3 +1,4 @@
+using Miharikun.Core.Install;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -96,8 +97,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public bool HasNoHook => NoHookCount > 0;
 
-    public string HookWarningText =>
-        $"⚠ Cursor の Hook が記録していません（Hook なし {NoHookCount} 件）。この PC で Hook exe の実行が止められている可能性があります。⚙ →「設定…」で置き場所を変えてください。";
+    public string HookWarningText => HookWording.NoHookWarning(NoHookCount);
 
     private readonly string? _hookErrorLogPath;
 

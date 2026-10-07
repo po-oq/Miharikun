@@ -1,0 +1,33 @@
+name: test
+
+# push・pull_request・手動でテストを回す（Windows と macOS）。
+# macOS は Phase 30-1 まで WPF のプロジェクトがあるため、ソリューション全体ではなくプロジェクトを指定する。
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build Miharikun.slnx -c Release
+      - run: dotnet test tests/Miharikun.Tests -c Release --no-build
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test tests/Miharikun.Tests -c Release
+      - name: Hook の NativeAOT（osx-arm64）が通るか
+        run: dotnet publish src/Miharikun.Hook -c Release -r osx-arm64 -o "$RUNNER_TEMP/hook"

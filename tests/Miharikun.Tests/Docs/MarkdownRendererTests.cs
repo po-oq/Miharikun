@@ -5,7 +5,7 @@ namespace Miharikun.Tests.Docs;
 
 public sealed class MarkdownRendererTests
 {
-    private const string Folder = @"C:\work\proj\docs";
+    private static readonly string Folder = TestPaths.Abs("work", "proj", "docs");
 
     private static string Html(string md, bool dark = false) => MarkdownRenderer.Render(md, Folder, dark);
 
@@ -110,18 +110,33 @@ public sealed class MarkdownRendererTests
 
     // ── <base>（相対パスの基準）─────────────────────────────────────────
 
-    [Fact]
+    [WindowsFact]
     public void Base_points_at_the_source_folder_with_a_trailing_slash() =>
         Assert.Contains(@"<base href=""file:///C:/work/proj/docs/"">", Html("x"));
 
-    [Theory]
+    [MacFact]
+    public void Mac_base_points_at_the_source_folder_with_a_trailing_slash() =>
+        Assert.Contains(@"<base href=""file:///work/proj/docs/"">", Html("x"));
+
+    [MacTheory]
+    [InlineData("/work/日本語 #a%b", "file:///work/%E6%97%A5%E6%9C%AC%E8%AA%9E%20%23a%25b/")]
+    [InlineData("/Users/x/Library/Application Support/a b/", "file:///Users/x/Library/Application%20Support/a%20b/")]
+    [InlineData("/work/proj/", "file:///work/proj/")]
+    public void Mac_FolderUri_escapes_special_characters(string folder, string expected) =>
+        Assert.Equal(expected, MarkdownRenderer.FolderUri(folder));
+
+    [MacFact]
+    public void Mac_FileUri_escapes_a_hash_in_a_folder_name() =>
+        Assert.Equal("file:///work/a%23b/c.md", MarkdownRenderer.FileUri("/work/a#b/c.md"));
+
+    [WindowsTheory]
     [InlineData(@"C:\work\日本語 #a%b", "file:///C:/work/%E6%97%A5%E6%9C%AC%E8%AA%9E%20%23a%25b/")]
     [InlineData(@"C:\work\a b\", "file:///C:/work/a%20b/")]
     [InlineData(@"C:\work\proj\", "file:///C:/work/proj/")]
     public void FolderUri_escapes_special_characters(string folder, string expected) =>
         Assert.Equal(expected, MarkdownRenderer.FolderUri(folder));
 
-    [Fact]
+    [WindowsFact]
     public void FileUri_escapes_a_hash_in_a_folder_name() =>
         Assert.Equal("file:///C:/work/a%23b/c.md", MarkdownRenderer.FileUri(@"C:\work\a#b\c.md"));
 

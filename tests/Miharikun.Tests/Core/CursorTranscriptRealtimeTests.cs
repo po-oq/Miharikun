@@ -24,8 +24,8 @@ public sealed class CursorTranscriptRealtimeTests : IDisposable
     }
 
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "miharikun-realtime-" + Guid.NewGuid().ToString("N"));
-    private const string Project = @"C:\zDev\repo\Miharikun";
-    private const string Slug = "c-zDev-repo-Miharikun";
+    private static readonly string Project = TestPaths.Abs("zDev", "repo", "Miharikun");
+    private static readonly string Slug = OperatingSystem.IsWindows() ? "c-zDev-repo-Miharikun" : "zDev-repo-Miharikun";
     private const string Id1 = "11111111-1111-1111-1111-111111111111";
     private const string Id2 = "22222222-2222-2222-2222-222222222222";
 
@@ -34,8 +34,8 @@ public sealed class CursorTranscriptRealtimeTests : IDisposable
         try { Directory.Delete(_dir, true); } catch { }
     }
 
-    private string TranscriptPath(string id, string slug = Slug) =>
-        Path.Combine(_dir, "projects", slug, "agent-transcripts", id, id + ".jsonl");
+    private string TranscriptPath(string id, string? slug = null) =>
+        Path.Combine(_dir, "projects", slug ?? Slug, "agent-transcripts", id, id + ".jsonl");
 
     private string Write(string id, params string[] lines)
     {
@@ -256,7 +256,7 @@ public sealed class CursorTranscriptRealtimeTests : IDisposable
         var importer = new CursorTranscriptImporter(_dir);
 
         Assert.Equal([Path.Combine(_dir, "projects", Slug, "agent-transcripts")], importer.TranscriptDirs(Project));
-        Assert.Empty(importer.TranscriptDirs(@"C:\nothing\here"));
+        Assert.Empty(importer.TranscriptDirs(TestPaths.Abs("nothing", "here")));
     }
 
     [Fact]

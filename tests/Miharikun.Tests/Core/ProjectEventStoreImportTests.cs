@@ -11,7 +11,7 @@ public sealed class ProjectEventStoreImportTests : IDisposable
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "miharikun-import-" + Guid.NewGuid().ToString("N"));
     private readonly AppPaths _paths;
     private readonly ProjectEventStore _store;
-    private const string ProjectSlug = "c-work-proj";
+    private static readonly string ProjectSlug = RootSlug;
 
     public ProjectEventStoreImportTests()
     {
@@ -99,7 +99,7 @@ public sealed class ProjectEventStoreImportTests : IDisposable
         WriteTranscript("old", "依頼");
         _store.Refresh();
 
-        WriteHook("old", Line("beforeSubmitPrompt", "\"prompt\":\"x\"", 0, "old", root: @"C:\elsewhere"));
+        WriteHook("old", Line("beforeSubmitPrompt", "\"prompt\":\"x\"", 0, "old", root: TestPaths.Abs("elsewhere")));
         var changed = _store.Refresh();
 
         Assert.Equal([Key("old")], changed);

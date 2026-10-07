@@ -64,6 +64,54 @@ public sealed class GitClientTests : IDisposable
 
     private string P(string relative) => Path.Combine(_dir, relative);
 
+    // ---- リンク経由のプロジェクト（mac。計画 7.14）----
+
+    [MacFact]
+    public void A_project_opened_through_a_symlink_reports_dirty_files_under_the_logical_path()
+    {
+        InitRepo();
+        var link = _dir + "-lnk";
+        Directory.CreateSymbolicLink(link, _dir);
+        try
+        {
+            File.WriteAllText(P("a.txt"), "changed");
+            File.WriteAllText(P("new.txt"), "n");
+
+            var status = new GitClient(link).GetStatus()!;
+
+            Assert.Equal(
+                new[] { "a.txt", "new.txt" }.Select(f => Path.GetFullPath(Path.Combine(link, f))).Order(),
+                status.DirtyFiles.Order());
+            Assert.Equal(["a.txt"], Uncommitted.Files(status, [Path.Combine(link, "a.txt")], link)!.Select(Path.GetFileName));
+            Assert.Equal(Path.GetFullPath(link), status.RepoRoot);
+        }
+        finally
+        {
+            File.Delete(link);
+        }
+    }
+
+    [MacFact]
+    public void A_subfolder_opened_through_a_symlink_still_reports_paths_from_the_logical_repo_root()
+    {
+        InitRepo();
+        Directory.CreateDirectory(P("sub"));
+        File.WriteAllText(P("sub/x.txt"), "x");
+        var link = _dir + "-lnk";
+        Directory.CreateSymbolicLink(link, _dir);
+        try
+        {
+            var status = new GitClient(Path.Combine(link, "sub")).GetStatus()!;
+
+            Assert.Contains(Path.GetFullPath(Path.Combine(link, "sub", "x.txt")), status.DirtyFiles);
+            Assert.Equal(Path.GetFullPath(link), status.RepoRoot);
+        }
+        finally
+        {
+            File.Delete(link);
+        }
+    }
+
     // ---- status / 未コミット ----
 
     [Fact]

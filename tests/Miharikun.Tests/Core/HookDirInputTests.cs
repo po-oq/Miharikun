@@ -1,3 +1,4 @@
+using Miharikun.Core.Install;
 using Miharikun.Core.Settings;
 
 namespace Miharikun.Tests.Core;
@@ -18,7 +19,7 @@ public sealed class HookDirInputTests : IDisposable
     public void An_existing_full_path_is_accepted_with_or_without_a_trailing_separator()
     {
         Assert.Null(HookDirInput.Validate(_dir));
-        Assert.Null(HookDirInput.Validate(_dir + @"\"));
+        Assert.Null(HookDirInput.Validate(_dir + Path.DirectorySeparatorChar));
         Assert.Null(HookDirInput.Validate("  " + _dir + "  "));
     }
 
@@ -34,7 +35,18 @@ public sealed class HookDirInputTests : IDisposable
     [InlineData(@"..\dir")]
     [InlineData("C:\\de\u0000v")]
     public void A_relative_path_or_unusable_characters_cannot_be_saved(string text) =>
-        Assert.Equal("C:\\ から始まるフォルダを指定してください", HookDirInput.Validate(text));
+        Assert.Equal(HookWording.NotAbsoluteMessage, HookDirInput.Validate(text));
+
+    [WindowsFact]
+    public void The_message_for_a_relative_path_names_the_drive_on_windows() =>
+        Assert.Equal("C:\\ から始まるフォルダを指定してください", HookDirInput.Validate("dir"));
+
+    [MacFact]
+    public void The_message_for_a_relative_path_names_the_root_on_mac()
+    {
+        Assert.Equal("/ から始まるフォルダを指定してください", HookDirInput.Validate("dir"));
+        Assert.Equal("/ から始まるフォルダを指定してください", HookDirInput.Validate("~/dir"));   // ~ は展開しない
+    }
 
     [Fact]
     public void A_missing_folder_cannot_be_saved_and_is_not_created()
@@ -57,7 +69,7 @@ public sealed class HookDirInputTests : IDisposable
     [Fact]
     public void TryNormalize_drops_the_trailing_separator()
     {
-        Assert.True(HookDirInput.TryNormalize(_dir + @"\", out var dir));
+        Assert.True(HookDirInput.TryNormalize(_dir + Path.DirectorySeparatorChar, out var dir));
         Assert.Equal(_dir, dir);
     }
 
@@ -67,7 +79,7 @@ public sealed class HookDirInputTests : IDisposable
         var defaultDir = Path.Combine(_dir, "default-bin");
 
         Assert.Null(HookDirInput.Validate(defaultDir, defaultDir));
-        Assert.Null(HookDirInput.Validate(defaultDir.ToUpperInvariant() + @"\", defaultDir));
+        Assert.Null(HookDirInput.Validate(defaultDir.ToUpperInvariant() + Path.DirectorySeparatorChar, defaultDir));
         Assert.Equal("フォルダが見つかりません", HookDirInput.Validate(Path.Combine(_dir, "other"), defaultDir));
         Assert.False(Directory.Exists(defaultDir));
     }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Miharikun.Core.Agents;
+using Miharikun.Core.Git;
 
 namespace Miharikun.Hook;
 
@@ -23,7 +24,10 @@ internal static class GitProbe
     {
         try
         {
-            var psi = new ProcessStartInfo("git")
+            if (GitLocator.Find() is not { } git)
+                return null;   // mac で git が使えない（Command Line Tools が無い）ときは、git を省略する
+
+            var psi = new ProcessStartInfo(git)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

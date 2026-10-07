@@ -6,8 +6,9 @@ namespace Miharikun.Tests.Core;
 /// <summary>Phase 20-2：Claude Code の会話ログを、追記分だけ読んで差分にする（要件 9.1・計画 8.1）。</summary>
 public sealed class ClaudeSessionSourceTests : IDisposable
 {
-    private const string Project = @"C:\work\proj";
-    private const string Main = "C--work-proj";
+    private static readonly string Project = TestPaths.Abs("work", "proj");
+    private static readonly string Main = ClaudeFolderName.For(Project)!;
+    private static readonly string Worktree1 = Main + "--claude-worktrees-w1";
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "miharikun-claudesrc-" + Guid.NewGuid().ToString("N"));
     private readonly List<string> _logs = [];
@@ -38,7 +39,7 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     private void Append(string folder, string session, params string[] lines) =>
         File.AppendAllText(File_(folder, session), string.Concat(lines.Select(l => l + "\n")));
 
-    private static ClaudeLogBuilder B(string session, string cwd = Project) => new(session, cwd);
+    private static ClaudeLogBuilder B(string session, string? cwd = null) => new(session, cwd ?? Project);
 
     private static SessionKey Key(string session) => new("claude", session);
 
@@ -124,7 +125,7 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     public void The_format_logs_are_flushed_after_each_read()
     {
         var b = B("s");
-        var bad = """{"type":"user","timestamp":"2026-10-03T02:00:02.000Z","message":{"content":42},"cwd":"C:\\work\\proj"}""";
+        var bad = """{"type":"user","timestamp":"2026-10-03T02:00:02.000Z","message":{"content":42},"cwd":CWDJSON}""".Replace("CWDJSON", System.Text.Json.JsonSerializer.Serialize(Project));
         Append(Main, "s", b.User("a"), bad, bad, bad, b.Other("brand-new-kind"));
 
         _source.ReadNew();
@@ -162,7 +163,7 @@ public sealed class ClaudeSessionSourceTests : IDisposable
         _source.ReadNew();
 
         File.WriteAllText(File_(Main, "e"), "");
-        File.WriteAllText(File_(Main, "o"), B("o", @"C:\work\elsewhere").User("別のプロジェクト") + "\n");
+        File.WriteAllText(File_(Main, "o"), B("o", TestPaths.Abs("work", "elsewhere")).User("別のプロジェクト") + "\n");
         var deltas = _source.ReadNew();
 
         Assert.Equal(2, deltas.Count);
@@ -186,10 +187,10 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     [Fact]
     public void A_deleted_folder_removes_its_sessions()
     {
-        Append("C--work-proj--claude-worktrees-w1", "s", B("s", Project + @"\.claude\worktrees\w1").User("a"));
+        Append(Worktree1, "s", B("s", Path.Combine(Project, ".claude", "worktrees", "w1")).User("a"));
         _source.ReadNew();
 
-        Directory.Delete(Path.Combine(ProjectsDir, "C--work-proj--claude-worktrees-w1"), true);
+        Directory.Delete(Path.Combine(ProjectsDir, Worktree1), true);
 
         Assert.Equal(SessionDeltaKind.Remove, Only(_source.ReadNew()).Kind);
     }
@@ -231,7 +232,7 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     [Fact]
     public void A_session_of_another_project_is_never_returned_even_when_it_grows()
     {
-        var other = B("o", @"C:\work\elsewhere");
+        var other = B("o", TestPaths.Abs("work", "elsewhere"));
         Append(Main, "o", other.User("よそ"));
         Assert.Empty(_source.ReadNew());
 
@@ -270,9 +271,9 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     [Fact]
     public void Files_in_a_worktree_folder_match_when_their_cwd_is_under_the_projects_worktrees()
     {
-        var wt = Project + @"\.claude\worktrees\w1";
-        Append("C--work-proj--claude-worktrees-w1", "wt", B("wt", wt).User("作業ツリーで"));
-        Append("C--work-proj--claude-worktrees-w1", "bad", B("bad", @"C:\work\other\.claude\worktrees\w1").User("別"));
+        var wt = Path.Combine(Project, ".claude", "worktrees", "w1");
+        Append(Worktree1, "wt", B("wt", wt).User("作業ツリーで"));
+        Append(Worktree1, "bad", B("bad", Path.Combine(TestPaths.Abs("work", "other"), ".claude", "worktrees", "w1")).User("別"));
 
         var delta = Only(_source.ReadNew());
 
@@ -286,7 +287,7 @@ public sealed class ClaudeSessionSourceTests : IDisposable
         _source.ReadNew();
         Assert.Empty(_source.ReadNew());
 
-        Append("C--work-proj--claude-worktrees-w1", "w", B("w", Project + @"\.claude\worktrees\w1").User("あとから"));
+        Append(Worktree1, "w", B("w", Path.Combine(Project, ".claude", "worktrees", "w1")).User("あとから"));
 
         Assert.Equal(Key("w"), Only(_source.ReadNew()).Key);
     }
@@ -309,8 +310,8 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     {
         Append(Main, "s", B("s").User("a"));
         File.WriteAllText(Path.Combine(Folder(Main), "agent-name.meta.json"), "{}");
-        Append("C--work-proj-extra", "x", B("x").User("名前が似ているだけ"));
-        Append("C--work-other", "y", B("y").User("別"));
+        Append(Main + "-extra", "x", B("x").User("名前が似ているだけ"));
+        Append(ClaudeFolderName.For(TestPaths.Abs("work", "other"))!, "y", B("y").User("別"));
 
         Assert.Equal(Key("s"), Only(_source.ReadNew()).Key);
     }
@@ -352,11 +353,11 @@ public sealed class ClaudeSessionSourceTests : IDisposable
         Assert.Equal("*.jsonl", expected.Filter);
         Assert.False(expected.CreateIfMissing);
 
-        Folder("C--work-proj--claude-worktrees-w1");
-        Folder("C--work-other");
+        Folder(Worktree1);
+        Folder(ClaudeFolderName.For(TestPaths.Abs("work", "other"))!);
 
         var after = _source.WatchTargets.Select(t => Path.GetFileName(t.Directory)).Order().ToList();
-        Assert.Equal([Main, "C--work-proj--claude-worktrees-w1"], after);
+        Assert.Equal([Main, Worktree1], after);
         Assert.All(_source.WatchTargets, t => Assert.False(t.CreateIfMissing));
     }
 

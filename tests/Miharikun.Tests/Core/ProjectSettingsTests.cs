@@ -7,7 +7,7 @@ namespace Miharikun.Tests.Core;
 
 public sealed class ProjectSettingsTests : IDisposable
 {
-    private const string Project = @"C:\work\proj";
+    private static readonly string Project = TestPaths.Abs("work", "proj");
 
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "miharikun-ps-" + Guid.NewGuid().ToString("N"));
     private readonly AppPaths _paths;
@@ -32,21 +32,28 @@ public sealed class ProjectSettingsTests : IDisposable
     {
         var file = FileOf(Project);
         Assert.Equal(Path.Combine(_dir, "projects"), Path.GetDirectoryName(file));
-        Assert.Matches(@"^c-work-proj-[0-9a-f]{8}\.json$", Path.GetFileName(file));
+        var slug = OperatingSystem.IsWindows() ? "c-work-proj" : "work-proj";
+        Assert.Matches($@"^{slug}-[0-9a-f]{{8}}\.json$", Path.GetFileName(file));
     }
 
-    [Fact]
+    [WindowsFact]
     public void Case_and_trailing_separator_do_not_change_the_file()
     {
         Assert.Equal(FileOf(Project), FileOf(@"c:\WORK\Proj\"));
         Assert.Equal(FileOf(Project), FileOf("C:/work/proj"));
     }
 
+    [MacFact]
+    public void Mac_case_and_trailing_separator_do_not_change_the_file()
+    {
+        Assert.Equal(FileOf(Project), FileOf("/WORK/Proj/"));
+    }
+
     [Fact]
     public void Different_paths_get_different_files_even_when_the_slug_is_empty_or_equal()
     {
-        Assert.NotEqual(FileOf(@"C:\work\日本語A"), FileOf(@"C:\work\日本語B"));       // slug が同じ「c-work」になる
-        Assert.NotEqual(FileOf(@"C:\work\a-b"), FileOf(@"C:\work\a\b"));
+        Assert.NotEqual(FileOf(TestPaths.Abs("work", "日本語A")), FileOf(TestPaths.Abs("work", "日本語B")));       // slug が同じ「c-work」になる
+        Assert.NotEqual(FileOf(TestPaths.Abs("work", "a-b")), FileOf(TestPaths.Abs("work", "a", "b")));
     }
 
     [Fact]
@@ -67,7 +74,7 @@ public sealed class ProjectSettingsTests : IDisposable
 
         var json = JsonNode.Parse(File.ReadAllText(FileOf(Project)))!.AsObject();
         Assert.Equal(1, json["v"]!.GetValue<int>());
-        Assert.Equal(@"C:\work\proj", json["path"]!.GetValue<string>(), ignoreCase: true);
+        Assert.Equal(Project, json["path"]!.GetValue<string>(), ignoreCase: true);
     }
 
     [Fact]

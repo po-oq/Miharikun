@@ -5,7 +5,8 @@ namespace Miharikun.Tests.Core;
 public sealed class TranscriptImporterTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "miharikun-transcripts-" + Guid.NewGuid().ToString("N"));
-    private const string Project = @"C:\zDev\repo\Miharikun";
+    private static readonly string Project = TestPaths.Abs("zDev", "repo", "Miharikun");
+    private static readonly string Slug = OperatingSystem.IsWindows() ? "c-zDev-repo-Miharikun" : "zDev-repo-Miharikun";
     private const string Id1 = "11111111-1111-1111-1111-111111111111";
     private const string Id2 = "22222222-2222-2222-2222-222222222222";
 
@@ -37,10 +38,18 @@ public sealed class TranscriptImporterTests : IDisposable
     private static string Text(string t) => "{\"type\":\"text\",\"text\":" + System.Text.Json.JsonSerializer.Serialize(t) + "}";
     private const string ToolUse = "{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"path\":\"a\"}}";
 
-    private IReadOnlyList<ImportedSession> Scan(Func<string, bool>? skip = null, string project = Project) =>
-        new CursorTranscriptImporter(_dir).Scan(project, skip);
+    private IReadOnlyList<ImportedSession> Scan(Func<string, bool>? skip = null, string? project = null) =>
+        new CursorTranscriptImporter(_dir).Scan(project ?? Project, skip);
 
-    [Theory]
+    [MacTheory]
+    [InlineData("/Users/x/repo", "Users-x-repo")]                          // 27-1 で実機の形を確認（先頭の / は落ちる）
+    [InlineData("/Users/x/repo/", "Users-x-repo")]
+    [InlineData("/Users/x/my_proj.v2", "Users-x-my-proj-v2")]
+    [InlineData("/Users/x/Documents/repo/github.com/po-oq/ebata", "Users-x-Documents-repo-github-com-po-oq-ebata")]
+    public void Mac_slug_is_separators_turned_into_hyphens(string path, string expected) =>
+        Assert.Equal(expected, CursorTranscriptImporter.SlugFor(path), ignoreCase: true);
+
+    [WindowsTheory]
     [InlineData(@"C:\zDev\repo\Miharikun", "c-zDev-repo-Miharikun")]    // 実機で確認した形
     [InlineData(@"c:\zDev\repo\Miharikun\", "c-zDev-repo-Miharikun")]
     [InlineData("/c:/zDev/repo/Miharikun", "c-zDev-repo-Miharikun")]
@@ -51,7 +60,7 @@ public sealed class TranscriptImporterTests : IDisposable
     [Fact]
     public void Imports_prompts_and_replies_of_the_matching_project_in_order_without_tool_calls()
     {
-        var path = WriteNew("c-zDev-repo-Miharikun", Id1,
+        var path = WriteNew(Slug, Id1,
             UserQuery("内容教えて"),
             Assistant(Text("確認します。"), ToolUse),
             Assistant(ToolUse),
@@ -81,7 +90,7 @@ public sealed class TranscriptImporterTests : IDisposable
     [Fact]
     public void User_text_without_the_wrapper_tags_is_kept_minus_the_timestamp()
     {
-        WriteNew("c-zDev-repo-Miharikun", Id1, User("<timestamp>now</timestamp>\nただの文章"));
+        WriteNew(Slug, Id1, User("<timestamp>now</timestamp>\nただの文章"));
 
         var e = Assert.Single(Assert.Single(Scan()).Events);
 
@@ -91,8 +100,8 @@ public sealed class TranscriptImporterTests : IDisposable
     [Fact]
     public void Slug_match_ignores_case_and_old_flat_format_is_read_too_but_subagents_are_not()
     {
-        WriteNew("C-ZDEV-repo-miharikun", Id1, UserQuery("new format"));
-        var flat = TranscriptsDir("C-ZDEV-repo-miharikun");
+        WriteNew(Slug.ToUpperInvariant(), Id1, UserQuery("new format"));
+        var flat = TranscriptsDir(Slug.ToUpperInvariant());
         File.WriteAllText(Path.Combine(flat, Id2 + ".jsonl"), UserQuery("old format") + "\n");
         var sub = Path.Combine(flat, Id1, "subagents");
         Directory.CreateDirectory(sub);
@@ -107,8 +116,8 @@ public sealed class TranscriptImporterTests : IDisposable
     public void Other_projects_skipped_ids_and_empty_transcripts_are_not_imported()
     {
         WriteNew("c-other", Id1, UserQuery("other project"));
-        WriteNew("c-zDev-repo-Miharikun", Id2, UserQuery("has hook events"));
-        WriteNew("c-zDev-repo-Miharikun", "44444444-4444-4444-4444-444444444444", "{\"role\":\"assistant\",\"message\":{\"content\":[" + ToolUse + "]}}");
+        WriteNew(Slug, Id2, UserQuery("has hook events"));
+        WriteNew(Slug, "44444444-4444-4444-4444-444444444444", "{\"role\":\"assistant\",\"message\":{\"content\":[" + ToolUse + "]}}");
 
         Assert.Empty(Scan(skip: id => id == Id2));
     }
@@ -116,7 +125,7 @@ public sealed class TranscriptImporterTests : IDisposable
     [Fact]
     public void Broken_lines_are_skipped_and_a_missing_cursor_dir_is_fine()
     {
-        WriteNew("c-zDev-repo-Miharikun", Id1, "{ not json", UserQuery("ok"), "{\"role\":\"user\"}");
+        WriteNew(Slug, Id1, "{ not json", UserQuery("ok"), "{\"role\":\"user\"}");
 
         var e = Assert.Single(Assert.Single(Scan()).Events);
         Assert.Equal("ok", e.Text);

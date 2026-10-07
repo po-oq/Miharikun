@@ -386,7 +386,7 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 - `ClaudeFolderName` は今のまま（Claude Code の規則に合わせているだけ）。合わなくても、候補 0 件のときの `cwd` での探索で見つかる（要件 9.1）。
 - 大文字小文字は今のまま無視する（mac の既定のファイルシステムも区別しない。区別するボリュームは対象外：要件 9 章）。
 - **シンボリックリンク**（レビュー Q5＝A）：mac は `/tmp` → `/private/tmp`、`/var` → `/private/var`（一時フォルダ）など、リンクが多い。Claude Code の `cwd` と git のルート（`rev-parse --show-toplevel`）は実パスで来る。ターミナルの `$PWD` は論理パスになりうる。
-  - App は対象フォルダの実パスも持つ（`Core/Projects/RealPath`：libc の `realpath` を `LibraryImport`。AOT 互換。mac だけ。Windows は今のまま）。`ProjectPath.Matches` は、論理パス・実パスのどちらかが一致すれば対象。
+  - App は対象フォルダの実パスも持つ（`Core/Projects/RealPath`：部品を 1 つずつ `FileInfo.LinkTarget` でたどる managed の実装（libc の `realpath` を呼ぶ案をやめた：unsafe を Core に入れずに済み、AOT 互換。2026-10-07、29-4）。mac だけ。Windows は今のまま）。`ProjectPath.Matches` は、論理パス・実パスのどちらかが一致すれば対象。
   - `GitClient.GetStatus` は、status のパスを `rev-parse --show-toplevel`（実パス）でなく、作業フォルダからの相対（`git rev-parse --show-cdup`）で論理のルートに付ける（`Uncommitted.Files` が対象フォルダ（論理）で比べるため）。
   - README のターミナルの開き方は `open -n -a Miharikun --args "$(pwd -P)"`（要件 9 章）。
   - テスト：mac は一時フォルダ自体が `/var` → `/private/var` のリンクなので、今の `GitClientTests` が落ちる見込み。テストは変えずに、この直しで通す（7.15）。

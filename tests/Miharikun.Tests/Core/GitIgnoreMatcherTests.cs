@@ -174,4 +174,16 @@ public sealed class GitIgnoreMatcherTests
         Assert.False(m.IsPathExcluded(".cursor/rules/a.md", isDirectory: false));
         Assert.False(m.IsPathExcluded("docs/a.md", isDirectory: false));
     }
+
+    [Fact]
+    public void A_pattern_and_a_path_match_whichever_of_NFC_and_NFD_they_are_written_in()
+    {
+        var nfc = "ぶんしょ/";
+        var nfd = nfc.Normalize(System.Text.NormalizationForm.FormD);
+        Assert.NotEqual(nfc, nfd);
+
+        Assert.True(GitIgnoreMatcher.Parse(nfc).IsPathExcluded(nfd + "a.md", isDirectory: false));
+        Assert.True(GitIgnoreMatcher.Parse(nfd).IsPathExcluded(nfc + "a.md", isDirectory: false));
+        Assert.False(GitIgnoreMatcher.Parse(nfc).IsPathExcluded("別/a.md", isDirectory: false));
+    }
 }

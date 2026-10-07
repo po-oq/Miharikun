@@ -15,7 +15,7 @@ public sealed class GitIgnoreMatcher
     public static GitIgnoreMatcher Parse(string text)
     {
         var patterns = new List<GitIgnorePattern>();
-        foreach (var line in text.Split('\n'))
+        foreach (var line in Projects.ProjectPath.ToNfc(text).Split('\n'))
         {
             var pattern = GitIgnorePattern.Parse(line);
             if (pattern is not null)
@@ -55,5 +55,5 @@ public sealed class GitIgnoreMatcher
     }
 
     private static string[] Split(string path) =>
-        path.Split(Separators, StringSplitOptions.RemoveEmptyEntries);
+        Projects.ProjectPath.ToNfc(path).Split(Separators, StringSplitOptions.RemoveEmptyEntries);
 }

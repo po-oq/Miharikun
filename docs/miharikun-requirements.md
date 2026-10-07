@@ -920,6 +920,11 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## [ ] Phase 29: Core・テストの mac 対応
 - CI に macOS ランナーでのテストを足す（最初に。Windows の確認にも使う）。Hook の名前（mac は拡張子なし）・同梱の Hook の場所・Hook の導入での「隔離」の印の解除と試しの起動（8.1）・Hook の更新の仕方（mac は一時ファイル → 名前の付け替え。8 章）・「Finder で表示」・シンボリックリンク（実パスでも比べる。9 章）・ドキュメントの相対パスの NFC・git の場所（Command Line Tools の git の実体を直接使う）・Hook の置き場所の mac（既定の場所・設定画面の誤りの文・hooks.json の登録のパスの読み取り。8.2・12.12）・14.3 で分かった違い。テストのパスを OS 別にする（Windows だけのテストには印を付ける）
 - 完了条件：Windows と mac の両方で `dotnet test` が通る（mac で飛ばすテストは件数を記録する）。mac で本当に動かないテスト（シンボリックリンクなど）は、印を付けて飛ばさず、製品のコードを直す。Core は AOT 互換。mac の NativeAOT の Hook が通る
+- 状況：2026-10-07、mac で実装（29-1〜29-4）。**Windows の確認と CI は未実施のため、`[ ]` のまま**（CI が緑になり、Windows でテストと WPF 版の起動を確かめたら `[x]`）。mac の `dotnet test`：合格 1085・スキップ 29（`PerfFact` 5・Windows 専用 24）・失敗 0（Phase 27 の基準は失敗 117）。NativeAOT の Hook（osx-arm64）は警告 0・git ありで約 18ms。
+  - 直したもの：テストの OS 対応（`WindowsFact`／`MacFact`／`TestPaths`）、Hook の `--probe`、mac の名前（拡張子なし）・名前の付け替えでの更新、導入後の「隔離」の印の解除と試しの起動、`GitLocator`、`ProjectPath` の NFC・実パスとの比較（`RealPath`）、`GitClient` のルートを論理パスで、ドキュメントの相対パスの NFC、`ShellOpen`（`open -R`）、文言の OS 差（`HookWording`）。
+  - 製品の不具合（Phase 27 では気づかず、テストで見つかった）：mac では Hook の追記が同時に起きると行が失われた（.NET の Unix は `FileShare.None` のときだけ排他ロックをかける。`Read` は共有ロックで書き手どうしを止めない。40 並列で 18 行だけ残った）。mac は `FileShare.None` にして直した。
+  - 計画との違い：実パスは libc の `realpath` でなく、`FileInfo.LinkTarget` で 1 部品ずつたどる実装にした（計画 7.14 に反映）。
+  - 既知の揺れ（29 とは無関係。Phase 28 のテスト）：`MainViewModelTests`（選択を保つテスト）が mac で、並べて走らせると 12 回中 5 回ほど 1 件落ちる（29 の変更を入れる前でも同じ）。単独では落ちない。原因は未調査（`MainViewModel` の背景処理が疑わしい）。
 
 ## [ ] Phase 30: Avalonia でダッシュボード
 - **最初に WPF の画面のプロジェクトを消し、Avalonia 12 の画面のプロジェクトに置き換える**（消す前に、見比べ用に WPF 版をビルドして残す）。あわせて、開発用の `Miharikun.app`（Info.plist・アドホック署名。mac の確認は Finder から開いた `.app` で行う）、WKWebView の読み取り範囲の試作（12.7。Phase 27 で済んでいなければ）、ファイルとフォルダの許可（TCC。8.1）の確認。続けて、FluentTheme と SukiUI の試作と見比べ（12.5）、日本語入力（IME）の試作（メモ・検索・名前の変更の入力欄）。そのあと、共通ヘッダー・3 ペイン・カード・詳細・タイムライン（仮想化・ジャンプ・検索・コピー）・拡大モード・テーマ切り替え・設定画面（Hook の置き場所の欄。「参照…」は OS 標準のフォルダ選択。8.2）・「Hook なし」の帯（12.11。mac の文は 12.12）・Hook の導入の確認（起動時の受け入れも）・mac の起動時のフォルダ選択（9 章）

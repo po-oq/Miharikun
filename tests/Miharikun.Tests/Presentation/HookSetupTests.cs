@@ -16,6 +16,26 @@ public sealed class HookSetupTests : IDisposable
     private readonly AppPaths _paths;
     private readonly AppSettingsStore _settings;
     private readonly FakeUiServices _ui = new();
+    private readonly FakeHookCheck _check = new();
+
+    /// <summary>導入のあとの確認（隔離の印の解除・試しの起動）の代わり。呼ばれた順と、試しの結果を決められる。</summary>
+    private sealed class FakeHookCheck : IHookCheck
+    {
+        public bool ProbeResult { get; set; } = true;
+        public List<string> Calls { get; } = [];
+
+        public Task ClearQuarantineAsync(string exePath)
+        {
+            Calls.Add("clear:" + exePath);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> ProbeAsync(string exePath)
+        {
+            Calls.Add("probe:" + exePath);
+            return Task.FromResult(ProbeResult);
+        }
+    }
 
     public HookSetupTests()
     {
@@ -39,7 +59,7 @@ public sealed class HookSetupTests : IDisposable
 
     private HookSetup Setup(bool withBundled = true) =>
         new(dir => new HookInstaller(_hooksJson, Path.Combine(dir ?? HookInstaller.DefaultHookDir(_paths), HookInstaller.HookExeName),
-            withBundled ? _bundled : null), _settings, _paths, _ui);
+            withBundled ? _bundled : null), _settings, _paths, _ui, _check);
 
     private string DefaultExe => Path.Combine(HookInstaller.DefaultHookDir(_paths), HookInstaller.HookExeName);
 
@@ -223,6 +243,57 @@ public sealed class HookSetupTests : IDisposable
         Assert.Empty(_ui.Confirms);
         Assert.True(File.Exists(_hooksJson));
         Assert.Single(_ui.Messages, m => m.Kind == MessageKind.Information);
+    }
+
+    // ---------------------------------------------------------------- 導入のあとの確認（要件 8.1・計画 7.12）
+
+    [Fact]
+    public async Task After_an_install_the_quarantine_is_cleared_and_the_hook_is_probed_in_that_order()
+    {
+        await Setup().InstallFromMenuAsync();
+
+        Assert.Equal(["clear:" + DefaultExe, "probe:" + DefaultExe], _check.Calls);
+        Assert.Single(_ui.Messages, m => m.Kind == MessageKind.Information && m.Message.Contains("Cursor を再起動"));
+    }
+
+    [Fact]
+    public async Task A_failed_probe_shows_the_guidance_as_a_warning_and_keeps_the_registration()
+    {
+        _check.ProbeResult = false;
+
+        await Setup().InstallFromMenuAsync();
+
+        var (_, message, kind) = Assert.Single(_ui.Messages);
+        Assert.Equal(MessageKind.Warning, kind);
+        Assert.Contains("Hook を起動できませんでした", message);
+        Assert.DoesNotContain("Cursor を再起動", message);
+        Assert.True(File.Exists(_hooksJson));   // 登録は戻さない（次の導入で直る）
+    }
+
+    [Fact]
+    public async Task ChangePlacement_Yes_also_clears_the_quarantine_and_probes_the_new_place()
+    {
+        var newDir = Path.Combine(_dir, "newplace");
+        Directory.CreateDirectory(newDir);
+        _ui.ConfirmAnswer = true;
+
+        await Setup().ChangePlacementAsync(newDir);
+
+        var exe = Path.Combine(newDir, HookInstaller.HookExeName);
+        Assert.Equal(["clear:" + exe, "probe:" + exe], _check.Calls);
+    }
+
+    [Fact]
+    public async Task Nothing_is_probed_when_the_install_fails_or_when_the_startup_only_accepts_a_registered_place()
+    {
+        await Setup(withBundled: false).InstallFromMenuAsync();   // 同梱が無いので導入しない
+        Assert.Empty(_check.Calls);
+
+        var elsewhere = Path.Combine(_dir, "dev");
+        WriteAllEvents(_other);
+        await Setup().CheckAtStartupAsync();   // 登録の場所を受け入れるだけ（ダイアログも確認もしない）
+        Assert.Empty(_check.Calls);
+        Assert.Equal(elsewhere, Setup().CurrentHookDir);
     }
 
     [Fact]

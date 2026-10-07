@@ -10,7 +10,7 @@ public static class DocumentLinkRule
     {
         relativePath = "";
 
-        var rel = Path.GetRelativePath(root, fullPath).Replace('\\', '/');
+        var rel = Projects.ProjectPath.ToNfc(Path.GetRelativePath(root, fullPath).Replace('\\', '/'));
         if (Path.IsPathRooted(rel) || rel == "." || IsOutside(rel))
             return false;
         if (!DocumentEntry.TryGetKind(rel, out _))
