@@ -196,17 +196,17 @@ CLAUDE.md                                         33-1 変更
 Miharikun.slnx                                    28-1 変更：Presentation を追加／30-3 変更：UiTests を追加</pre>
 <h2>7. 実装の決めごと（迷いやすい所）</h2>
 <h3>7.1 Phase 27 の結果で決まること</h3>
-<table><tr><th>確かめること（14.3）</th><th>結果が「はい」</th><th>結果が「いいえ」のとき</th></tr>
-<tr><td>Hobby で hooks.json の command が呼ばれる</td><td>そのまま</td><td>mac の Cursor は会話ログの取り込み（要件 11 章。Issue #17 で transcript が変わるたびに取り込むようになったので、再起動は要らない）で出す。Hook の mac 対応（29-3）と配布は行い、mac 実機での Hook の確認は「保留」。<b>Hook を登録したままだと、どのセッションも「Hook なし」になり、警告の帯が出続ける</b>（要件 12.11）。扱い（mac では導入を勧めない／帯の文を替える など）は、この結果を見て利用者と決める（推測で決めない。7.21）</td></tr>
-<tr><td>空白を含むパス（<code>~/Library/Application Support/…</code>）で起動できる</td><td>既定の置き場所は今の規則（データの <code>bin/</code>）</td><td>mac の<b>既定の置き場所</b>（<code>HookInstaller.DefaultHookDir</code>）を <code>~/.miharikun/bin</code> にする（mac だけ。29-3。2026-10-07 決定。要件 8 章・8.2）。既定なのでフォルダはアプリが作る。<code>hookDir</code> の設定・受け入れ・<code>ToSettingValue</code> の「既定と同じなら null」はこの既定で動く。利用者の操作は要らない</td></tr>
-<tr><td><code>workspace_roots</code> が <code>/Users/…</code> の形</td><td><code>ProjectPath</code> はそのまま</td><td>見つかった形を <code>ProjectPath.Normalize</code> で直す（29-4。テスト）</td></tr>
-<tr><td>日本語の入力が壊れない</td><td><code>PayloadRecovery</code> は mac では何もしない</td><td>壊れ方を調べて相談（推測で直さない）</td></tr>
-<tr><td>「隔離」の印の付いた Hook を Cursor が呼ぶと止まる</td><td>導入時の印の解除と <code>--probe</code> が必須（7.12。予定どおり）</td><td>印の解除は念のため残す</td></tr>
-<tr><td>Cursor の会話ログが <code>~/.cursor/projects/&lt;slug&gt;/agent-transcripts/</code>、slug は Windows と同じ規則</td><td><code>CursorTranscriptImporter</code> はそのまま</td><td>規則を合わせる（29-4。テスト）</td></tr>
-<tr><td>Claude Code のフォルダ名が <code>-Users-x-repo</code> の形</td><td><code>ClaudeFolderName</code> はそのまま</td><td>規則を合わせる。合わなくても、候補 0 件のときの <code>cwd</code> での探索（要件 9.1）で見つかる</td></tr>
-<tr><td><code>xcode-select -p</code> が通る（Command Line Tools がある）</td><td><code>GitLocator</code> は開発フォルダの git の実体を使える（7.13）</td><td>7.13 のとおり（git は「不明」）</td></tr>
-<tr><td>日本語を含むフォルダ・ファイルがある（Finder で作った名前が NFD か）</td><td>NFC と NFD の違いを 1 件確かめる。ドキュメントの相対パスも NFC で比べる（7.14。予定どおり）</td><td>保留（7.14 の NFC はそのまま入れる。害は無い）</td></tr>
-<tr><td>シンボリックリンクを経由したフォルダで、Claude の <code>cwd</code>・Cursor の <code>workspace_roots</code>・git のルートが実パスで来る</td><td>実パスとも比べる（7.14。予定どおり）</td><td>実パスとも比べる作りは残す（害は無い）。来た形を記録する</td></tr>
+<table><tr><th>確かめること（14.3）</th><th>結果が「はい」</th><th>結果が「いいえ」のとき</th><th>結果（Phase 27）</th></tr>
+<tr><td>Hobby で hooks.json の command が呼ばれる</td><td>そのまま</td><td>mac の Cursor は会話ログの取り込み（要件 11 章。Issue #17 で transcript が変わるたびに取り込むようになったので、再起動は要らない）で出す。Hook の mac 対応（29-3）と配布は行い、mac 実機での Hook の確認は「保留」。<b>Hook を登録したままだと、どのセッションも「Hook なし」になり、警告の帯が出続ける</b>（要件 12.11）。扱い（mac では導入を勧めない／帯の文を替える など）は、この結果を見て利用者と決める（推測で決めない。7.21）</td><td>はい（確認済み）。9 イベントが届いた</td></tr>
+<tr><td>空白を含むパス（<code>~/Library/Application Support/…</code>）で起動できる</td><td>既定の置き場所は今の規則（データの <code>bin/</code>）</td><td>mac の<b>既定の置き場所</b>（<code>HookInstaller.DefaultHookDir</code>）を <code>~/.miharikun/bin</code> にする（mac だけ。29-3。2026-10-07 決定。要件 8 章・8.2）。既定なのでフォルダはアプリが作る。<code>hookDir</code> の設定・受け入れ・<code>ToSettingValue</code> の「既定と同じなら null」はこの既定で動く。利用者の操作は要らない</td><td>はい（確認済み）。空白入りのパスで Cursor から起動できた</td></tr>
+<tr><td><code>workspace_roots</code> が <code>/Users/…</code> の形</td><td><code>ProjectPath</code> はそのまま</td><td>見つかった形を <code>ProjectPath.Normalize</code> で直す（29-4。テスト）</td><td>はい（確認済み）。<code>/Users/…</code> の絶対パス</td></tr>
+<tr><td>日本語の入力が壊れない</td><td><code>PayloadRecovery</code> は mac では何もしない</td><td>壊れ方を調べて相談（推測で直さない）</td><td>はい（確認済み）。UTF-8 のまま・NFC</td></tr>
+<tr><td>「隔離」の印の付いた Hook を Cursor が呼ぶと止まる</td><td>導入時の印の解除と <code>--probe</code> が必須（7.12。予定どおり）</td><td>印の解除は念のため残す</td><td>保留（任意の確認⑤は未実施）。29-3 の印の解除と <code>--probe</code> を予定どおり入れる</td></tr>
+<tr><td>Cursor の会話ログが <code>~/.cursor/projects/&lt;slug&gt;/agent-transcripts/</code>、slug は Windows と同じ規則</td><td><code>CursorTranscriptImporter</code> はそのまま</td><td>規則を合わせる（29-4。テスト）</td><td>はい（確認済み）。slug の規則が一致</td></tr>
+<tr><td>Claude Code のフォルダ名が <code>-Users-x-repo</code> の形</td><td><code>ClaudeFolderName</code> はそのまま</td><td>規則を合わせる。合わなくても、候補 0 件のときの <code>cwd</code> での探索（要件 9.1）で見つかる</td><td>はい（確認済み）。フォルダ名・<code>cwd</code> とも想定どおり</td></tr>
+<tr><td><code>xcode-select -p</code> が通る（Command Line Tools がある）</td><td><code>GitLocator</code> は開発フォルダの git の実体を使える（7.13）</td><td>7.13 のとおり（git は「不明」）</td><td>はい（確認済み）。<code>/Applications/Xcode.app/Contents/Developer</code></td></tr>
+<tr><td>日本語を含むフォルダ・ファイルがある（Finder で作った名前が NFD か）</td><td>NFC と NFD の違いを 1 件確かめる。ドキュメントの相対パスも NFC で比べる（7.14。予定どおり）</td><td>保留（7.14 の NFC はそのまま入れる。害は無い）</td><td>一部：APFS は NFD を保持し、NFC の名前でも同じファイル。Finder の名前は保留（7.14 の NFC はそのまま入れる）</td></tr>
+<tr><td>シンボリックリンクを経由したフォルダで、Claude の <code>cwd</code>・Cursor の <code>workspace_roots</code>・git のルートが実パスで来る</td><td>実パスとも比べる（7.14。予定どおり）</td><td>実パスとも比べる作りは残す（害は無い）。来た形を記録する</td><td>一部：git は実パスで来る。<code>cwd</code>・<code>workspace_roots</code> はリンク経由で未確認＝保留（実パスとも比べる作りを入れる）</td></tr>
 </table>
 <h3>7.2 <code>IUiServices</code>（画面の仕組みへの口）</h3>
 <table><tr><th>メンバー</th><th>役目</th><th>WPF（28）</th><th>Avalonia（30）</th><th>テスト（Fake）</th></tr>

@@ -748,15 +748,17 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ### 14.3 macOS の Step 0（Phase 27）
 利用者の mac（Apple Silicon。Cursor は **Hobby プラン**）で確かめる。会話ログ・イベントは**構造だけ**を数え、本文・コマンド・パスの中身は引用しない。進行中のセッションは読まない。mac の `~/.cursor/hooks.json` は本物の設定なので、Hook を入れる前に利用者の了承を取る（導入はバックアップしてから）。
 
-- [ ] **Hobby プランで hooks.json の command が呼ばれるか**。Cursor の料金ページでは「MCPs, skills, and hooks」が Pro 以上の欄にあるが、Windows の Hobby では実際に動いている（利用者の環境。2026-10-06）。呼ばれなければ、mac の Cursor は会話ログの取り込みで出す（11 章。Hook を登録したままだと「Hook なし」の帯が出続けるので、扱いを利用者と決める）
-- [ ] hooks.json の場所（`~/.cursor/hooks.json`）、command の起動のされ方（どのシェルか）、**スペースを含むパス**（`~/Library/Application Support/Miharikun/bin/…`）で起動できるか
-- [ ] 入力の JSON の形が Windows と同じか。`workspace_roots` の形（`/Users/…` か）。日本語が壊れずに届くか（14.1 の文字化けは Windows の PowerShell が原因なので、起きない見込み）
+- [x] **Hobby プランで hooks.json の command が呼ばれるか**。Cursor の料金ページでは「MCPs, skills, and hooks」が Pro 以上の欄にあるが、Windows の Hobby では実際に動いている（利用者の環境。2026-10-06）。呼ばれなければ、mac の Cursor は会話ログの取り込みで出す（11 章。Hook を登録したままだと「Hook なし」の帯が出続けるので、扱いを利用者と決める）
+- [x] hooks.json の場所（`~/.cursor/hooks.json`）、command の起動のされ方（どのシェルか）、**スペースを含むパス**（`~/Library/Application Support/Miharikun/bin/…`）で起動できるか
+- [x] 入力の JSON の形が Windows と同じか。`workspace_roots` の形（`/Users/…` か）。日本語が壊れずに届くか（14.1 の文字化けは Windows の PowerShell が原因なので、起きない見込み）
 - [ ] 「隔離」の印が付いたままの Hook を Cursor が呼んだときの動き（止まるか・ダイアログが出るか・何も出ないか）（8.1）
-- [ ] Cursor の会話ログの場所（`~/.cursor/projects/<slug>/agent-transcripts/`）と slug の規則（11 章）
-- [ ] Claude Code の会話ログのフォルダ名の規則（`/Users/x/repo` → `-Users-x-repo` か）と `cwd` の形（9.1）
-- [ ] `git` が使えるか（Xcode Command Line Tools）。Hook の `git -C` と App の git の呼び出し
+- [x] Cursor の会話ログの場所（`~/.cursor/projects/<slug>/agent-transcripts/`）と slug の規則（11 章）
+- [x] Claude Code の会話ログのフォルダ名の規則（`/Users/x/repo` → `-Users-x-repo` か）と `cwd` の形（9.1）
+- [x] `git` が使えるか（Xcode Command Line Tools）。Hook の `git -C` と App の git の呼び出し
 - [ ] シンボリックリンクを経由したフォルダ（`/tmp/…` など）で、Claude Code の `cwd`・Cursor の `workspace_roots`・git のルート（`git rev-parse --show-toplevel`）が、実パス・論理パスのどちらで来るか（9 章）
 - [ ] 日本語のファイル名の形：Finder で作ったファイル名が NFD（濁点が分かれた形）か。ドキュメントタブのリンク・最後のファイルの復元に効く（12.7）
+
+**結果（2026-10-07、Phase 27。詳細は `docs/macos-support/phase27-mac-check.md`）**：Hobby でも Hook は呼ばれ、空白を含むパス（`~/Library/Application Support/Miharikun/bin/…`）・引用符つきの command で起動できた。`workspace_roots` は `/Users/…` の絶対パス、日本語は壊れない（NFC）。Cursor の会話ログは `~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl`、slug は仮説どおり。Claude Code のフォルダ名は `-Users-x-repo` の形、`cwd` は `/Users/…`。`xcode-select -p`・git は使える。git の `--show-toplevel` はリンク経由でも実パスを返す。**保留**：「隔離」の印が付いた Hook を Cursor が呼んだときの動き（任意項目）、Finder で作った日本語名の NFD、リンク経由のフォルダで Claude の `cwd`・Cursor の `workspace_roots` がどちらの形で来るか。mac のテストは 117 件が落ちる（合格 930・スキップ 5。内訳は参照先。Phase 29-2 の基準）。
 
 ## 15. 実装フェーズ
 
@@ -903,9 +905,11 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 全体の完了条件：Windows と mac の両方で、12 章の機能がすべて同じように動く（違いは 12.12 だけ）。配置・項目は変えない。既存のテストが減らない。Core は AOT 互換（警告 0）。ライト/ダークの両方で確認する
 - 開発の場所：Phase 27 は mac。Phase 28 は Windows（WPF で挙動を確かめられる最後の機会）。Phase 29〜32 は mac が中心（Windows 版の Hook は CI の Windows ランナーで作る。Phase 32 の Windows の発行は Windows か CI）。Phase 33 は両方。OS を移る前と CI を見る前に、利用者にコミットと push を頼む（作業ツリーは OS をまたげないため）
 
-## [ ] Phase 27: mac の実機確認（Step 0）
+## [x] Phase 27: mac の実機確認（Step 0）
 - 14.3 の項目を、利用者の mac で確かめる（Hook は、mac で NativeAOT で作って手で入れる）。任意で、WKWebView の読み取り範囲の試作（捨てる小さな画面。12.7。Phase 30 の最初でもよい）
 - 完了条件：14.3 の項目が「確認済み」または「保留」に整理され、Core の mac 向けの直し（Phase 29）の内容が決まる
+- 状況：2026-10-07、利用者の mac で確認。結果は 14.3 と `docs/macos-support/phase27-mac-check.md`。Hobby でも Hook が呼ばれ、空白を含むパスで動いたので、既定の置き場所は変えず、会話ログの取り込みへの切り替えも要らない。Phase 29 は mac の形の行をテストに足し、落ちる 117 件（基準）を 3 つに分ける。保留は 14.3 のとおり（印の付いた Hook・Finder の NFD・リンク経由の `cwd`／`workspace_roots`）。WKWebView の試作（任意）は 30-1 の最初に回した。
+  - 実環境に残したもの：`~/.cursor/hooks.json`（新規作成。13 イベント）、`~/Library/Application Support/Miharikun/`（`bin/Miharikun.Hook`・`events/`）。残すか戻すかは利用者が決める。
 
 ## [x] Phase 28: ViewModel の切り出し（挙動は変えない）
 - `Miharikun.Presentation`（`net10.0`）を作り、ViewModel を移す。WPF の型（`DispatcherTimer`・`CollectionViewSource`/`ICollectionView`・`Clipboard`・`MessageBox`）を使わない形にし、タイマー・クリップボード・「フォルダで表示」・確認ダイアログ・UI スレッドへの受け渡しは interface 越しにする。一覧の絞り込みは、絞った一覧を自前で作る（作り直さずに合わせ、選んでいるカードは動かさない：12.2）。タイムラインの種別・検索・切り替えは、入れ物ごと差し替える（5,000 行でも 1 件ずつ通知しない）。Issue #17（Phase 34〜36）で入った `HookSetup` の置き場所（起動時の受け入れ・`ChangePlacement`）と、`MainViewModel` の「Hook なし」の帯（件数・文・hook-error.log を開く）も、同じ形で移す

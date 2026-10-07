@@ -202,18 +202,18 @@ Miharikun.slnx                                    28-1 変更：Presentation を
 ## 7. 実装の決めごと（迷いやすい所）
 
 ### 7.1 Phase 27 の結果で決まること
-| 確かめること（14.3） | 結果が「はい」 | 結果が「いいえ」のとき |
-|---|---|---|
-| Hobby で hooks.json の command が呼ばれる | そのまま | mac の Cursor は会話ログの取り込み（要件 11 章。Issue #17 で transcript が変わるたびに取り込むようになったので、再起動は要らない）で出す。Hook の mac 対応（29-3）と配布は行い、mac 実機での Hook の確認は「保留」。**Hook を登録したままだと、どのセッションも「Hook なし」になり、警告の帯が出続ける**（要件 12.11）。扱い（mac では導入を勧めない／帯の文を替える など）は、この結果を見て利用者と決める（推測で決めない。7.21） |
-| 空白を含むパス（`~/Library/Application Support/…`）で起動できる | 既定の置き場所は今の規則（データの `bin/`） | mac の**既定の置き場所**（`HookInstaller.DefaultHookDir`）を `~/.miharikun/bin` にする（mac だけ。29-3。2026-10-07 決定。要件 8 章・8.2）。既定なのでフォルダはアプリが作る。`hookDir` の設定・受け入れ・`ToSettingValue` の「既定と同じなら null」はこの既定で動く。利用者の操作は要らない |
-| `workspace_roots` が `/Users/…` の形 | `ProjectPath` はそのまま | 見つかった形を `ProjectPath.Normalize` で直す（29-4。テスト） |
-| 日本語の入力が壊れない | `PayloadRecovery` は mac では何もしない | 壊れ方を調べて相談（推測で直さない） |
-| 「隔離」の印の付いた Hook を Cursor が呼ぶと止まる | 導入時の印の解除と `--probe` が必須（7.12。予定どおり） | 印の解除は念のため残す |
-| Cursor の会話ログが `~/.cursor/projects/<slug>/agent-transcripts/`、slug は Windows と同じ規則 | `CursorTranscriptImporter` はそのまま | 規則を合わせる（29-4。テスト） |
-| Claude Code のフォルダ名が `-Users-x-repo` の形 | `ClaudeFolderName` はそのまま | 規則を合わせる。合わなくても、候補 0 件のときの `cwd` での探索（要件 9.1）で見つかる |
-| `xcode-select -p` が通る（Command Line Tools がある） | `GitLocator` は開発フォルダの git の実体を使える（7.13） | 7.13 のとおり（git は「不明」） |
-| 日本語を含むフォルダ・ファイルがある（Finder で作った名前が NFD か） | NFC と NFD の違いを 1 件確かめる。ドキュメントの相対パスも NFC で比べる（7.14。予定どおり） | 保留（7.14 の NFC はそのまま入れる。害は無い） |
-| シンボリックリンクを経由したフォルダで、Claude の `cwd`・Cursor の `workspace_roots`・git のルートが実パスで来る | 実パスとも比べる（7.14。予定どおり） | 実パスとも比べる作りは残す（害は無い）。来た形を記録する |
+| 確かめること（14.3） | 結果が「はい」 | 結果が「いいえ」のとき | 結果（Phase 27） |
+|---|---|---|---|
+| Hobby で hooks.json の command が呼ばれる | そのまま | mac の Cursor は会話ログの取り込み（要件 11 章。Issue #17 で transcript が変わるたびに取り込むようになったので、再起動は要らない）で出す。Hook の mac 対応（29-3）と配布は行い、mac 実機での Hook の確認は「保留」。**Hook を登録したままだと、どのセッションも「Hook なし」になり、警告の帯が出続ける**（要件 12.11）。扱い（mac では導入を勧めない／帯の文を替える など）は、この結果を見て利用者と決める（推測で決めない。7.21） | はい（確認済み）。9 イベントが届いた |
+| 空白を含むパス（`~/Library/Application Support/…`）で起動できる | 既定の置き場所は今の規則（データの `bin/`） | mac の**既定の置き場所**（`HookInstaller.DefaultHookDir`）を `~/.miharikun/bin` にする（mac だけ。29-3。2026-10-07 決定。要件 8 章・8.2）。既定なのでフォルダはアプリが作る。`hookDir` の設定・受け入れ・`ToSettingValue` の「既定と同じなら null」はこの既定で動く。利用者の操作は要らない | はい（確認済み）。空白入りのパスで Cursor から起動できた |
+| `workspace_roots` が `/Users/…` の形 | `ProjectPath` はそのまま | 見つかった形を `ProjectPath.Normalize` で直す（29-4。テスト） | はい（確認済み）。`/Users/…` の絶対パス |
+| 日本語の入力が壊れない | `PayloadRecovery` は mac では何もしない | 壊れ方を調べて相談（推測で直さない） | はい（確認済み）。UTF-8 のまま・NFC |
+| 「隔離」の印の付いた Hook を Cursor が呼ぶと止まる | 導入時の印の解除と `--probe` が必須（7.12。予定どおり） | 印の解除は念のため残す | 保留（任意の確認⑤は未実施）。29-3 の印の解除と `--probe` を予定どおり入れる |
+| Cursor の会話ログが `~/.cursor/projects/<slug>/agent-transcripts/`、slug は Windows と同じ規則 | `CursorTranscriptImporter` はそのまま | 規則を合わせる（29-4。テスト） | はい（確認済み）。slug の規則が一致 |
+| Claude Code のフォルダ名が `-Users-x-repo` の形 | `ClaudeFolderName` はそのまま | 規則を合わせる。合わなくても、候補 0 件のときの `cwd` での探索（要件 9.1）で見つかる | はい（確認済み）。フォルダ名・`cwd` とも想定どおり |
+| `xcode-select -p` が通る（Command Line Tools がある） | `GitLocator` は開発フォルダの git の実体を使える（7.13） | 7.13 のとおり（git は「不明」） | はい（確認済み）。`/Applications/Xcode.app/Contents/Developer` |
+| 日本語を含むフォルダ・ファイルがある（Finder で作った名前が NFD か） | NFC と NFD の違いを 1 件確かめる。ドキュメントの相対パスも NFC で比べる（7.14。予定どおり） | 保留（7.14 の NFC はそのまま入れる。害は無い） | 一部：APFS は NFD を保持し、NFC の名前でも同じファイル。Finder の名前は保留（7.14 の NFC はそのまま入れる） |
+| シンボリックリンクを経由したフォルダで、Claude の `cwd`・Cursor の `workspace_roots`・git のルートが実パスで来る | 実パスとも比べる（7.14。予定どおり） | 実パスとも比べる作りは残す（害は無い）。来た形を記録する | 一部：git は実パスで来る。`cwd`・`workspace_roots` はリンク経由で未確認＝保留（実パスとも比べる作りを入れる） |
 
 ### 7.2 `IUiServices`（画面の仕組みへの口）
 | メンバー | 役目 | WPF（28） | Avalonia（30） | テスト（Fake） |
