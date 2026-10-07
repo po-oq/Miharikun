@@ -6,7 +6,7 @@ using Avalonia.Threading;
 namespace Miharikun.Behaviors;
 
 /// <summary>
-/// インライン編集用の添付プロパティ（WPF 版と同じ。計画 7.9）。表示された瞬間にフォーカスして全選択し、
+/// インライン編集用の添付プロパティ（WPF 版と同じ。計画 7.9）。表示された（その入力欄自身の IsVisible が true になった）瞬間にフォーカスして全選択し、
 /// フォーカスを失ったらコマンドを実行する（名前の編集：Enter・フォーカスアウトで確定、Esc で取り消し）。
 /// </summary>
 public static class TextBoxBehaviors

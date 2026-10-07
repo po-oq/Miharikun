@@ -40,6 +40,9 @@ internal sealed class MainVmHarness : IDisposable
     public MainViewModel Vm { get; }
     public List<string> Log { get; } = [];
 
+    /// <summary>セッションの生のイベントの差し替え（タイムライン・ターン一覧に出る）。null なら空。</summary>
+    public Func<SessionKey, IReadOnlyList<AgentEvent>>? EventsOf { get; set; }
+
     /// <summary>git status の差し替え（null＝git 不明）。呼ばれた回数も数える。</summary>
     public GitStatus? GitStatus { get; set; }
     public int GitStatusCalls { get; private set; }
@@ -53,7 +56,7 @@ internal sealed class MainVmHarness : IDisposable
         Directory.CreateDirectory(Project);
         Meta = new SessionMetaService(agent => new MetaStore(Paths, agent), clock: () => Now);
         Monitor = new SessionMonitor(new ProjectEventStore([]));
-        Vm = new MainViewModel(Project, Monitor, new ImmediateSynchronizationContext(), _ => [], Meta, Ui,
+        Vm = new MainViewModel(Project, Monitor, new ImmediateSynchronizationContext(), key => EventsOf?.Invoke(key) ?? [], Meta, Ui,
             () =>
             {
                 GitStatusCalls++;

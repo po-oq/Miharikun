@@ -1,0 +1,184 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Miharikun.Converters"
+             xmlns:b="clr-namespace:Miharikun.Behaviors"
+             xmlns:views="clr-namespace:Miharikun.Views"
+             x:Class="Miharikun.Views.DetailPaneView">
+    <!-- 中央ペイン：選択中セッションの詳細（要件 12.3）。DataContext は SessionDetailViewModel -->
+    <StackPanel>
+        <views:DetailHeaderView />
+
+        <!-- セッション概要 -->
+        <Border Classes="section">
+            <StackPanel>
+                <TextBlock Classes="heading" Text="セッション概要" />
+                <StackPanel IsVisible="{Binding !IsEditingSummary}">
+                    <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap" />
+                    <TextBlock Classes="dim" Text="{Binding SummaryInfo}" Margin="0,2,0,0" />
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button Content="💬 最後の返事を概要に取り込む" Command="{Binding ImportSummaryCommand}" Margin="0,0,6,4" />
+                        <Button Content="✏️ 編集" Command="{Binding EditSummaryCommand}" Margin="0,0,6,4" />
+                        <Button Content="↩ 1つ前に戻す" Command="{Binding RevertSummaryCommand}" Margin="0,0,0,4" />
+                    </WrapPanel>
+                </StackPanel>
+                <StackPanel>
+                    <!-- FocusWhenVisible は入力欄自身の IsVisible を見る（親の StackPanel を隠すだけだと働かない） -->
+                    <TextBox Text="{Binding SummaryDraft}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" MaxHeight="220"
+                             IsVisible="{Binding IsEditingSummary}"
+                             AutomationProperties.AutomationId="SummaryDraftBox"
+                             b:TextBoxBehaviors.FocusWhenVisible="True" />
+                    <WrapPanel Margin="0,8,0,0" IsVisible="{Binding IsEditingSummary}">
+                        <Button Content="保存" Command="{Binding SaveSummaryCommand}" Classes="accent" />
+                        <Button Content="キャンセル" Command="{Binding CancelSummaryCommand}" />
+                    </WrapPanel>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- いまの状況（3 行サマリー）。クリックでタイムラインへジャンプ -->
+        <Border Classes="section">
+            <StackPanel>
+                <TextBlock Classes="heading" Text="いまの状況" />
+                <Button Classes="jump" Command="{Binding JumpPromptCommand}" AutomationProperties.AutomationId="JumpPrompt">
+                    <Grid ColumnDefinitions="150,*">
+                        <TextBlock Text="📝 最後に頼んだこと" />
+                        <TextBlock Grid.Column="1" Text="{Binding PromptLine}" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </Button>
+                <Button Classes="jump" Command="{Binding JumpToolCommand}" AutomationProperties.AutomationId="JumpTool">
+                    <Grid ColumnDefinitions="150,*">
+                        <TextBlock Text="🔧 最後にやってたこと" />
+                        <TextBlock Grid.Column="1" Text="{Binding ToolLine}" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </Button>
+                <Button Classes="jump" Command="{Binding JumpResponseCommand}" AutomationProperties.AutomationId="JumpResponse">
+                    <Grid ColumnDefinitions="150,*">
+                        <TextBlock Text="💬 最後の返事" />
+                        <TextBlock Grid.Column="1" Text="{Binding ResponseLine}" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- 完了チェック -->
+        <Border Classes="section">
+            <StackPanel>
+                <TextBlock Classes="heading" Text="完了チェック" />
+                <ItemsControl ItemsSource="{Binding Checks}" AutomationProperties.AutomationId="Checks">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                                <TextBlock Classes="check" Text="{Binding Mark}"
+                                           Classes.ok="{Binding Level, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=ok}"
+                                           Classes.ng="{Binding Level, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=ng}" />
+                                <TextBlock Text="{Binding Text}" Margin="4,0,0,0" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="dim" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Text="※コミット済みの判定は、このセッションで編集されたファイルだけが対象です（シェル経由の変更・他の変更は対象外）" />
+            </StackPanel>
+        </Border>
+
+        <!-- 稼働状態（コストの目安） -->
+        <Border Classes="section">
+            <StackPanel>
+                <TextBlock Classes="heading" Text="稼働状態（コストの目安）" />
+                <ItemsControl ItemsSource="{Binding Stats}" AutomationProperties.AutomationId="Stats">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="0,2">
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" />
+                                <TextBlock Text="{Binding Label}" Opacity="0.8" />
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="dim" Text="※金額・トークンではなく相対比較用の目安" Margin="0,4,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- 成果：コミット・変更したファイル・テスト実行（それぞれ開閉） -->
+        <Border Classes="section">
+            <StackPanel>
+                <TextBlock Classes="heading" Text="成果" />
+                <Expander Classes="plain" AutomationProperties.AutomationId="CommitsExpander">
+                    <Expander.Header>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="コミット" Opacity="0.8" />
+                            <TextBlock Grid.Column="1" Text="{Binding CommitsText}" />
+                        </Grid>
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding Commits}" Margin="0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Classes="mono" Text="{Binding}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+                <Expander Classes="plain" Margin="0,2,0,0" AutomationProperties.AutomationId="ChangedFilesExpander">
+                    <Expander.Header>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="変更したファイル" Opacity="0.8" />
+                            <TextBlock Grid.Column="1" Text="{Binding ChangedFilesText}" />
+                        </Grid>
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding ChangedFiles}" Margin="0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+                <Expander Classes="plain" Margin="0,2,0,0" AutomationProperties.AutomationId="TestRunsExpander">
+                    <Expander.Header>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="テスト実行" Opacity="0.8" />
+                            <TextBlock Grid.Column="1" Text="{Binding TestRunsText}" />
+                        </Grid>
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding TestRuns}" Margin="0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,6">
+                                    <TextBlock FontSize="12">
+                                        <Run Classes="mono" Text="{Binding Command, Mode=OneWay}" />
+                                        <Run Text="  " /><Run Text="{Binding Result, Mode=OneWay}" />
+                                        <Run Text="・" /><Run Text="{Binding Duration, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <TextBlock Classes="mono" Text="{Binding OutputTail}" FontSize="10" Opacity="0.7" MaxHeight="90"
+                                               TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+            </StackPanel>
+        </Border>
+
+        <!-- ターン一覧 -->
+        <Border Classes="section">
+            <StackPanel>
+                <TextBlock Classes="heading" Text="ターン一覧" />
+                <ItemsControl ItemsSource="{Binding Turns}" AutomationProperties.AutomationId="Turns">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Classes="jump" Command="{Binding JumpCommand}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Header}" Width="150" Opacity="0.8" />
+                                    <TextBlock Text="{Binding Prompt}" TextTrimming="CharacterEllipsis" />
+                                </DockPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

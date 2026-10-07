@@ -9,17 +9,15 @@
                         <views:LeftPaneView />
                     </Border>
                     <GridSplitter Grid.Column="1" Width="8" Background="Transparent" />
-                    <!-- 中央：詳細（30-4 で残りのブロックを足す） -->
-                    <Grid Grid.Column="2">
+                    <!-- 中央：詳細 -->
+                    <Border Grid.Column="2" Classes="pane"><Grid>
                         <TextBlock Text="左の一覧からセッションを選んでください" Opacity="0.6" HorizontalAlignment="Center" VerticalAlignment="Center"
                                    IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNull}}" />
                         <ScrollViewer DataContext="{Binding Detail}" VerticalScrollBarVisibility="Auto"
                                       IsVisible="{Binding, Converter={x:Static ObjectConverters.IsNotNull}}">
-                            <StackPanel Margin="0,0,14,0">
-                                <views:DetailHeaderView />
-                            </StackPanel>
+                            <views:DetailPaneView Margin="0,0,14,0" />
                         </ScrollViewer>
-                    </Grid>
+                    </Grid></Border>
                     <GridSplitter Grid.Column="3" Width="8" Background="Transparent" />
                     <!-- 右：タイムライン（30-5 で一覧・メモ・最近の入力を足す） -->
                     <views:TimelineHeadingView Grid.Column="4" VerticalAlignment="Top" />

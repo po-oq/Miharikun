@@ -4,6 +4,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Controls;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Miharikun.Tests.Presentation;
 using Miharikun.Views;
 
@@ -34,8 +35,16 @@ public sealed class ThemeScreenshots
 
         using var h = new MainVmHarness();
         Scene.Fill(h);
-        var window = new Window { Width = 1280, Height = 560, Content = new DashboardView { DataContext = h.Vm } };
+        var window = new Window { Width = 1280, Height = 1100, Content = new DashboardView { DataContext = h.Vm } };
         window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+
+        // 成果の「変更したファイル」を開いた状態も画に入れる（開閉の見た目の確認）
+        var expander = window.GetVisualDescendants().OfType<Expander>()
+            .First(x => Avalonia.Automation.AutomationProperties.GetAutomationId(x) == "ChangedFilesExpander");
+        expander.IsExpanded = true;
         Dispatcher.UIThread.RunJobs();
         window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();

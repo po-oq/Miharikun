@@ -162,6 +162,71 @@
         <Setter Property="Margin" Value="0,0,3,0" />
     </Style>
 
+    <!-- セクションの見出し・補足・ジャンプの行・完了チェックの印 -->
+    <Style Selector="TextBlock.heading">
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <Style Selector="Button.jump">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="6,4" />
+    </Style>
+    <Style Selector="Button.jump:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBackgroundBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.jump:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Opacity" Value="0.55" />
+    </Style>
+    <Style Selector="TextBlock.check">
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource StateIdleBrush}" />
+    </Style>
+    <Style Selector="TextBlock.check.ok"><Setter Property="Foreground" Value="{DynamicResource StateOkBrush}" /></Style>
+    <Style Selector="TextBlock.check.ng"><Setter Property="Foreground" Value="{DynamicResource StateErrorBrush}" /></Style>
+    <!-- 成果の開閉（Expander.plain）：枠なしの軽い見た目。見出しの行は「名前 … 件数 ⌄」、開くと左に細い線を引いた内容が出る。
+         FluentTheme の Expander は内容に「上だけ無い」枠を描くので、テンプレートごと置き換える -->
+    <Style Selector="Expander.plain">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <StackPanel>
+                    <ToggleButton Name="PlainHeader" IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                  Background="Transparent" BorderThickness="0" Padding="4,6" MinHeight="0" CornerRadius="6">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <ContentPresenter Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}" />
+                            <Path Name="Chevron" Grid.Column="1" Data="M 1,1.5 L 5,5.5 L 9,1.5" Stroke="{DynamicResource WindowTextBrush}"
+                                  StrokeThickness="1.4" Width="10" Height="7" VerticalAlignment="Center" Margin="4,0,2,0"
+                                  Stretch="None" RenderTransformOrigin="50%,50%" />
+                        </Grid>
+                    </ToggleButton>
+                    <Border IsVisible="{TemplateBinding IsExpanded}" BorderThickness="2,0,0,0" BorderBrush="{DynamicResource CardItemBorderBrush}"
+                            Margin="10,2,0,6" Padding="8,2,0,2">
+                        <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Border>
+                </StackPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Expander.plain:expanded /template/ Path#Chevron">
+        <Setter Property="RenderTransform" Value="rotate(180deg)" />
+    </Style>
+    <!-- 開いている（:checked）・押している（:pressed）ときも、地を塗らず文字色を変えない（トグルボタンの既定はアクセント色で塗る） -->
+    <Style Selector="Expander.plain /template/ ToggleButton#PlainHeader:checked /template/ ContentPresenter#PART_ContentPresenter, Expander.plain /template/ ToggleButton#PlainHeader:pressed /template/ ContentPresenter#PART_ContentPresenter, Expander.plain /template/ ToggleButton#PlainHeader:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource WindowTextBrush}" />
+    </Style>
+    <Style Selector="Expander.plain /template/ ToggleButton#PlainHeader:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBackgroundBrush}" />
+    </Style>
+
     <!-- 1 つだけ選ぶチップ（エージェントの絞り込み）。ListBox で、ListBoxItem をチップの形にする -->
     <Style Selector="ListBox.chips">
         <Setter Property="Background" Value="Transparent" />
@@ -215,6 +280,18 @@
         <Setter Property="Foreground" Value="White" />
     </Style>
     <Style Selector="Button.statusbtn.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+        <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- 主なボタン（保存など）：アクセント色 -->
+    <Style Selector="Button.accent">
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBrush}" />
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
         <Setter Property="Foreground" Value="White" />
     </Style>
