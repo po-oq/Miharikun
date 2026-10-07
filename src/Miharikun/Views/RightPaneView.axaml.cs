@@ -73,7 +73,7 @@ public partial class RightPaneView : UserControl
     /// まだ作っていない行の高さの見積もり（本文の折り返しから）。作ると測った高さに置き換わるので、近ければ近いほど、
     /// 作るときのスクロールのずれが小さい。文字の幅：半角は 0.55 em、全角は 1 em。
     /// </summary>
-    internal static double EstimateRowHeight(object row, double width)
+    public static double EstimateRowHeight(object row, double width)
     {
         if (row is not TimelineItemViewModel item)
             return 60;

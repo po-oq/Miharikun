@@ -40,6 +40,9 @@ public sealed class TimelinePanel : Panel, ILogicalScrollable
 
     private IList? _items;
     private List<double> _heights = [];
+    private List<double> _raw = [];            // 行ごとの見積もり（補正前）
+    private double _learnMeasured, _learnEstimated;   // 初めて測った行の、測った高さと見積もりの合計（補正の元）
+    private double _scale = 1;                 // 見積もりの補正（測った高さ ÷ 見積もり）。OS のフォントの違いを吸収する
     private double[] _prefix = [0];
     private bool _prefixDirty = true;
     private bool _rebuild = true;
@@ -103,18 +106,22 @@ public sealed class TimelinePanel : Panel, ILogicalScrollable
         if (_rebuild)
         {
             _heights = new List<double>(count);
+            _raw = new List<double>(count);
             _rebuild = false;
         }
         while (_heights.Count < count)
-            _heights.Add(HeightOf(_items![_heights.Count]!));
+        {
+            var item = _items![_heights.Count]!;
+            var raw = Math.Max(1, EstimateHeight?.Invoke(item, _width) ?? 60);
+            _raw.Add(raw);
+            _heights.Add(_measured.TryGetValue(item, out var box) ? box.Value : raw * _scale);
+        }
+        if (_raw.Count > count)
+            _raw.RemoveRange(count, _raw.Count - count);
         if (_heights.Count > count)
             _heights.RemoveRange(count, _heights.Count - count);
         _prefixDirty = true;
     }
-
-    /// <summary>測ったことのある行はその高さ、なければ見積もり。</summary>
-    private double HeightOf(object item) =>
-        _measured.TryGetValue(item, out var box) ? box.Value : Math.Max(1, EstimateHeight?.Invoke(item, _width) ?? 60);
 
     private void EnsurePrefix()
     {
@@ -125,6 +132,27 @@ public sealed class TimelinePanel : Panel, ILogicalScrollable
             prefix[i + 1] = prefix[i] + _heights[i];
         _prefix = prefix;
         _prefixDirty = false;
+    }
+
+    /// <summary>
+    /// 測った高さと見積もりの比で、まだ測っていない行の見積もりを補正する（OS のフォントで折り返しが違っても、全体の高さが実際に近づく）。
+    /// 2% 以上変わったときだけ直す。直したら true（先頭の行の位置を保つ処理が働く）。
+    /// </summary>
+    private bool ApplyLearnedScale()
+    {
+        if (_learnEstimated <= 0)
+            return false;
+        var scale = Math.Clamp(_learnMeasured / _learnEstimated, 0.4, 2.5);
+        if (Math.Abs(scale - _scale) < 0.02)
+            return false;
+        _scale = scale;
+        for (var i = 0; i < _heights.Count; i++)
+        {
+            if (!_measured.TryGetValue(_items![i]!, out _))
+                _heights[i] = _raw[i] * _scale;
+        }
+        _prefixDirty = true;
+        return true;
     }
 
     private double Total { get { EnsurePrefix(); return _prefix[^1]; } }
@@ -195,6 +223,11 @@ public sealed class TimelinePanel : Panel, ILogicalScrollable
                     var element = Realize(i);
                     element.Measure(new Size(width, double.PositiveInfinity));
                     var measured = Math.Max(1, element.DesiredSize.Height);
+                    if (!_measured.TryGetValue(_items![i]!, out _))
+                    {
+                        _learnMeasured += measured;      // 初めて測った行：見積もりとの比を、補正の元にする
+                        _learnEstimated += _raw[i];
+                    }
                     _measured.AddOrUpdate(_items![i]!, new StrongBox<double>(measured));
                     if (Math.Abs(measured - _heights[i]) > 0.25)
                     {
@@ -203,6 +236,7 @@ public sealed class TimelinePanel : Panel, ILogicalScrollable
                         changed = true;
                     }
                 }
+                changed |= ApplyLearnedScale();
                 if (!changed)
                     break;
 

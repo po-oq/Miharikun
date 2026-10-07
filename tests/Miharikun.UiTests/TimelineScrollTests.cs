@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using Miharikun.Core.Sessions;
 using Miharikun.Tests.Presentation;
@@ -24,7 +25,7 @@ public sealed class TimelineScrollTests
         public TimelinePanel Panel { get; }
         public ScrollViewer Scroll { get; }
 
-        public Screen(int events = 5000)
+        public Screen(int events = 5000, double estimateFactor = 1)
         {
             var key = MainVmHarness.KeyOf("big");
             var list = Scene.Big(key, events);
@@ -32,7 +33,11 @@ public sealed class TimelineScrollTests
             var summary = SessionAnalyzer.Analyze(key, list);
             Harness.Add(new SessionSnapshot(summary, SessionSearch.BuildSearchText(summary, list)));
             Harness.Vm.Selected = Harness.Card("big");
-            Window = new Window { Width = 1280, Height = 820, Content = new DashboardView { DataContext = Harness.Vm } };
+            var dashboard = new DashboardView { DataContext = Harness.Vm };
+            if (estimateFactor != 1)   // 見積もりを、わざとずらす（表示する前に。最初の行を作る前から効かせる）
+                dashboard.GetLogicalDescendants().OfType<TimelinePanel>().First().EstimateHeight =
+                    (row, width) => RightPaneView.EstimateRowHeight(row, width) * estimateFactor;
+            Window = new Window { Width = 1280, Height = 820, Content = dashboard };
             Window.Show();
             Flush();
             Panel = Window.GetVisualDescendants().OfType<TimelinePanel>().First();
@@ -86,7 +91,7 @@ public sealed class TimelineScrollTests
 
         var steps = 0;
         var worstRowJump = 0;          // 1 ノッチで、先頭に見えている行の番号が変わった最大
-        var worstOffsetJump = 0.0;     // 1 ノッチで、位置が動いた量の最大
+        var worstVisualMove = 0.0;     // 1 ノッチで、先頭に見えていた行が画面上で動いた量の最大（内部の位置は、先頭の行を保つ補正で動くので、見た目で測る）
         var worstBarBack = 0.0;        // バー（位置 ÷ 動ける範囲）が、上へ進んでいるのに下がった最大
         var prevRow = s.Panel.IndexAt(s.Scroll.Offset.Y);
         var prevOffset = s.Scroll.Offset.Y;
@@ -94,24 +99,25 @@ public sealed class TimelineScrollTests
         var prevBar = Bar();
         while (s.Scroll.Offset.Y > 0.01 && steps < 20000)
         {
+            var rowTopBefore = s.Panel.OffsetOf(prevRow) - s.Scroll.Offset.Y;   // 先頭の行の、画面上の位置
             s.Window.MouseWheel(wheel, new Vector(0, 1));   // 上へ 1 ノッチ
             s.Flush();
             steps++;
+            worstVisualMove = Math.Max(worstVisualMove, Math.Abs((s.Panel.OffsetOf(prevRow) - s.Scroll.Offset.Y) - rowTopBefore));
             var row = s.Panel.IndexAt(s.Scroll.Offset.Y);
             worstRowJump = Math.Max(worstRowJump, Math.Abs(prevRow - row));
-            worstOffsetJump = Math.Max(worstOffsetJump, Math.Abs(prevOffset - s.Scroll.Offset.Y));
             worstBarBack = Math.Max(worstBarBack, Bar() - prevBar);
             prevRow = row;
             prevOffset = s.Scroll.Offset.Y;
             prevBar = Bar();
         }
 
-        var report = $"ノッチ {steps}・1 ノッチで行が変わった最大 {worstRowJump}・位置が動いた最大 {worstOffsetJump:F0}px・バーが下がった最大 {worstBarBack:P3}・最後の行 {prevRow}・全体の高さ {s.Scroll.Extent.Height:F0}";
+        var report = $"ノッチ {steps}・1 ノッチで行が変わった最大 {worstRowJump}・見た目の動きの最大 {worstVisualMove:F0}px・バーが下がった最大 {worstBarBack:P3}・最後の行 {prevRow}・全体の高さ {s.Scroll.Extent.Height:F0}";
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "scrollbar-report.txt"), report);
         Assert.True(s.Scroll.Offset.Y <= 0.01, "先頭まで届く：" + report);
         Assert.Equal(0, prevRow);
         Assert.True(worstRowJump <= 3, "途中で飛ばない：" + report);              // 1 ノッチ（約 50px）は、高い行でも数行まで
-        Assert.True(worstOffsetJump <= 120, "1 ノッチの動きが大きすぎない：" + report);
+        Assert.True(worstVisualMove <= 120, "1 ノッチの動きが大きすぎない：" + report);
         Assert.True(worstBarBack < 0.002, "バーが戻らない：" + report);
     }
 
@@ -130,6 +136,26 @@ public sealed class TimelineScrollTests
         var real = s.Scroll.Extent.Height;
 
         Assert.InRange(estimated / real, 0.8, 1.25);   // 見積もりが実際の ±20% 以内（標準の ListBox は 4 倍外れた）
+    }
+
+    [AvaloniaTheory]
+    [InlineData(1.4)]
+    [InlineData(0.6)]
+    public void A_wrong_estimate_is_corrected_from_the_rows_that_were_measured(double factor)
+    {
+        // OS のフォントで折り返しが違うと、見積もりの式（半角 0.55 em・全角 1 em）がずれる（Windows の CI で実際より 28% 大きかった）。
+        // 作った行の測った高さから補正して、全体の高さが実際に近づく。
+        using var s = new Screen(estimateFactor: factor);
+        var estimated = s.Scroll.Extent.Height;   // 最初の画面の分だけ測った時点
+
+        for (var y = 0.0; y < estimated * 1.5; y += 600)
+        {
+            s.Scroll.Offset = new Vector(0, y);
+            s.Flush();
+        }
+        var real = s.Scroll.Extent.Height;
+
+        Assert.InRange(estimated / real, 0.75, 1.3);   // 最初の画面の分だけ測った時点でも、補正で ±30% 以内
     }
 
     [AvaloniaFact]
