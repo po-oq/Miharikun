@@ -18,6 +18,15 @@ internal sealed class InlineRunner : Miharikun.Services.IBackgroundRunner
     }
 }
 
+/// <summary>
+/// 背景の処理を、専用のスレッドで動かす（スレッドプールの空きを待たない）。処理が終わるまで待つテスト（git の重なり防止）で、
+/// 混んだ CI でプールの拡張が遅れて、動き出す前に待ち時間が切れるのを避ける。
+/// </summary>
+internal sealed class DedicatedThreadRunner : Miharikun.Services.IBackgroundRunner
+{
+    public Task<T> Run<T>(Func<T> work) => Task.Factory.StartNew(work, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+}
+
 internal sealed class MainVmHarness : IDisposable
 {
     public static readonly DateTimeOffset Now = DateTimeOffset.Now;

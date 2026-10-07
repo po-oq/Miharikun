@@ -324,7 +324,7 @@ public sealed class MainViewModelTests : IDisposable
     public async Task Git_refresh_does_not_overlap_and_a_failure_is_logged_not_thrown()
     {
         // 実際に背景で動かす（重なりを止める動きは、ほかのテストの同期実行では確かめられない）。一覧は触らないので競合しない。
-        using var h = new MainVmHarness(background: new Miharikun.Services.ThreadPoolRunner());
+        using var h = new MainVmHarness(background: new DedicatedThreadRunner());
         var Vm = h.Vm;
         var gate = new TaskCompletionSource();
         var calls = 0;
