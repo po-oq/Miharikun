@@ -154,7 +154,13 @@
     <Style Selector="CheckBox.chip:checked /template/ Border#Chip">
         <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource CardItemSelectedBrush}" />
-        <Setter Property="TextElement.Foreground" Value="White" />
+    </Style>
+    <!-- 文字色は CheckBox 自身の Foreground から ContentPresenter に渡る（テンプレート側で上書きされるので、Border に付けても効かない） -->
+    <Style Selector="CheckBox.chip:checked">
+        <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="CheckBox.chip:checked:pointerover">
+        <Setter Property="Foreground" Value="White" />
     </Style>
     <!-- タイムラインのチップ：狭い幅（340px）でも、チップ 5 つと検索ボックスが 1 行に収まるよう、余白を詰める -->
     <Style Selector="CheckBox.chip.compact">
