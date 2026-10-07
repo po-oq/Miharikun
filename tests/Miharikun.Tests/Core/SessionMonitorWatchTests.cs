@@ -178,6 +178,7 @@ public sealed class SessionMonitorWatchTests : IDisposable
         var root = Path.Combine(_dir, "tree");
         var sub = Path.Combine(root, "sub");
         Directory.CreateDirectory(sub);
+        File.WriteAllText(Path.Combine(root, "marker.txt"), "x");   // 最初の読み込みが終わったことを知るための目印
         var seen = new List<string>();
         var gate = new object();
         // ポーリングは 1 時間に 1 回（最初の 1 回だけ）なので、Watcher の通知だけで読み込みが起きる。
@@ -189,7 +190,10 @@ public sealed class SessionMonitorWatchTests : IDisposable
                 seen.AddRange(u.Upserts.Select(s => s.Summary.Key.SessionId));
         };
         monitor.Start();
-        Thread.Sleep(500);   // 最初の読み込みと Watcher の準備
+        // 最初の読み込み（サブフォルダも読む）が終わるのを待つ。混んだ CI で遅れると、あとで作る deep.txt を最初の読み込みが拾ってしまい、
+        // 「通知で読んだ」のか区別できなくなる（Windows の CI で 1 回、false のほうが落ちた）。
+        Assert.True(WaitFor(() => { lock (gate) return seen.Contains("marker"); }, timeoutMs: 10000), "最初の読み込みが終わらない");
+        Thread.Sleep(300);   // Watcher の準備
 
         File.WriteAllText(Path.Combine(sub, "deep.txt"), "x");
 
