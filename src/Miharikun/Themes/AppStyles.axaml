@@ -227,6 +227,80 @@
         <Setter Property="Background" Value="{DynamicResource CardItemSelectedBackgroundBrush}" />
     </Style>
 
+    <!-- タイムラインの行（要件 12.4）：入力は右寄せ・返事は左寄せの吹き出し。マウスを載せるとコピーのヒントを出す -->
+    <Style Selector="ListBox.timeline">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.timeline ListBoxItem">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Margin" Value="0,0,12,0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <ContentPresenter Name="RowContent" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Border.trow">
+        <Setter Property="Margin" Value="0,3,12,3" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.trow.input">
+        <Setter Property="Background" Value="{DynamicResource TimelineInputBrush}" />
+        <Setter Property="Margin" Value="24,3,12,3" />
+    </Style>
+    <Style Selector="Border.trow.response">
+        <Setter Property="Background" Value="{DynamicResource TimelineResponseBrush}" />
+        <Setter Property="Margin" Value="0,3,36,3" />
+    </Style>
+    <Style Selector="Border.trow.compaction"><Setter Property="Background" Value="{DynamicResource TimelineCompactionBrush}" /></Style>
+    <Style Selector="Border.trow.highlighted"><Setter Property="BorderBrush" Value="{DynamicResource TimelineHighlightBrush}" /></Style>
+    <Style Selector="Border.trow.truncated"><Setter Property="Cursor" Value="Hand" /></Style>
+    <Style Selector="Border.trow TextBlock.body">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Opacity" Value="0.8" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="Border.trow.input TextBlock.body, Border.trow.response TextBlock.body">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Opacity" Value="1" />
+    </Style>
+    <!-- 吹き出しは、出し入れ（IsVisible）でなく透明度で切り替える。出し入れすると行の高さが変わり、長い欄では位置がずれて
+         別の行にマウスが載り、またヒントが出て…と、マウスを載せただけで勝手にスクロールし続けるため -->
+    <Style Selector="Border.bubble">
+        <Setter Property="Opacity" Value="0" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="6,0" />
+        <Setter Property="Background" Value="{DynamicResource CardItemSelectedBrush}" />
+    </Style>
+    <Style Selector="Border.bubble > TextBlock">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Border.trow:pointerover Border.bubble"><Setter Property="Opacity" Value="1" /></Style>
+    <Style Selector="Border.trow.copied Border.bubble"><Setter Property="Opacity" Value="1" /></Style>
+    <!-- ヒントと「コピーしました」は、同じ場所に重ねて、透明度で切り替える（幅も変わらない） -->
+    <Style Selector="Border.trow TextBlock.copiedtext"><Setter Property="Opacity" Value="0" /></Style>
+    <Style Selector="Border.trow.copied TextBlock.copiedtext"><Setter Property="Opacity" Value="1" /></Style>
+    <Style Selector="Border.trow.copied TextBlock.hinttext"><Setter Property="Opacity" Value="0" /></Style>
+
+    <!-- 見出しの小さいボタン（拡大・全部コピー） -->
+    <Style Selector="Button.headingbtn">
+        <Setter Property="Padding" Value="8,2" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Margin" Value="6,0,0,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="MinHeight" Value="0" />
+    </Style>
+
     <!-- 1 つだけ選ぶチップ（エージェントの絞り込み）。ListBox で、ListBoxItem をチップの形にする -->
     <Style Selector="ListBox.chips">
         <Setter Property="Background" Value="Transparent" />

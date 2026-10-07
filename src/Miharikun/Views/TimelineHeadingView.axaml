@@ -1,12 +1,26 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Miharikun.Converters"
              x:Class="Miharikun.Views.TimelineHeadingView">
-    <!-- 右ペインの見出し（要件 12.4）：種別のチップ 5 つと検索ボックス。通常の幅 340px で 1 行に収める。DataContext は MainViewModel -->
+    <!-- 右ペインの見出し（要件 12.4）：題・件数・全部コピー・拡大、種別のチップ 5 つ、検索ボックス。通常の幅 340px で 1 行に収める。DataContext は MainViewModel -->
     <StackPanel>
-        <TextBlock Margin="10,0,10,6">
-            <Run Text="タイムライン" FontWeight="SemiBold" />
-            <Run Text="{Binding Timeline.CountText, Mode=OneWay}" FontSize="11" Foreground="Gray" />
-        </TextBlock>
+        <DockPanel Margin="10,8,10,6">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <!-- 表示中の行（種別・検索で絞った結果）をまとめてコピー -->
+                <Button Classes="headingbtn" Command="{Binding Timeline.CopyAllCommand}" ToolTip.Tip="いま表示している行をまとめてコピー"
+                        Content="{Binding Timeline.CopiedAll, Converter={x:Static conv:BoolTextConverter.Instance}, ConverterParameter='⧉ 全部コピー|✓ コピーしました'}"
+                        AutomationProperties.AutomationId="CopyAllButton" />
+                <Button Classes="headingbtn" Command="{Binding ToggleTimelineExpandedCommand}" ToolTip.Tip="タイムラインを画面いっぱいに広げる／戻す（Esc でも戻る）"
+                        Content="{Binding IsTimelineExpanded, Converter={x:Static conv:BoolTextConverter.Instance}, ConverterParameter='⤢ 拡大|⤡ 戻す'}"
+                        AutomationProperties.AutomationId="ExpandButton" />
+            </StackPanel>
+            <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                <Run Text="タイムライン" FontWeight="SemiBold" />
+                <Run Text="{Binding Timeline.CountText, Mode=OneWay}" FontSize="11" Foreground="Gray" />
+                <!-- 拡大中だけ：どのセッションか分かるように -->
+                <Run Text="{Binding ExpandedTitle, Mode=OneWay}" Foreground="Gray" />
+            </TextBlock>
+        </DockPanel>
         <Grid Margin="10,0,10,6" ColumnDefinitions="Auto,*">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <CheckBox Classes="chip compact" Content="入力" IsChecked="{Binding Timeline.ShowInput}" />
@@ -15,8 +29,8 @@
                 <CheckBox Classes="chip compact" Content="ツール" IsChecked="{Binding Timeline.ShowTool}" />
                 <CheckBox Classes="chip compact" Content="圧縮" IsChecked="{Binding Timeline.ShowCompaction}" />
             </StackPanel>
-            <!-- 検索：含む行だけを表示（種別のチップとは AND）。✕ は FluentTheme の TextBox の clearButton -->
-            <TextBox Grid.Column="1" Margin="4,0,0,0" FontSize="12" Padding="6,2" MinHeight="26"
+            <!-- 検索：含む行だけを表示（種別のチップとは AND） -->
+            <TextBox Grid.Column="1" Margin="4,0,0,0" FontSize="12" Padding="6,2" MinHeight="26" Classes="clearButton"
                      PlaceholderText="🔍 検索" Text="{Binding Timeline.SearchText}"
                      AutomationProperties.AutomationId="TimelineSearch" />
         </Grid>
