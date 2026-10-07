@@ -11,6 +11,7 @@ public partial class MainWindow : Window
     private AppComposition? _composition;
     private bool _closeConfirmed;
     private bool _closing;
+    private bool _settingsOpen;
 
     public MainWindow()
     {
@@ -84,9 +85,9 @@ public partial class MainWindow : Window
         base.OnClosing(e);
         if (_closeConfirmed || _composition is null)
             return;   // 閉じる（フォルダを選ぶ前も、何もしない）
-        if (_closing)
+        if (_closing || _settingsOpen || _composition.Ui.OpenDialogs > 0)
         {
-            e.Cancel = true;   // 確認を出している間に、もう一度閉じようとした
+            e.Cancel = true;   // 確認・設定を出している間に、もう一度閉じようとした（2 つ目のダイアログは出さない）
             return;
         }
 
@@ -146,4 +147,31 @@ public partial class MainWindow : Window
     private void OnInstallHookClick(object? sender, RoutedEventArgs e) => RunSafe(_composition!.HookSetup.InstallFromMenuAsync);
 
     private void OnUninstallHookClick(object? sender, RoutedEventArgs e) => RunSafe(_composition!.HookSetup.UninstallFromMenuAsync);
+
+    /// <summary>
+    /// アプリ全体の設定（要件 12.9）：「停止とみなす時間」と「Hook の置き場所」。保存するとすぐ効く。
+    /// 置き場所が変わったら、導入し直すかを聞く（8.2）。
+    /// </summary>
+    private void OnSettingsClick(object? sender, RoutedEventArgs e) => RunSafe(async () =>
+    {
+        var composition = _composition!;
+        var before = composition.HookSetup.CurrentHookDir;
+        AppSettingsResult? result;
+        _settingsOpen = true;
+        try
+        {
+            result = await AppSettingsDialog.ShowAsync(this, composition.ViewModel.RunningTimeoutMinutes, before, composition.HookSetup.DefaultHookDir);
+        }
+        finally
+        {
+            _settingsOpen = false;
+        }
+        if (result is null)
+            return;
+
+        composition.Settings.SaveRunningTimeoutMinutes(result.RunningTimeoutMinutes);
+        composition.ViewModel.SetRunningTimeout(result.RunningTimeoutMinutes);
+        if (!string.Equals(result.HookDir, Path.TrimEndingDirectorySeparator(before), StringComparison.OrdinalIgnoreCase))
+            await composition.HookSetup.ChangePlacementAsync(result.HookDir);
+    });
 }

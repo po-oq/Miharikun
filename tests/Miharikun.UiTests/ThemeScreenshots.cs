@@ -52,6 +52,14 @@ public sealed class ThemeScreenshots
         var frame = window.CaptureRenderedFrame();
         Assert.NotNull(frame);
         frame.Save(Path.Combine(dir, $"{variant}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        // 設定ダイアログ（⚙ → 設定…）も撮る。置き場所は存在するフォルダ
+        var dialog = new AppSettingsDialog(10, Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar), Path.Combine(dir, "default-bin"));
+        dialog.Show(window);
+        Dispatcher.UIThread.RunJobs();
+        dialog.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        dialog.CaptureRenderedFrame()!.Save(Path.Combine(dir, $"settings-{variant}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        dialog.Close();
         window.Close();
     }
 }

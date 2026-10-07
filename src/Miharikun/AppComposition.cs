@@ -26,8 +26,12 @@ public sealed class AppComposition : IDisposable
     public AppSettingsStore Settings { get; }
     public ThemeService Theme { get; }
 
-    public AppComposition(string folder, AppPaths paths, AppSettingsStore settings, ThemeService theme, IUiServices services)
+    /// <summary>確認・お知らせのダイアログ（開いている数を持つ）。</summary>
+    public AvaloniaUiServices Ui { get; }
+
+    public AppComposition(string folder, AppPaths paths, AppSettingsStore settings, ThemeService theme, AvaloniaUiServices services)
     {
+        Ui = services;
         Settings = settings;
         Theme = theme;
         var ui = SynchronizationContext.Current ?? throw new InvalidOperationException("UI スレッドの同期コンテキストが無い");

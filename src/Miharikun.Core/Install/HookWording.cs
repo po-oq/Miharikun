@@ -17,6 +17,14 @@ public static class HookWording
     /// <summary>設定画面の「Hook の置き場所」の欄の名前。</summary>
     public static string PlacementLabel => OperatingSystem.IsWindows() ? "Cursor の Hook exe の置き場所" : "Cursor の Hook の置き場所";
 
+    /// <summary>設定画面の「Hook の置き場所」の説明（要件 8.2・12.9）。</summary>
+    public static string PlacementHelp => OperatingSystem.IsWindows()
+        ? "会社の PC などで %LOCALAPPDATA% 配下の exe が動かないときに、C:\\dev のような動くフォルダを指定します。フォルダは作りません（先に作ってください）。保存して場所が変わったら、その場所に導入し直すかを聞きます。導入し直さないと、次の起動で hooks.json の登録の場所に戻ります。記録の保存先は変わりません。"
+        : "~/Library/Application Support 配下の Hook が動かないときに、/Users/（あなたの名前）/bin のような動くフォルダを指定します。フォルダは作りません（先に作ってください）。保存して場所が変わったら、その場所に導入し直すかを聞きます。導入し直さないと、次の起動で hooks.json の登録の場所に戻ります。記録の保存先は変わりません。";
+
+    /// <summary>「参照…」のフォルダ選択の題。</summary>
+    public static string BrowseTitle => OperatingSystem.IsWindows() ? "Hook exe を置くフォルダ" : "Hook を置くフォルダ";
+
     /// <summary>置き場所が完全なパスでないときの誤りの文。</summary>
     public static string NotAbsoluteMessage => OperatingSystem.IsWindows()
         ? "C:\\ から始まるフォルダを指定してください"

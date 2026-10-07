@@ -32,9 +32,22 @@ public sealed class AvaloniaUiServices(Func<Window?> owner) : IUiServices
 
     public string RevealButtonText => ShellOpen.RevealButtonText;
 
-    public Task<bool> ConfirmAsync(string title, string message) => MessageDialog.ConfirmAsync(owner(), title, message);
+    /// <summary>確認・お知らせを出している数。出している間に、もう一度ウィンドウを閉じようとしたときの判断に使う（計画 7.6 の 5）。</summary>
+    public int OpenDialogs { get; private set; }
 
-    public Task ShowMessageAsync(string title, string message, MessageKind kind) => MessageDialog.ShowAsync(owner(), title, message, kind);
+    public async Task<bool> ConfirmAsync(string title, string message)
+    {
+        OpenDialogs++;
+        try { return await MessageDialog.ConfirmAsync(owner(), title, message); }
+        finally { OpenDialogs--; }
+    }
+
+    public async Task ShowMessageAsync(string title, string message, MessageKind kind)
+    {
+        OpenDialogs++;
+        try { await MessageDialog.ShowAsync(owner(), title, message, kind); }
+        finally { OpenDialogs--; }
+    }
 
     /// <summary>Background の優先度（WPF の <c>DispatcherTimer</c> の既定と同じ。計画 7.4）。</summary>
     private sealed class AvaloniaTimer : IUiTimer
