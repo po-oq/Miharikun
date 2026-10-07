@@ -123,7 +123,8 @@ public sealed class HookCheckTests
     {
         var path = Path.Combine(Path.GetTempPath(), "mk-probe-" + Guid.NewGuid().ToString("N") + ".sh");
         File.WriteAllText(path, body);
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows())   // mac 専用のテストからだけ呼ぶ。Windows には実行権限が無い
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return path;
     }
 
