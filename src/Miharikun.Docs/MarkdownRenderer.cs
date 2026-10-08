@@ -25,11 +25,53 @@ public static class MarkdownRenderer
     private static readonly Lazy<string> LightCss = new(() => Resource("markdown-light.css"));
     private static readonly Lazy<string> DarkCss = new(() => Resource("markdown-dark.css"));
 
+    /// <summary>
+    /// Esc の受け口（<c>&lt;script&gt;</c> なしの本文）。Esc が押されたら C# へ <c>key:Escape</c> を知らせる。2 回入っても 1 回だけ効く。
+    /// html のプレビューにも読み込みの後で入れる。ページが自分で Esc を使った（defaultPrevented）ときは知らせない。
+    /// </summary>
+    public const string EscapeListenerScript = """
+        (function () {
+          if (window.__miharikunEsc) return;
+          window.__miharikunEsc = true;
+          document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !e.defaultPrevented && typeof invokeCSharpAction === 'function')
+              invokeCSharpAction('key:Escape');
+          });
+        })();
+        """;
+
+    // 幅が変わっても（拡大⇄戻す・区切り線のドラッグ）、見ていた所を保つ。md のページだけ。
+    private const string ScrollKeeperScript = """
+        (function () {
+          var anchor = null, anchorTop = 0, adjusting = false;
+          function remember() {
+            var els = document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,pre,table,blockquote');
+            for (var i = 0; i < els.length; i++) {
+              var t = els[i].getBoundingClientRect().top;
+              if (t >= 0) { anchor = els[i]; anchorTop = t; return; }
+            }
+          }
+          window.addEventListener('scroll', function () { if (!adjusting) remember(); }, { passive: true });
+          window.addEventListener('resize', function () {
+            if (!anchor) return;
+            adjusting = true;
+            window.scrollBy(0, anchor.getBoundingClientRect().top - anchorTop);
+            requestAnimationFrame(function () { adjusting = false; });
+          });
+          remember();
+        })();
+        """;
+
     /// <param name="baseFolder">md のあるフォルダ（相対パスの基準）。</param>
     /// <param name="isDark">ライト/ダーク。mermaid・コードの色付けにも渡す。</param>
-    public static string Render(string markdown, string baseFolder, bool isDark, string? title = null)
+    public static string Render(string markdown, string baseFolder, bool isDark, string? title = null) =>
+        RenderWithOutline(markdown, baseFolder, isDark, title).Html;
+
+    /// <summary>md を 1 回だけ解析して、HTML と見出しの一覧を返す（目次の id と本文の id を食い違わせないため）。</summary>
+    public static MarkdownRendering RenderWithOutline(string markdown, string baseFolder, bool isDark, string? title = null)
     {
-        var body = ReadOnlyCheckboxes(Markdown.ToHtml(markdown, Pipeline));
+        var doc = Markdown.Parse(markdown, Pipeline);
+        var body = ReadOnlyCheckboxes(doc.ToHtml(Pipeline));
         var hasMermaid = body.Contains(@"<pre class=""mermaid"">", StringComparison.Ordinal);
         var hasCode = body.Contains(@"<code class=""language-", StringComparison.Ordinal);
 
@@ -59,6 +101,8 @@ public static class MarkdownRenderer
             </script>
 
             """);
+        foot.Append("<script>\n").Append(EscapeListenerScript).Append("\n</script>\n");
+        foot.Append("<script>\n").Append(ScrollKeeperScript).Append("\n</script>\n\n");
         if (hasCode)
             foot.Append($$"""
                 <script src="{{HighlightBase}}/highlight.min.js"></script>
@@ -80,7 +124,7 @@ public static class MarkdownRenderer
                 """);
         foot.Append("</body>\n</html>\n");
 
-        return head + body + foot;
+        return new MarkdownRendering(head + body + foot, MarkdownOutline.Extract(doc));
     }
 
     /// <summary>

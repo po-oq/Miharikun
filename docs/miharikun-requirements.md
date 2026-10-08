@@ -1036,9 +1036,11 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## Phase 38〜41: ドキュメントの拡大モード（Issue #28）
 12.7.1 / 12.4.1。設計：`docs/issue28/issue28-documents-expand-design.html`、技術調査（試作）：`docs/issue28/issue28-tech-investigation.md`。実装の分け方・ファイル構成・決めごとは実装計画 `docs/issue28/issue28-documents-expand-plan.md`（図解 HTML と対）。全体の完了条件：拡大⇄戻す、Esc（プレビューの中・目次・入力欄・ほかのタブでは効かない）、目次で見出しへ移る、保存で目次が替わる、拡大⇄戻すで位置がずれない、を両 OS の実機で確かめる。ライト/ダークの両方。
 
-## [ ] Phase 38: 目次（Docs）
+## [x] Phase 38: 目次（Docs）
 - `MarkdownRenderer` が md を 1 回だけ解析し、HTML と見出しの一覧（段・文字・id・✅/⬜・節のタスク数）を返す。md のページに Esc の受け口と位置の補正の JS を足す。テスト先行
 - 完了条件：見出しの一覧の id が HTML の `id` と一致する（同じ名前の見出し・日本語・`[x]`・引用とリストの中・setext 形式）。`[x]` `[X]` `[ ]` の判定、記号を外した文字、入れ子の節のタスク数、コードブロックの中を数えない、空の見出しを出さない、のテストが通る。これまでの md の HTML（本文）は変わらない
+- 状況（2026-10-09 完了）：実装済み（38-1・38-2。テスト先行）。`MarkdownRenderer.RenderWithOutline`（`Markdown.Parse` → `ToHtml` の 1 回の解析で HTML と `MarkdownHeading` の一覧を返す。`Render` はその `Html`）、`MarkdownOutline.Extract`（id は Markdig の値のまま・印・文字・節のタスク数）。md のページの最後に Esc の受け口（`EscapeListenerScript`。`<script>` なしで公開）と位置の補正を追加（本文は不変）。
+  - テスト：Tests 1126 → 1152（`MarkdownOutlineTests` 23・`MarkdownRendererTests` 3。スキップ 29 のまま）、UiTests 52 合格・スキップ 3。ページの 3 つの `<script>` は `node --check` で構文を確認。実ブラウザでの動き（Esc・位置の補正）は Phase 40・41。
 
 ## [ ] Phase 39: 拡大モードの ViewModel
 - `IPreviewHost` の口（目次を受け取る・Esc を受け取る・見出しへ移る知らせ）、`DocumentsViewModel`（拡大の状態・目次・進み具合・Esc は戻すだけ・ファイルが無くなったら戻す・リンクで移ったら目次を替える・html では目次なし）、`MemoViewModel`（新しい口は何もしない）。テスト先行
