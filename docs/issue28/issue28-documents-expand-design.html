@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #28 ドキュメントの拡大モード 設計イメージ</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>Issue #28 ドキュメントタブの拡大モード（目次｜プレビュー）</h1>
+<p><b>状態：確定</b>（2026-10-09。Q1〜Q9 はすべて推奨で決定。要件定義 12.7.1・12.4.1、15 章の Phase 38〜41 に反映）。技術の裏付けは <code>docs/issue28/issue28-tech-investigation.md</code>（試作 Q1〜Q7）。</p>
+<p>ゴール：計画 md の「Phase 3」が md のどこかを探す手間をなくし、計画全体の進み具合を一目で見えるようにする。md を全幅の「目次｜プレビュー」で読み、目次を押すとその見出しへ移る。保存したら目次も作り直す（quicklook にできない「リアルタイムの更新」を保つ）。</p>
+
+<h2>1. 画面イメージ</h2>
+<h3>1-1. 通常（今のまま。「⤢ 拡大」を足すだけ）</h3>
+<svg viewBox="0 0 960 300" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<!-- 共通ヘッダー -->
+<rect x="0" y="0" width="960" height="26" fill="#fff" stroke="#999"/>
+<text x="10" y="18">ダッシュボード</text>
+<text x="112" y="18" font-weight="bold">ドキュメント</text>
+<line x1="112" y1="23" x2="190" y2="23" stroke="#0b63c5" stroke-width="2"/>
+<text x="204" y="18">メモ</text>
+<text x="820" y="18" fill="#666" font-size="12">~/proj　⚙</text>
+<!-- 上段 -->
+<rect x="0" y="34" width="70" height="24" fill="#fff" stroke="#999" rx="4"/><text x="10" y="51" font-size="12">読み直し</text>
+<rect x="78" y="34" width="760" height="24" fill="#eee" stroke="#aaa"/><text x="86" y="51" fill="#666" font-size="12">🔍 パスで絞り込み（ファイル名・フォルダ名）</text>
+<text x="850" y="51" font-size="12" fill="#666">120 件</text>
+<!-- ツリー -->
+<rect x="0" y="66" width="170" height="234" fill="#fff" stroke="#999"/>
+<text x="8" y="86" font-size="12">▾ すべて 120</text>
+<text x="20" y="106" font-size="12">▾ docs 40</text>
+<rect x="28" y="113" width="134" height="20" fill="#e8f1fd" stroke="#0b63c5"/>
+<text x="34" y="127" font-size="12">issue28 3</text>
+<text x="20" y="152" font-size="12">▸ src 2</text>
+<!-- 一覧 -->
+<rect x="178" y="66" width="222" height="234" fill="#fff" stroke="#999"/>
+<text x="186" y="84" font-size="11" fill="#666">docs/issue28/ の直下</text>
+<rect x="186" y="92" width="206" height="40" fill="#e8f1fd" stroke="#0b63c5" rx="4"/>
+<text x="194" y="108" font-size="12" font-weight="bold">📄 plan.md</text>
+<text x="194" y="125" font-size="11" fill="#666">10/09 12:00　docs/issue28</text>
+<rect x="186" y="138" width="206" height="40" fill="#fff" stroke="#ccc" rx="4"/>
+<text x="194" y="154" font-size="12">📄 design.html</text>
+<!-- 概要カード -->
+<rect x="408" y="66" width="552" height="62" fill="#f7f7f7" stroke="#bbb" rx="4"/>
+<text x="418" y="82" font-size="11" fill="#666">ドキュメント概要</text>
+<text x="418" y="100" font-weight="bold">実装計画</text>
+<text x="418" y="118" font-size="11" fill="#666">docs/issue28/plan.md　・　更新 10/09 12:00　・　240 行</text>
+<!-- 内容カード -->
+<rect x="408" y="136" width="552" height="164" fill="#f7f7f7" stroke="#bbb" rx="4"/>
+<text x="418" y="156" font-size="11" fill="#666">内容</text>
+<text x="540" y="156" font-size="11" fill="#c05000">新規 →</text>
+<rect x="584" y="142" width="62" height="20" fill="#dfd" stroke="#383" rx="4"/><text x="592" y="156" font-size="12">⤢ 拡大</text>
+<rect x="652" y="142" width="70" height="20" fill="#fff" stroke="#999" rx="4"/><text x="660" y="156" font-size="12">再読み込み</text>
+<rect x="728" y="142" width="96" height="20" fill="#fff" stroke="#999" rx="4"/><text x="736" y="156" font-size="12">フォルダで開く</text>
+<rect x="830" y="142" width="122" height="20" fill="#fff" stroke="#999" rx="4"/><text x="838" y="156" font-size="12">既定のアプリで開く</text>
+<!-- プレビュー -->
+<rect x="418" y="168" width="532" height="124" fill="#fff" stroke="#ccc"/>
+<text x="428" y="190" font-weight="bold" font-size="15">実装計画</text>
+<text x="428" y="214" font-weight="bold">[x] Phase 1: 雛形</text>
+<rect x="428" y="222" width="480" height="6" fill="#ddd"/>
+<rect x="428" y="234" width="420" height="6" fill="#ddd"/>
+<text x="428" y="262" font-weight="bold">[ ] Phase 2: Core</text>
+<rect x="428" y="270" width="460" height="6" fill="#ddd"/>
+</svg>
+<p>変わる所：内容カードの見出し行に「⤢ 拡大」を足すだけ。通常の画面に目次は出さない（今のまま）。本文の見出しの <code>[x]</code> は今のとおり文字のまま（12.7）。</p>
+
+<h3>1-2. 拡大中（md）</h3>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<rect x="0" y="0" width="960" height="26" fill="#fff" stroke="#999"/>
+<text x="10" y="18">ダッシュボード</text>
+<text x="112" y="18" font-weight="bold">ドキュメント</text>
+<line x1="112" y1="23" x2="190" y2="23" stroke="#0b63c5" stroke-width="2"/>
+<text x="204" y="18">メモ</text>
+<text x="820" y="18" fill="#666" font-size="12">~/proj　⚙</text>
+<!-- 内容カード（全幅） -->
+<rect x="0" y="34" width="960" height="296" fill="#f7f7f7" stroke="#bbb" rx="4"/>
+<text x="10" y="54" font-size="11" fill="#666">内容</text>
+<text x="40" y="54" font-size="12" font-weight="bold">— 実装計画</text>
+<text x="124" y="54" font-size="11" fill="#666">docs/issue28/plan.md</text>
+<text x="252" y="54" font-size="11" fill="#c05000">← どのファイルか（概要カードの代わり）</text>
+<text x="488" y="54" font-size="11" fill="#c05000">Esc でも戻る →</text>
+<rect x="584" y="40" width="62" height="20" fill="#e8f1fd" stroke="#0b63c5" rx="4"/><text x="592" y="54" font-size="12">⤡ 戻す</text>
+<rect x="652" y="40" width="70" height="20" fill="#fff" stroke="#999" rx="4"/><text x="660" y="54" font-size="12">再読み込み</text>
+<rect x="728" y="40" width="96" height="20" fill="#fff" stroke="#999" rx="4"/><text x="736" y="54" font-size="12">フォルダで開く</text>
+<rect x="830" y="40" width="122" height="20" fill="#fff" stroke="#999" rx="4"/><text x="838" y="54" font-size="12">既定のアプリで開く</text>
+<!-- 目次 -->
+<rect x="10" y="66" width="260" height="256" fill="#dfd" stroke="#383"/>
+<text x="18" y="84" font-weight="bold">目次</text>
+<text x="56" y="84" font-size="12">✅ 3 / 6</text>
+<text x="112" y="84" font-size="11" fill="#c05000">← 進み具合（Q3）</text>
+<text x="18" y="108" font-size="12" font-weight="bold">実装計画</text>
+<text x="30" y="130" font-size="12">✅ Phase 1: 雛形</text>
+<text x="30" y="152" font-size="12">✅ Phase 2: Core</text>
+<text x="30" y="174" font-size="12">✅ Phase 3: ViewModel</text>
+<rect x="14" y="181" width="252" height="20" fill="#e8f1fd" stroke="#0b63c5"/>
+<text x="30" y="196" font-size="12">⬜ Phase 4: 画面</text>
+<text x="190" y="196" font-size="11" fill="#666">2/5</text>
+<text x="214" y="196" font-size="11" fill="#c05000">← Q4</text>
+<text x="44" y="218" font-size="12">4-1 目次の列</text>
+<text x="44" y="240" font-size="12">4-2 Esc</text>
+<text x="30" y="262" font-size="12">⬜ Phase 5: 仕上げ</text>
+<text x="30" y="284" font-size="12">⬜ Phase 6: 実機確認</text>
+<text x="30" y="306" font-size="12">リスク</text>
+<line x1="276" y1="66" x2="276" y2="322" stroke="#999" stroke-dasharray="3,3"/>
+<!-- プレビュー -->
+<rect x="282" y="66" width="668" height="256" fill="#fff" stroke="#ccc"/>
+<text x="292" y="90" font-weight="bold">[ ] Phase 4: 画面</text>
+<text x="440" y="90" font-size="11" fill="#c05000">← 目次で押した見出しが上端に来る</text>
+<rect x="292" y="100" width="600" height="6" fill="#ddd"/>
+<rect x="292" y="112" width="560" height="6" fill="#ddd"/>
+<rect x="292" y="124" width="620" height="6" fill="#ddd"/>
+<text x="304" y="150" font-size="12">☑ 拡大ボタンを足す</text>
+<text x="304" y="168" font-size="12">☑ 目次の列を足す</text>
+<text x="304" y="186" font-size="12">☐ Esc で戻す</text>
+<text x="292" y="216" font-weight="bold">4-1 目次の列</text>
+<rect x="292" y="226" width="610" height="6" fill="#ddd"/>
+<rect x="292" y="238" width="540" height="6" fill="#ddd"/>
+<rect x="292" y="250" width="590" height="6" fill="#ddd"/>
+<text x="292" y="282" font-weight="bold">4-2 Esc</text>
+<rect x="292" y="292" width="500" height="6" fill="#ddd"/>
+</svg>
+<p>隠す：上段（読み直し・絞り込み。Q5）・ツリー・一覧・ドキュメント概要カード。残す：共通ヘッダー（タブ・対象フォルダ・⚙）・内容カードのボタン。<br>
+目次の幅は区切り線で変えられる。目次の項目は段で字下げし、見出しの先頭の <code>[x]</code> <code>[X]</code> → ✅、<code>[ ]</code> → ⬜。強調・コード・リンクの記号は外して文字だけ出す。<br>
+html のとき（Q1 の A）は目次の列を出さず、プレビューが全幅。</p>
+
+<h2>2. 概念図</h2>
+<h3>2-1. 目次の作り方と、見出しへの移動</h3>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<!-- A md -->
+<rect x="10" y="40" width="130" height="56" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="62" font-weight="bold">md ファイル</text>
+<text x="18" y="82" font-size="12">保存で ① から</text>
+<!-- B MarkdownPreview -->
+<rect x="190" y="30" width="230" height="150" fill="#dff" stroke="#08a"/>
+<text x="200" y="52" font-weight="bold">MarkdownPreview</text>
+<text x="200" y="70" font-size="12">（画面。メモタブと共用）</text>
+<text x="200" y="94" font-size="12">・md を読んで描く</text>
+<text x="200" y="114" font-size="12" fill="#383">・目次を VM へ渡す（新規）</text>
+<text x="200" y="134" font-size="12" fill="#383">・見出しへ移る（新規）</text>
+<text x="200" y="154" font-size="12" fill="#383">・Esc を受ける（2-2）</text>
+<!-- C Renderer -->
+<rect x="470" y="30" width="250" height="86" fill="#dfd" stroke="#383"/>
+<text x="480" y="52" font-weight="bold">MarkdownRenderer（Docs）</text>
+<text x="480" y="72" font-size="12">1 回だけ解析して、同じ結果から</text>
+<text x="480" y="90" font-size="12">HTML（見出しに id）と</text>
+<text x="480" y="108" font-size="12">見出しの一覧を作る</text>
+<!-- D WebView -->
+<rect x="470" y="140" width="250" height="56" fill="#eee" stroke="#888"/>
+<text x="480" y="160" font-weight="bold">WebView（ページ）</text>
+<text x="480" y="180" font-size="12">④ 一時 HTML を開く／⑧ id へ移る</text>
+<!-- E VM -->
+<rect x="190" y="232" width="230" height="86" fill="#dfd" stroke="#383"/>
+<text x="200" y="254" font-weight="bold">DocumentsViewModel</text>
+<text x="200" y="274" font-size="12">拡大の状態・目次・進み具合</text>
+<text x="200" y="294" font-size="12">目次を押す → 移る要求</text>
+<!-- F 目次 -->
+<rect x="470" y="232" width="250" height="86" fill="#efe" stroke="#383"/>
+<text x="480" y="254" font-weight="bold">目次（画面）</text>
+<text x="480" y="274" font-size="12">段で字下げ・✅/⬜・タスク数</text>
+<text x="480" y="294" font-size="12">押したときに移る</text>
+<!-- 矢印 -->
+<line x1="140" y1="68" x2="190" y2="68" stroke="#333" marker-end="url(#a)"/><text x="146" y="60" font-size="11" fill="#555">① 読む</text>
+<line x1="420" y1="56" x2="470" y2="56" stroke="#333" marker-end="url(#a)"/><text x="428" y="48" font-size="11" fill="#555">② 解析</text>
+<line x1="470" y1="96" x2="420" y2="96" stroke="#333" marker-end="url(#a)"/><text x="438" y="112" font-size="11" fill="#555">③</text>
+<line x1="420" y1="168" x2="470" y2="168" stroke="#333" marker-end="url(#a)"/><text x="428" y="162" font-size="11" fill="#555">④ ⑧</text>
+<line x1="270" y1="180" x2="270" y2="232" stroke="#333" marker-end="url(#a)"/><text x="206" y="212" font-size="11" fill="#555">⑤ 目次</text>
+<line x1="370" y1="232" x2="370" y2="180" stroke="#333" marker-end="url(#a)"/><text x="376" y="212" font-size="11" fill="#555">⑦ 移る（id）</text>
+<line x1="420" y1="262" x2="470" y2="262" stroke="#333" marker-end="url(#a)"/><text x="428" y="256" font-size="10" fill="#555">表示</text>
+<line x1="470" y1="296" x2="420" y2="296" stroke="#333" marker-end="url(#a)"/><text x="428" y="312" font-size="10" fill="#555">⑥ 押す</text>
+<!-- 注記 -->
+<text x="740" y="44" font-size="11" fill="#c05000">③ HTML と見出しの一覧。id は</text>
+<text x="740" y="60" font-size="11" fill="#c05000">Markdig が付けたものをそのまま</text>
+<text x="740" y="76" font-size="11" fill="#c05000">使う（自前で作らない。試作で一致）</text>
+<text x="740" y="104" font-size="11" fill="#c05000">⑤ IPreviewHost の新しい口で渡す</text>
+<text x="740" y="120" font-size="11" fill="#c05000">（VM は Markdig を参照しない決まり）</text>
+<text x="740" y="148" font-size="11" fill="#c05000">⑧ InvokeScript で</text>
+<text x="740" y="164" font-size="11" fill="#c05000">getElementById(…).scrollIntoView()</text>
+<text x="740" y="180" font-size="11" fill="#c05000">location.hash は使わない（&lt;base&gt; で</text>
+<text x="740" y="196" font-size="11" fill="#c05000">別の URL への移動になるため）</text>
+<text x="740" y="224" font-size="11" fill="#c05000">保存されたら ① から作り直す。</text>
+<text x="740" y="240" font-size="11" fill="#c05000">目次のスクロール位置は保ち、</text>
+<text x="740" y="256" font-size="11" fill="#c05000">プレビューは勝手に動かさない</text>
+<text x="740" y="284" font-size="11" fill="#c05000">読み込み中に押されたら、</text>
+<text x="740" y="300" font-size="11" fill="#c05000">読み込みが終わってから移る</text>
+</svg>
+
+<h3>2-2. Esc の 2 つの受け口</h3>
+<svg viewBox="0 0 960 280" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="30" width="190" height="56" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="52" font-weight="bold">ページの中にフォーカス</text>
+<text x="18" y="72" font-size="12">（本文をクリックした後）</text>
+<rect x="10" y="150" width="190" height="70" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="172" font-weight="bold">それ以外</text>
+<text x="18" y="192" font-size="12">目次・ボタン・入力欄・</text>
+<text x="18" y="210" font-size="12">どこにも無い</text>
+<rect x="250" y="24" width="250" height="68" fill="#dfd" stroke="#383"/>
+<text x="260" y="46" font-weight="bold">ページの keydown（JS）</text>
+<text x="260" y="66" font-size="12">invokeCSharpAction(</text>
+<text x="260" y="84" font-size="12">　'key:Escape')</text>
+<rect x="540" y="24" width="210" height="68" fill="#dfd" stroke="#383"/>
+<text x="550" y="46" font-weight="bold">WebMessageReceived</text>
+<text x="550" y="66" font-size="12">MarkdownPreview</text>
+<text x="550" y="84" font-size="12">key:Escape だけ受ける</text>
+<rect x="250" y="150" width="500" height="70" fill="#dfd" stroke="#383"/>
+<text x="260" y="172" font-weight="bold">ウィンドウの KeyDown</text>
+<text x="260" y="192" font-size="12">DocumentsView：ドキュメントタブが見えているときだけ</text>
+<text x="260" y="210" font-size="12">DashboardView も同じにする（いまは見えていなくても効く。Q8）</text>
+<rect x="776" y="80" width="176" height="90" fill="#fef" stroke="#a3a"/>
+<text x="784" y="102" font-weight="bold">DocumentsViewModel</text>
+<text x="784" y="124" font-size="12">拡大を戻す</text>
+<text x="784" y="142" font-size="12">（戻すだけ。</text>
+<text x="784" y="160" font-size="12">　切り替えない）</text>
+<line x1="200" y1="58" x2="250" y2="58" stroke="#333" marker-end="url(#a)"/>
+<line x1="500" y1="58" x2="540" y2="58" stroke="#333" marker-end="url(#a)"/>
+<line x1="750" y1="70" x2="776" y2="100" stroke="#333" marker-end="url(#a)"/>
+<line x1="200" y1="185" x2="250" y2="185" stroke="#333" marker-end="url(#a)"/>
+<line x1="750" y1="185" x2="776" y2="155" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="250" font-size="12" fill="#c05000">mac の実測（試作 Q7）：1 回の Esc はどちらか一方にだけ届く。ページの中にフォーカスがあると、ウィンドウの KeyDown には来ない。</text>
+<text x="10" y="268" font-size="12" fill="#c05000">html のページには、読み込みの後で InvokeScript で同じ受け口を入れる。Windows（WebView2）は実機で確かめる。</text>
+</svg>
+
+<h3>2-3. 拡大したときのスクロール位置</h3>
+<svg viewBox="0 0 960 272" width="960" font-size="13" font-family="sans-serif">
+<text x="20" y="22" font-weight="bold">いま（補正なし）</text>
+<text x="500" y="22" font-weight="bold">変更後（ページの JS で補正）</text>
+<!-- いま：狭い -->
+<rect x="20" y="40" width="120" height="150" fill="#fff" stroke="#999"/>
+<rect x="28" y="48" width="104" height="16" fill="#e8f1fd" stroke="#0b63c5"/><text x="34" y="61" font-size="11">Phase 12</text>
+<rect x="28" y="72" width="100" height="5" fill="#ddd"/><rect x="28" y="82" width="96" height="5" fill="#ddd"/><rect x="28" y="92" width="100" height="5" fill="#ddd"/>
+<rect x="28" y="102" width="90" height="5" fill="#ddd"/><rect x="28" y="112" width="100" height="5" fill="#ddd"/><rect x="28" y="122" width="80" height="5" fill="#ddd"/>
+<text x="46" y="206" font-size="11" fill="#666">幅 780px</text>
+<line x1="145" y1="115" x2="195" y2="115" stroke="#333" marker-end="url(#a)"/><text x="154" y="108" font-size="11" fill="#555">拡大</text>
+<!-- いま：広い -->
+<rect x="200" y="40" width="240" height="150" fill="#fff" stroke="#999"/>
+<rect x="208" y="48" width="224" height="16" fill="#eee" stroke="#999"/><text x="214" y="61" font-size="11">Phase 15</text>
+<rect x="208" y="72" width="220" height="5" fill="#ddd"/><rect x="208" y="82" width="210" height="5" fill="#ddd"/><rect x="208" y="92" width="220" height="5" fill="#ddd"/>
+<text x="290" y="206" font-size="11" fill="#666">幅 960px</text>
+<text x="200" y="222" font-size="11" fill="#b33">見ていた Phase 12 が 1,188px 上へ</text>
+<text x="200" y="236" font-size="11" fill="#b33">消えた（試作 Q4'）</text>
+<!-- 変更後：狭い -->
+<rect x="500" y="40" width="120" height="150" fill="#fff" stroke="#999"/>
+<rect x="508" y="48" width="104" height="16" fill="#e8f1fd" stroke="#0b63c5"/><text x="514" y="61" font-size="11">Phase 12</text>
+<rect x="508" y="72" width="100" height="5" fill="#ddd"/><rect x="508" y="82" width="96" height="5" fill="#ddd"/><rect x="508" y="92" width="100" height="5" fill="#ddd"/>
+<rect x="508" y="102" width="90" height="5" fill="#ddd"/><rect x="508" y="112" width="100" height="5" fill="#ddd"/><rect x="508" y="122" width="80" height="5" fill="#ddd"/>
+<text x="526" y="206" font-size="11" fill="#666">幅 780px</text>
+<line x1="625" y1="115" x2="675" y2="115" stroke="#333" marker-end="url(#a)"/><text x="634" y="108" font-size="11" fill="#555">拡大</text>
+<!-- 変更後：広い -->
+<rect x="680" y="40" width="240" height="150" fill="#fff" stroke="#999"/>
+<rect x="688" y="48" width="224" height="16" fill="#e8f1fd" stroke="#0b63c5"/><text x="694" y="61" font-size="11">Phase 12</text>
+<rect x="688" y="72" width="220" height="5" fill="#ddd"/><rect x="688" y="82" width="210" height="5" fill="#ddd"/><rect x="688" y="92" width="220" height="5" fill="#ddd"/>
+<text x="770" y="206" font-size="11" fill="#666">幅 960px</text>
+<text x="680" y="222" font-size="11" fill="#2a7a2a">見ていた見出しが上端のまま</text>
+<text x="680" y="236" font-size="11" fill="#2a7a2a">（試作 Q5。戻したときも同じ）</text>
+<text x="20" y="252" font-size="11" fill="#666">幅が広がると折り返しが減って中身が短くなり、同じ scrollY でも別の所が見える（mac の WebView には位置を保つ働きが無い）。</text>
+<text x="20" y="266" font-size="11" fill="#666">スクロールのたびに「上端の要素と位置」を覚え、幅が変わったら同じ位置へ戻す。</text>
+</svg>
+
+<h2>3. 変更点</h2>
+<table>
+<tr><th>場所</th><th>いま</th><th>変更</th></tr>
+<tr><td><code>Miharikun.Docs/MarkdownRenderer.cs</code>（＋見出しの一覧の型）</td><td>md → HTML だけ</td><td>1 回だけ解析し、HTML と見出しの一覧（段・文字・id・✅/⬜・タスク数）を返す。ページに Esc の受け口と位置の補正の JS を足す</td></tr>
+<tr><td><code>Presentation/ViewModels/IPreviewHost.cs</code></td><td>表示の変更・リンク・ログ</td><td>目次を受け取る口、Esc を受け取る口、「この見出しへ移って」の知らせを足す</td></tr>
+<tr><td><code>Presentation/ViewModels/DocumentsViewModel.cs</code></td><td>選択・概要・保存の検知</td><td>拡大の状態（保存しない）・目次・進み具合・拡大⇄戻す・目次を押す。選んでいたファイルが無くなったら拡大を解く</td></tr>
+<tr><td><code>Presentation/ViewModels/MemoViewModel.cs</code></td><td>メモのプレビュー</td><td>新しい口は何もしない</td></tr>
+<tr><td><code>Views/MarkdownPreview.axaml.cs</code></td><td>描く・開く・リンクの振り分け</td><td>目次を VM へ渡す、<code>WebMessageReceived</code> で Esc を受ける（<code>key:Escape</code> だけ）、html には読み込み後に Esc の受け口を入れる、見出しへ移る（読み込み中なら後で）</td></tr>
+<tr><td><code>Views/DocumentsView.axaml(.cs)</code></td><td>上段＋5 列（ツリー・一覧・概要＋内容）</td><td>「⤢ 拡大／⤡ 戻す」、内容カードの中に目次の列（プレビューは同じ場所のまま。試作 Q4）、列と行を隠す、Esc（見えているときだけ）</td></tr>
+<tr><td><code>Views/DashboardView.axaml.cs</code></td><td>Esc がほかのタブでも効く</td><td>ダッシュボードが見えているときだけ（Q8）</td></tr>
+<tr><td><code>docs/miharikun-requirements.md</code></td><td>12.7 ドキュメントタブ</td><td>12.7.1「拡大モード」を足す。15 章に Phase 38〜</td></tr>
+<tr><td><code>tests/</code></td><td></td><td>Docs：id の一致・✅/⬜ の判定・文字の取り出し・タスク数。VM：拡大⇄戻す・Esc・目次の更新・ファイルが消えたとき。画面：隠れ方・Esc がタブをまたがない（WebView の中の動きは実機で）</td></tr>
+</table>
+
+<h3>調査から決めたこと（案）</h3>
+<table>
+<tr><th>こと</th><th>決め方</th></tr>
+<tr><td>拡大中の別の md</td><td>Issue のとおり。一覧からは「戻す」から選ぶ。md の中のリンク・メモタブの「ドキュメントで開く」で移ったときは、拡大のまま目次を替える</td></tr>
+<tr><td>拡大の状態</td><td>保存しない（起動時は常に通常）。タブを切り替えて戻っても拡大のまま。選んでいたファイルが無くなったら戻す（タイムラインの拡大と同じ）</td></tr>
+<tr><td>目次を押したとき</td><td>押したときに移る（同じ項目をもう一度押しても移る）。保存で目次を作り直しても、プレビューは動かさない</td></tr>
+<tr><td>目次に出さない見出し</td><td>空の見出し。コードブロックの中・生の <code>&lt;h2&gt;</code> は、そもそも見出しにならない。引用・リストの中の見出しは出す</td></tr>
+<tr><td>Windows で WebView2 Runtime が無いとき</td><td>描けないので目次は出ない。拡大はできる（案内が全幅になるだけ）</td></tr>
+<tr><td>ページから届く知らせ</td><td><code>key:Escape</code> だけを受け、ほかは捨てる（html は利用者のファイルの JS が動くため）。届いても「戻す」だけなので害は無い</td></tr>
+</table>
+
+<h2>4. 決めたいこと</h2>
+<table>
+<tr><th>問い</th><th>決定（2026-10-09）</th></tr>
+<tr><td>Q1 html の拡大</td><td>A：拡大できる。目次の列は出さず、プレビューを全幅に</td></tr>
+<tr><td>Q2 目次の深さ</td><td>A：すべての段を字下げで出す</td></tr>
+<tr><td>Q3 進み具合の集計</td><td>A：出す（<code>[x]</code>／<code>[ ]</code> 付きの見出しがあるときだけ）</td></tr>
+<tr><td>Q4 <code>- [ ]</code> のタスク</td><td>A：見出しの右に節のタスクの数「2/5」（下の段の分も含む）。集計は見出しだけ</td></tr>
+<tr><td>Q5 上段</td><td>A：拡大中は隠す</td></tr>
+<tr><td>Q6 位置の補正</td><td>A：md のページで常に効かせる。html には入れない（Esc の受け口だけ）</td></tr>
+<tr><td>Q7 本文の幅</td><td>A：上限なし（全幅）</td></tr>
+<tr><td>Q8 ダッシュボードの Esc</td><td>A：一緒に直す（見えているときだけ）</td></tr>
+<tr><td>Q9 今見ている見出しの強調</td><td>A：今回はしない（保留）</td></tr>
+</table>
+<p>以下は、決める前の問いと選択肢の記録。</p>
+<div class="q"><b>Q1.</b> html を拡大するか（Issue の「確かめること」）<br>
+A) 拡大できる。目次の列は出さず、プレビューを全幅に … 利点：md のリンクで html に移ったときも同じ形のまま／欠点：特に無し<br>
+B) md のときだけ「拡大」を出す。リンクで html に移ったら自動で戻す … 利点：単純／欠点：リンクで勝手に戻って驚く<br>
+<span class="rec">推奨：A</span>（リンクで移るときの振る舞いが素直）</div>
+
+<div class="q"><b>Q2.</b> 目次に出す見出しの深さ<br>
+A) すべて（<code>#</code>〜<code>######</code>）を段で字下げ … 利点：抜けが無い／欠点：見出しの多い md（要件定義は約 100）で長い<br>
+B) <code>###</code> まで … 利点：短い／欠点：深い所へ飛べない<br>
+C) 目次の上で切り替え（2 段／3 段／すべて）… 利点：柔軟／欠点：作る量が増える<br>
+<span class="rec">推奨：A</span>（目次はスクロールすれば足りる。困ったら C を足す）</div>
+
+<div class="q"><b>Q3.</b> 目次の上に進み具合の集計（例：✅ 3 / 6）を出すか<br>
+A) 出す。<code>[x]</code>／<code>[ ]</code> 付きの見出しが 1 つ以上あるときだけ … 利点：「全体の進み具合が一目で」に直接効く／欠点：特に無し<br>
+B) 出さない<br>
+<span class="rec">推奨：A</span></div>
+
+<div class="q"><b>Q4.</b> 見出しでないタスク（<code>- [ ]</code>）の扱い（Issue #7 で、計画の進み具合は <code>## [ ] Phase N</code> か <code>- [ ]</code> で付けると分かった）<br>
+A) 見出しの右に、その節（下の段の見出しの分も含む）のタスクの数「2/5」を出す … 利点：<code>- [ ]</code> 式の計画でも進み具合が見える／欠点：作る量が少し増える<br>
+B) 見出しの <code>[x]</code>／<code>[ ]</code> だけ（Issue のとおり）… 利点：単純／欠点：<code>- [ ]</code> 式の計画では何も見えない<br>
+<span class="rec">推奨：A</span>（会社の計画 md が <code>- [ ]</code> 式なら必須。Q3 の集計は見出しの ✅/⬜ だけを数える）</div>
+
+<div class="q"><b>Q5.</b> 拡大中、上段（読み直し・パスで絞り込み・件数）も隠すか<br>
+A) 隠す … 利点：縦が広く使える。上段はツリー・一覧のためのもの／欠点：拡大中は読み直せない（戻せばよい）<br>
+B) 残す<br>
+<span class="rec">推奨：A</span></div>
+
+<div class="q"><b>Q6.</b> 位置の補正（2-3）を、通常の画面でも効かせるか<br>
+A) 常に効かせる（md のページにいつも入れる）… 利点：単純。区切り線のドラッグ・ウィンドウの大きさの変更でも、いまのずれが直る／欠点：通常の画面の動きが少し変わる（良い方へ）<br>
+B) 拡大⇄戻すのときだけ … 欠点：ページに状態を伝える仕組みが要る（再読み込みのたびにも）<br>
+<span class="rec">推奨：A</span>。html には入れない（利用者のファイルなので。Esc の受け口だけ入れる）</div>
+
+<div class="q"><b>Q7.</b> 本文の幅の上限（全幅だと、広い画面で 1 行がとても長い）<br>
+A) 上限なし（Issue のとおり全幅）… 利点：表・mermaid の図が広く見える／欠点：長い文は読みにくい<br>
+B) 拡大中だけ本文を 980px までにして中央に寄せる … 欠点：ページに拡大中かを伝える仕組みが要る<br>
+C) いつも 980px まで … 欠点：最大化した通常の画面の見た目が変わる（「通常は今のまま」に反する）<br>
+<span class="rec">推奨：A</span>（まず Issue のとおり。読みにくければ B を足す）</div>
+
+<div class="q"><b>Q8.</b> ダッシュボードの Esc の不具合（隠れたタイムラインの拡大が、ほかのタブの Esc で戻る。実機で再現済み）を一緒に直すか<br>
+A) 直す … 利点：同じ受け方を足すので、直さないとドキュメントの Esc が効かないことがある／欠点：Issue の範囲が少し広がる<br>
+B) 別の Issue にする<br>
+<span class="rec">推奨：A</span></div>
+
+<div class="q"><b>Q9.</b> 目次で「いま見ている見出し」を強調するか（Issue には無い）<br>
+A) 今回はしない（保留）… 利点：範囲が小さい／欠点：長い md で目次のどこを読んでいるか分からない<br>
+B) する。ページからスクロールのたびに見出しの id を知らせ（Q1 の口が使えると確認済み）、目次で強調して見える所へ寄せる … 欠点：作る量が増える<br>
+<span class="rec">推奨：A</span>（目次を使ってみてから決める。Issue の「保留」と同じ扱い）</div>
+
+<h2>5. リスクと対策</h2>
+<table>
+<tr><th>リスク</th><th>対策</th></tr>
+<tr><td>Windows（WebView2）では試作 Q1〜Q7 を確かめていない</td><td>WebView に関わる Phase の後で、Windows の実機で確かめる（Esc・目次で移る・位置の補正）。<code>invokeCSharpAction</code> が入らなければ、独自の URL への移動を <code>NavigationStarted</code> で取り消して受ける形に替える</td></tr>
+<tr><td>WebView2（Chromium）にある「幅が変わっても位置を保つ働き」と、こちらの補正が二重に効く</td><td>補正は「覚えた要素の今の位置との差」だけ動かすので、すでに合っていれば動かない見込み。実機でずれれば、ページで <code>overflow-anchor: none</code> にして補正だけにする</td></tr>
+<tr><td>html の iframe の中にフォーカスがあると、Esc が届かない</td><td>受け入れる（「⤡ 戻す」で戻せる）</td></tr>
+<tr><td>html のページの JS が、勝手に <code>invokeCSharpAction</code> を呼ぶ</td><td><code>key:Escape</code> だけを受ける。届いても拡大を戻すだけ</td></tr>
+<tr><td>ヘッドレスのテストでは WebView を作らないので、目次が来ない</td><td>VM・画面のテストは目次を直接渡して確かめる。id の一致は Docs のテストで、HTML の <code>id</code> と見出しの一覧を突き合わせる。ページの中の動きは実機で</td></tr>
+<tr><td>拡大でプレビューを動かすと、WebView が作り直されて位置もページも失う</td><td>プレビューは同じ Grid の同じ場所に置いたまま、目次の列を足し、隣を隠す（試作 Q4 で確認済み）</td></tr>
+<tr><td>保存のたびに目次が作り直され、目次のスクロールがずれる</td><td>中身が同じ項目は使い回し、目次のスクロール位置を保つ</td></tr>
+</table>
+
+<div class="sync">反映先：回答をもらったら、要件定義の 12.7 に「12.7.1 拡大モード（Issue #28）」を足し、15 章に Phase 38〜を足す → 実装計画（<code>impl-plan</code>。md と html の対）→ 別セッションのレビュー → 実装（Docs のテスト先行 → ViewModel → 画面 → 両 OS の実機確認）。</div>
+</body></html>
