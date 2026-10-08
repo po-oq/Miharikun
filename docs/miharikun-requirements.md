@@ -959,7 +959,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了（2026-10-08）：利用者が mac と Windows で確認し、概ね OK（Windows は 31-1〜31-4 をまとめて確認）。**後回しのまま残る項目**（利用者が了承）：iframe を含む html で既定のブラウザが勝手に開かないこと（手元に該当の html が無い）、Windows の Runtime 未導入の案内、mermaid を含む md のダークでの見え方。html はダークでも白い地のまま（ファイルの見た目を尊重。31-4）。確認で見つけた不具合は直した：チップの選択中の文字色（ライトで青背景に黒文字）。
 - 完了条件：12.7・12.10 が Windows と mac の両方で動く（md のチェックボックス・mermaid・相対パスの画像・リンク・タブを行き来してもスクロール位置が保たれる）
 
-## [ ] Phase 32: 配布
+## [x] Phase 32: 配布
 - `.github/workflows/release.yml` に macOS ランナーのジョブを足す（`osx-arm64` の App と Hook、`Miharikun.app`、アドホック署名、`ditto` の zip、SHA-256）。mac 用の発行スクリプト（Phase 30 の開発用を配布用に仕上げる）。配布 zip の README（Windows と mac。mac は「隔離」の印の外し方・フォルダの指定・ファイルとフォルダの許可。8.1・9 章。Issue #17 で Windows の README に入った「Hook の置き場所」「Hook なし の帯」の説明も、mac の言い方で入れる：8.2・12.12）、`docs/release.md`（Issue #17 の確認項目も両 OS で）
 - 完了条件：手動実行のワークフローで両 OS の zip ができる。展開 → （mac は印を外す）→ 起動 → Hook の導入 → 会話 → 表示、が両 OS で通る。mac は版を上げての再導入（Hook の更新）でも通る
 - 状況（32-2、2026-10-08、mac）：`scripts/publish-mac.sh` に `--zip` を足した（`publish-mac.sh <版> <出力フォルダ> --zip`）。`Miharikun-v<版>-osx-arm64/`（`Miharikun.app` と `README.txt`）を作り、`ditto -c -k --keepParent` で `Miharikun-v<版>-osx-arm64.zip`、`shasum -a 256` で `.zip.sha256`。配布 zip の README は `scripts/dist/README-mac.txt`（`{VERSION}` を置き換える。隔離の印の外し方・起動（`open -n -a`）・ファイルとフォルダの許可・Cursor の Hook の導入と動かないとき・「Hook なし」の帯・Claude Code・ドキュメント・メモ。画面の文言は `HookCheck`・`HookWording`・`HookSetup` と合わせた）。mac で作った zip（約 47MB）を別の場所に展開して、署名の検証（`codesign --verify --deep --strict`）・実行の権限・同梱の Hook の `--probe`（`ok`）・SHA-256 の照合・版の置き換えを確かめた。
@@ -970,6 +970,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - 未確認：README の切り出し後の `publish.ps1`（PowerShell。mac では動かせない）が、CI で zip と `README.txt` を作れること。mac の zip の展開 → `xattr` → 起動 → Hook の導入（32-2 の未確認と同じ）。32-4（`docs/release.md`）は未着手。
 - 状況（32-1 の確認の続き・32-4、2026-10-08）：README の切り出し後の `publish.ps1` で、手動実行の Windows の zip に `README.txt`（版が入った形）ができることを、利用者が確認した。`docs/release.md` を両 OS の形に更新した（zip の表・ジョブが 2 つ並んで動くこと・mac は署名なし（隔離の印）・両方の zip が揃ってから Release に載ること・`.sha256`・試運転の artifact が二重の zip であること・出す前のチェックに mac の項目と、Cursor の Hook の置き場所・「Hook なし」・Claude Code の保存先の mac の書き方）。
   - 未確認：mac の zip の展開 → `xattr` → 起動 → Hook の導入 → Cursor で会話 → 表示、版を上げた再導入、`.app` を「アプリケーション」以外に置いたときの案内（32-2 の未確認と同じ。`docs/release.md` のチェックに入れた）。タグを push した本番のリリースは未実施。
+- 完了（2026-10-08）：手動実行のワークフローで両 OS の zip と `.sha256` ができ、Windows の zip は利用者が展開して、単一ファイルの exe でプレビューが出ること・`README.txt` に版が入ることを確認した。**後回しのまま残る項目**（利用者が了承）：mac の zip を展開 → `xattr` → 起動 → Hook の導入（印の解除と `--probe`）→ Cursor で会話 → 表示、版を上げた再導入（Hook の更新）、`.app` を「アプリケーション」以外に置いたときの案内、タグを push した本番のリリース（Phase 33 の通し確認、または初回のリリースの試運転で行う。`docs/release.md` の出す前のチェックに入れてある）、`LSMinimumSystemVersion=14.0` と実行ファイルの `minos 12.0` の食い違い。
 
 ## [ ] Phase 33: 両 OS の通し確認・仕上げ
 - Windows：Cursor・Claude Code。mac：Cursor（Hobby）・Claude Code。リリースの zip で通す。`CLAUDE.md`・本書（状況）の更新
