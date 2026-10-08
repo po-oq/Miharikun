@@ -33,6 +33,97 @@ public sealed class ClaudeNormalizerTests
 
     private static List<AgentEvent> Without(List<AgentEvent> events, AgentEventKind kind) => events.Where(e => e.Kind != kind).ToList();
 
+    // ---- セッションのタイトル（Issue #23。計画 7.1） ----
+
+    private static List<AgentEvent> Titles(List<AgentEvent> events) => events.Where(e => e.Kind == AgentEventKind.TitleChanged).ToList();
+
+    [Fact]
+    public void CustomTitle_becomes_TitleChanged_with_the_previous_timestamp_and_the_line_number()
+    {
+        var events = Run(_b.User("a"), _b.CustomTitle("タイトルA"));
+
+        var t = Assert.Single(Titles(events));
+        Assert.Equal("タイトルA", t.Text);
+        Assert.Equal(Start.AddSeconds(1), t.At);   // 直前の timestamp（custom-title の行は timestamp を持たない）
+        Assert.Equal(2, t.Seq);
+        Assert.Equal(new SessionKey("claude", "sess-1"), t.Session);
+        Assert.Empty(Logs);
+    }
+
+    [Fact]
+    public void The_same_title_repeated_is_emitted_once()
+    {
+        var events = Run(_b.User("a"), _b.CustomTitle("A"), _b.User("b"), _b.CustomTitle("A"), _b.CustomTitle("A"));
+
+        Assert.Single(Titles(events));
+    }
+
+    [Fact]
+    public void A_changed_title_is_emitted_again_including_a_return_to_an_earlier_one()
+    {
+        var events = Run(_b.User("a"), _b.CustomTitle("A"), _b.CustomTitle("B"), _b.CustomTitle("A"));
+
+        Assert.Equal(["A", "B", "A"], Titles(events).Select(e => e.Text));
+    }
+
+    [Fact]
+    public void A_title_before_any_timestamp_is_not_emitted_and_a_later_repeat_is()
+    {
+        var events = Run(_b.CustomTitle("A"), _b.User("a"), _b.CustomTitle("A"));
+
+        var t = Assert.Single(Titles(events));
+        Assert.Equal(3, t.Seq);
+        Assert.Equal(AgentEventKind.SessionStarted, events[0].Kind);
+    }
+
+    [Fact]
+    public void A_title_that_is_empty_blank_or_not_a_string_is_not_emitted_and_is_not_an_error()
+    {
+        var events = Run(_b.User("a"), _b.CustomTitle(""), _b.CustomTitle("  \n "), _b.CustomTitle(5), _b.CustomTitle(null));
+
+        Assert.Empty(Titles(events));
+        Assert.Empty(Logs);
+    }
+
+    [Fact]
+    public void A_blank_title_does_not_replace_the_last_title_so_the_same_title_after_it_is_not_repeated()
+    {
+        var events = Run(_b.User("a"), _b.CustomTitle("A"), _b.CustomTitle(" "), _b.CustomTitle("A"));
+
+        Assert.Single(Titles(events));
+    }
+
+    [Fact]
+    public void Line_breaks_become_spaces_and_the_ends_are_trimmed()
+    {
+        var events = Run(_b.User("a"), _b.CustomTitle("  一行目\n二行目 "));
+
+        Assert.Equal("一行目 二行目", Assert.Single(Titles(events)).Text);
+    }
+
+    [Fact]
+    public void A_title_does_not_start_the_session_or_change_other_events()
+    {
+        var with = Run(_b.CustomTitle("A"), _b.User("a"), _b.CustomTitle("B"));
+        var other = new ClaudeTranscriptNormalizer("sess-1", "sess-1.jsonl", _formatLog);   // _started は正規化器ごとなので別に作る
+        var without = other.NormalizeLine(1, new ClaudeLogBuilder().User("a")).ToList();
+
+        // SessionStarted は最初の timestamp のある行（2 行目）で 1 回だけ出る。
+        Assert.Equal(1, with.Count(e => e.Kind == AgentEventKind.SessionStarted));
+        Assert.Equal(AgentEventKind.SessionStarted, with[0].Kind);
+        Assert.Equal(2, with[0].Seq);
+        Assert.Equal(without.Count, Without(with, AgentEventKind.TitleChanged).Count);
+    }
+
+    [Fact]
+    public void The_title_is_not_written_to_the_format_log()
+    {
+        Run(_b.User("a"), _b.CustomTitle("秘密のタイトル"));
+        _formatLog.Flush();
+
+        Assert.DoesNotContain(_logs, l => l.Contains("秘密のタイトル"));
+    }
+
     // ---- 最初の記録・ブランチ ----
 
     [Fact]

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Claude Code のセッションタイトル 実装計画（図解）</title>
+<style>
+body{font-family:"Yu Gothic UI","Hiragino Sans","Noto Sans JP",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.6;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:30px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:10px 0} .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px} .rec{color:#c05000;font-weight:bold}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%;height:auto}
+</style></head><body>
+<h1>Claude Code のセッションタイトル 実装計画（Issue #23）</h1>
+<div class="sync"><b>連動ルール</b>：この md と <code>issue23-claude-title-plan.html</code>（図解）は対。<b>どちらかを直したら、もう一方も同じ内容に直す。</b><br>仕様の正は <code>docs/miharikun-requirements.md</code>（5.2 章 Claude Code の対応表の <code>custom-title</code> の行、10 章 派生値の「タイトル」、15 章 Phase 37）。設計の資料は <code>docs/issue23/issue23-claude-title-design.html</code>（確定）。<br>この計画は、実装の分け方・コミット・ファイル構成と、<b>実装で迷いやすい所の決めごと（7 章）</b>。<br>進め方：Core（テスト先行）→ 利用側（画面は変えない・確認だけ）→ 仕上げ。各フェーズの終わりに <code>dotnet test</code> と隔離環境で確かめ、要件定義 15 章の Phase 37 の「状況」を更新して報告する。コミットは頼まれたときだけ（ここは区切りの目安）。途中のコミットは <code>Refs #23</code>、最後だけ <code>Fixes #23</code>（PR 本文に <code>Closes #23</code>）。<br>作業ブランチ：<code>feature/issue23-claude-session-title</code>（<code>main</code> から切った）。</div>
+<h2>1. 全体像</h2>
+<svg viewBox="0 0 960 150" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="270" height="100" fill="#dff" stroke="#08a"/><text x="20" y="42" font-weight="bold">37-A Core（テスト先行）</text><text x="20" y="62" font-size="12">TitleChanged／Normalizer／Analyzer</text><text x="20" y="78" font-size="12">件数・状態は変えない</text><text x="20" y="102" font-size="12" fill="#555">2 コミット（37-1, 37-2）</text>
+<rect x="340" y="20" width="270" height="100" fill="#efe" stroke="#383"/><text x="350" y="42" font-weight="bold">37-B 表示の確認</text><text x="350" y="62" font-size="12">画面は変えない・確認だけ</text><text x="350" y="78" font-size="12">手動優先・Cursor 不変</text><text x="350" y="102" font-size="12" fill="#555">1 コミット（37-3）</text>
+<rect x="670" y="20" width="280" height="100" fill="#eee" stroke="#888"/><text x="680" y="42" font-weight="bold">37-C 仕上げ</text><text x="680" y="62" font-size="12">要件定義の [x]・状況</text><text x="680" y="78" font-size="12">Fixes #23</text><text x="680" y="102" font-size="12" fill="#555">1 コミット（37-4）</text>
+<line x1="280" y1="70" x2="340" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="610" y1="70" x2="670" y2="70" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ul><li>新しい依存パッケージ：無い。</li><li>守る制約：<code>~/.claude/</code> には書かない（読み取りだけ）。<code>app.log</code> にタイトルの文字を書かない（件数・種類だけ）。App は共通イベント <code>AgentEvent</code> だけを扱う。Core はリフレクションを使わない。フィクスチャは実ログのコピーでなく手書き。</li><li><b>共通化のフェーズは無い</b>（挙動を変えない部品の切り出しは要らない）。代わりに「<code>TitleChanged</code> が状態・件数・最終活動・タイムラインを変えない」ことをテストで固定する（品質ゲート）。</li><li>いまのテスト：Tests 1106 合格・スキップ 29、UiTests 52 合格・スキップ 3（HANDOFF.md の値。着手前に <code>dotnet test</code> で取り直す）。<b>件数は減らさない</b>。</li></ul>
+<h3>品質ゲート（各フェーズの終わり）</h3>
+<ol><li>テストが全部通る（件数を減らさない。スキップの数が増えない）。</li><li><code>dotnet build</code> が警告を増やさない。Core が AOT 互換のまま（リフレクション・動的な型を使わない）。</li><li>Cursor のセッションの要約・タイムライン・検索文字列が変わらない（<code>TitleChanged</code> を持たないので、テストで確認。7.4）。</li><li>Claude の既存の要約（状態・依頼数・ターン数・最終活動・開始時刻）が、<code>custom-title</code> の行を足しても変わらない（7.4 のテスト）。</li><li>確かめ方：隔離環境（<code>MIHARIKUN_DATA_DIR</code>・<code>MIHARIKUN_CLAUDE_DIR</code> を一時フォルダにし、手書きのダミー会話ログを置く）。本物のデータは使わない。任意で <code>GoldenSummaryDump</code> による before/after の比較（本物のコピーが要るので、使うなら先に利用者の了承を取る）。</li></ol>
+<h2>2. Phase 37-A：Core（テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr><tr><td>37-1</td><td><code>AgentEventKind.TitleChanged</code> と <code>ClaudeTranscriptNormalizer</code></td><td>種別を足す（<code>AgentEvent.cs</code>。Text = タイトル）。<code>custom-title</code> を <code>TitleChanged</code> に変換（7.1）。<code>_lastAt</code>（直前に見た timestamp）と <code>_lastTitle</code>（最後に出したタイトル）を持つ</td><td><code>ClaudeNormalizerTests</code> に追加（7.1 の表の行ごと）。先にテストを書いて落ちるのを確かめてから実装</td></tr><tr><td>37-2</td><td><code>SessionAnalyzer</code></td><td>最後の <code>TitleChanged</code> を持ち、<code>SessionSummary.AutoTitle</code> を「Claude のタイトル → 最初の依頼の先頭 40 文字」にする（7.2）。<code>switch</code> に <code>TitleChanged</code> の case は足すが、他の値は変えない</td><td><code>SessionAnalyzerTests</code> に追加（7.2 の表の行ごと）。<code>TimelineTests</code> に「<code>TitleChanged</code> が項目を作らない」。<code>ClaudeSessionSourceTests</code> に「追記読みでタイトルが後から付く・変わる」</td></tr></table>
+<p>完了条件：テストが通る。品質ゲート 1〜4。</p>
+<h2>3. Phase 37-B：表示の確認（画面は変えない）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認（隔離環境）</th></tr><tr><td>37-3</td><td>表示の確認（コードは原則変えない）</td><td><code>SessionMeta.DisplayTitle(autoTitle)</code> と画面は変えない。カードの <code>TextTrimming="CharacterEllipsis"</code>（<code>SessionCardView.axaml:30</code>）、詳細ヘッダー（<code>DetailHeaderView.axaml:26</code>）は既に省略表示。足りなければ最小の修正（7.5）</td><td>ダミー会話ログ（<code>custom-title</code> あり／なし／途中で変更／空白だけ）で、カード・詳細・最近の一覧・拡大時の見出し・検索に出ること。✏️の手動タイトルが優先され、空にして戻すと Claude のタイトルに戻ること。Cursor のカードが変わらないこと。ダーク・ライトで読めること</td></tr></table>
+<p>完了条件：要件定義 12.2・12.3 のタイトルの表示が、Claude のカードでも崩れない。<b>ここで止まって報告する。</b></p>
+<h2>4. Phase 37-C：仕上げ</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr><tr><td>37-4</td><td>仕上げ</td><td>要件定義 15 章の <code>## [ ] Phase 37</code> を <code>## [x]</code> に、「状況」を書く（コミットは Phase のコミットに入れる）。設計の html を「確定」のまま、計画の状態を「確定」に。<code>Fixes #23</code></td></tr></table>
+<h2>5. ファイル構成（追加・変更）</h2>
+<pre>src/Miharikun.Core/
+├─ Agents/AgentEvent.cs                   37-1 変更：AgentEventKind に TitleChanged
+├─ Agents/ClaudeTranscriptNormalizer.cs   37-1 変更：custom-title の変換、_lastAt・_lastTitle
+├─ Agents/ClaudeFormatLog.cs              （変更なし。custom-title は KnownSkipped のまま。変換が先に処理する）
+└─ Sessions/SessionAnalyzer.cs            37-2 変更：agentTitle、AutoTitle の決め方
+
+tests/Miharikun.Tests/Core/
+├─ ClaudeNormalizerTests.cs               37-1 変更：custom-title の行ごと
+├─ SessionAnalyzerTests.cs                37-2 変更：AutoTitle の優先、他の値が変わらない
+├─ TimelineTests.cs                       37-2 変更：TitleChanged が項目を作らない
+└─ ClaudeSessionSourceTests.cs            37-2 変更：追記読み
+（ClaudeLogBuilder.cs に custom-title の行を作る補助を足してよい）
+
+docs/miharikun-requirements.md            37-4 変更：Phase 37 の [x]・状況</pre>
+<h2>7. 実装の決めごと（迷いやすい所）</h2>
+<h3>7.1 <code>custom-title</code> の変換（<code>ClaudeTranscriptNormalizer</code>）</h3>
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="18" font-weight="bold">会話ログ 1 行ごとの処理（ClaudeTranscriptNormalizer.NormalizeLine）</text>
+<rect x="10" y="30" width="200" height="56" fill="#ffe9c8" stroke="#a70"/><text x="18" y="52" font-weight="bold">1 行（JSON）</text><text x="18" y="70" font-size="12">type と timestamp</text>
+<rect x="260" y="30" width="230" height="56" fill="#dff" stroke="#08a"/><text x="268" y="52" font-weight="bold">timestamp あり？</text><text x="268" y="70" font-size="12">あれば _lastAt を更新</text>
+<line x1="210" y1="58" x2="260" y2="58" stroke="#333" marker-end="url(#a)"/>
+<rect x="540" y="30" width="190" height="56" fill="#dff" stroke="#08a"/><text x="548" y="52" font-weight="bold">type = custom-title？</text><text x="548" y="70" font-size="12">いいえ → 今まで通り</text>
+<line x1="490" y1="58" x2="540" y2="58" stroke="#333" marker-end="url(#a)"/>
+<rect x="780" y="30" width="170" height="56" fill="#dfd" stroke="#383"/><text x="788" y="52" font-weight="bold">タイトルを整える</text><text x="788" y="70" font-size="12">改行→空白・Trim</text>
+<line x1="730" y1="58" x2="780" y2="58" stroke="#333" marker-end="url(#a)"/><text x="735" y="50" font-size="11" fill="#555">はい</text>
+<rect x="540" y="120" width="180" height="50" fill="#fde" stroke="#b33"/><text x="548" y="142" font-weight="bold">出さない</text><text x="548" y="160" font-size="11">空白だけ／_lastAt 無し</text>
+<rect x="760" y="120" width="190" height="50" fill="#fde" stroke="#b33"/><text x="768" y="142" font-weight="bold">出さない</text><text x="768" y="160" font-size="11">直前と同じタイトル</text>
+<rect x="540" y="195" width="410" height="45" fill="#dfd" stroke="#383"/><text x="548" y="215" font-weight="bold">TitleChanged（Text=タイトル、At=_lastAt、Seq=行番号）</text><text x="548" y="231" font-size="11">_lastTitle を更新。状態・件数・最終活動・タイムラインは変えない</text>
+<line x1="865" y1="86" x2="865" y2="120" stroke="#b33" marker-end="url(#a)"/><line x1="800" y1="86" x2="640" y2="120" stroke="#b33" marker-end="url(#a)"/>
+<text x="10" y="150" font-size="12" fill="#c05000">※ 実ログでは custom-title 行に timestamp が無い。最初の timestamp の行より前には来ない（21/21）</text>
+</svg>
+<p>前提（実ログで確認済み。構造のみ）：行の項目は <code>type</code>・<code>customTitle</code>・<code>sessionId</code> だけで <b><code>timestamp</code> が無い</b>。手元 21 本すべてで、最初の <code>timestamp</code> の行より後に入る。同じ値が 1 本に数十回繰り返される。</p>
+<table><tr><th>入力（手書きフィクスチャ）</th><th>結果</th></tr><tr><td><code>timestamp</code> のある行（<code>user</code> 等）→ <code>custom-title</code>（"A"）</td><td><code>TitleChanged</code>（Text = "A"、At = 直前の timestamp、Seq = その行の行番号）</td></tr><tr><td>同じ "A" が続けて何度も来る</td><td>最初の 1 回だけ出す（<code>_lastTitle</code> と同じなら出さない。イベントが何百も増えないように）</td></tr><tr><td>"A" の後に "B"</td><td>"B" を出す（変わったら追従）</td></tr><tr><td>"B" の後にまた "A"</td><td>"A" を出す（直前と違うので）</td></tr><tr><td><code>timestamp</code> のある行より前に来た</td><td>出さない。<code>_lastTitle</code> も更新しない（後の繰り返しで拾える）</td></tr><tr><td><code>customTitle</code> が空・空白だけ・文字でない・無い</td><td>出さない。エラーにも数えない（<code>LogFormatException</code> にしない）</td></tr><tr><td>前後の空白・改行を含む</td><td><code>ReplaceLineEndings(" ")</code> して <code>Trim()</code> したものを Text にする</td></tr><tr><td><code>sessionId</code> がファイル名のセッションと違う</td><td>無視しない（今は照合しない。セッションはファイル名で決まる）。要確認：実ログでは一致していた（21/21）</td></tr><tr><td>壊れた JSON の行</td><td>今まで通り（<code>ReportError</code>）。他の行に影響しない</td></tr></table>
+<ul><li><code>_lastAt</code> は <code>Convert</code> の先頭で <code>Timestamp(root)</code> が取れたら更新する（<code>user</code>/<code>assistant</code> 以外の <code>timestamp</code> 付きの行でも更新）。</li><li><code>TitleChanged</code> を出す行でも、<code>AddStarted</code>・<code>AttachBranch</code> は今まで通り動く（この行は <code>timestamp</code> も <code>gitBranch</code> も無いので何も起きないはず。<code>events.Count == 0</code> の経路を壊さない）。</li><li><code>_started |= events.Count &gt; 0 &amp;&amp; events[0].Kind == SessionStarted</code> の判定は、<code>TitleChanged</code> が <code>events[0]</code> になっても <code>_started</code> を誤って立てない（<code>Kind</code> を見ているので大丈夫。テストで固定）。</li><li>会話ログの非公開仕様なので、<code>app.log</code> に書くのは「<code>custom-title</code> の項目が想定と違う件数」程度に留め、<b>タイトルの文字は書かない</b>。</li></ul>
+<h3>7.2 <code>SessionAnalyzer</code> のタイトル</h3>
+<svg viewBox="0 0 960 130" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="18" font-weight="bold">表示するタイトル（SessionMeta.DisplayTitle は変えない。AutoTitle の中身だけ変わる）</text>
+<rect x="10" y="30" width="250" height="60" fill="#e8f1fd" stroke="#0b63c5"/><text x="18" y="52" font-weight="bold">① 手動タイトル</text><text x="18" y="70" font-size="12">TitleIsManual（変更なし）</text>
+<rect x="320" y="30" width="290" height="60" fill="#dfd" stroke="#383"/><text x="328" y="52" font-weight="bold">② 最後の TitleChanged（新規）</text><text x="328" y="70" font-size="12">SessionAnalyzer の agentTitle</text>
+<rect x="670" y="30" width="280" height="60" fill="#dff" stroke="#08a"/><text x="678" y="52" font-weight="bold">③ 最初の依頼の先頭 40 文字</text><text x="678" y="70" font-size="12">promptTitle（Cursor はこれ）</text>
+<line x1="260" y1="60" x2="320" y2="60" stroke="#333" marker-end="url(#a)"/><line x1="610" y1="60" x2="670" y2="60" stroke="#333" marker-end="url(#a)"/>
+<text x="268" y="52" font-size="11" fill="#555">無ければ</text><text x="618" y="52" font-size="11" fill="#555">無ければ</text>
+<text x="10" y="116" font-size="12" fill="#c05000">AutoTitle = agentTitle ?? promptTitle（名前・型は変えない。画面・検索が使っている）</text>
+</svg>
+<table><tr><th>入力（イベント列）</th><th><code>AutoTitle</code></th></tr><tr><td>依頼だけ（Cursor・Claude 共通）</td><td>最初の依頼の先頭 40 文字（今のまま）</td></tr><tr><td><code>TitleChanged("A")</code> と依頼</td><td>"A"（切らない。40 文字を超えても）</td></tr><tr><td><code>TitleChanged("A")</code> → <code>TitleChanged("B")</code></td><td>"B"（最後）</td></tr><tr><td><code>TitleChanged</code> だけ（依頼がまだ無い）</td><td>そのタイトル（<code>SessionStarted</code> は先にある）</td></tr><tr><td><code>TitleChanged</code> が空・空白（来ないはずだが）</td><td>無視して依頼のタイトルに</td></tr><tr><td>どちらも無い</td><td>null（今の画面の「（依頼なし）」）</td></tr></table>
+<ul><li><code>SessionAnalyzer</code> の中で <code>agentTitle</code> と <code>promptTitle</code> を別々に持ち、最後に <code>agentTitle ?? promptTitle</code> を <code>AutoTitle</code> に入れる（<code>SessionSummary.AutoTitle</code> の名前・型は変えない。画面・検索・<code>SessionMeta.DisplayTitle</code> が使っているため）。</li><li><code>SessionAnalyzer</code> の <code>switch (e.Kind)</code> に <code>case AgentEventKind.TitleChanged:</code> を足す（タイトル更新だけ。<code>prompts</code>・<code>stops</code>・<code>tools</code> などは増やさない）。</li><li><code>last = events[^1]</code> が <code>TitleChanged</code> でも、<code>last.At</code> は直前の timestamp なので、最終活動・継続時間は変わらない。Claude には <code>SessionEnded</code> が無いので閉じ判定も変わらない。<b>ただし将来、timestamp の無い種別を <code>events[^1]</code> にしないよう、テストで固定する</b>（7.4）。</li></ul>
+<h3>7.3 検索</h3>
+<p><code>SessionSearch.BuildSearchText</code> は <code>summary.AutoTitle</code> を検索文字列に入れるので、コードの変更は要らない。Claude のタイトルで検索に当たることをテストで確かめる（<code>SessionSnapshot</code> のテスト）。</p>
+<h3>7.4 <code>TitleChanged</code> が他の値を変えないことの固定（品質ゲート 3・4）</h3>
+<p>同じ会話の「<code>custom-title</code> あり／なし」の 2 つのログから作った要約が、<code>AutoTitle</code> 以外で一致することをテストする（<code>State</code>・<code>PromptCount</code>・<code>TurnCount</code>・<code>StartedAt</code>・<code>LastActivityAt</code>・<code>Duration</code>・<code>Branch</code>・<code>ChangedFiles</code>・サブエージェント・<code>Turns</code>）。<code>Timeline.Build</code> の結果の項目数が同じ。Cursor のイベント列（<code>TitleChanged</code> を持たない）の要約が変わらない。</p>
+<h3>7.5 画面</h3>
+<ul><li>カード・詳細ヘッダーは既に <code>TextTrimming</code> がある。<b>長い Claude のタイトルで崩れないか</b>だけ、隔離環境のスクリーンショットかテストで見る（UiTests の <code>Scene.cs</code> に長いタイトルのカードがあれば流用）。</li><li>✏️で開いた入力欄の初期値は、現在の表示タイトル（<code>Title</code>）。Claude のタイトルが入った状態で、手動タイトルを付ける・空にして戻す、が今まで通り動く（<code>RenameState</code>）。</li></ul>
+<h3>7.6 追記読みと作り直し</h3>
+<p><code>ClaudeSessionSource</code> の <code>FileState.Reset</code> はノーマライザを作り直す（<code>_lastAt</code>・<code>_lastTitle</code> が空になる）。作り直しのあとは先頭から読み直すので、同じ結果になる。追記読みでは同じインスタンスが続くので、<code>_lastTitle</code> が効いて同じタイトルの繰り返しは出ない。cwd が見つかる前の行は <code>Pending</code> に溜めてまとめて変換する（順序は変わらない）。</p>
+<h2>8. リスクと対策</h2>
+<table><tr><th>リスク</th><th>対策</th></tr><tr><td>会話ログは非公開仕様。<code>custom-title</code> の形が変わる・消える</td><td>無い・壊れたものは出さず、最初の依頼のタイトルに戻る。<code>ai-title</code> は実物が出たときに足す</td></tr><tr><td><code>TitleChanged</code> が状態・件数・最終活動・タイムラインに紛れ込む</td><td>7.4 のテストで固定。<code>switch</code> に case を足し、他の値を触らない</td></tr><tr><td>同じタイトルの繰り返し（1 本に数十〜百件）でイベントが膨らむ</td><td><code>_lastTitle</code> で、変わったときだけ出す（7.1）</td></tr><tr><td>手動タイトルが消える・Claude のタイトルで上書きされる</td><td><code>SessionMeta.DisplayTitle</code> を変えない。手動が最優先のテスト（既存）を壊さない</td></tr><tr><td>実ログをテストに写してしまう</td><td>フィクスチャは手書き（構造を真似る）。<code>customTitle</code> の文字は架空</td></tr><tr><td>Cursor に影響</td><td>Cursor は <code>TitleChanged</code> を出さない。品質ゲート 3</td></tr></table>
+<h2>9. 決定事項（確認済み。設計の質問）</h2>
+<ol><li>手動タイトルが常に優先（Claude のタイトルより上）。</li><li>Claude 側でタイトルが変わったら、手動が無い限り自動で追従する（最後の値を採用）。</li><li>Cursor の <code>state.vscdb</code> の読み取りは対象外のまま（Cursor は最初の依頼の先頭 40 文字のまま）。</li><li>Q1：新しいイベント種別 <code>TitleChanged</code>。Q2：<code>At</code> は直前の timestamp。Q3：切らずに出す（カードで省略表示）。</li></ol>
+<p>計画で決めたこと（仕様にない細部。違えば言ってください）：</p>
+<ul><li>同じタイトルの繰り返しは出さない（変わったときだけ <code>TitleChanged</code>）。</li><li>空白だけ・文字でない <code>customTitle</code> は、エラーにせず出さない。</li><li>改行は空白にし、前後の空白を取る。</li><li><code>SessionSummary.AutoTitle</code> の名前は変えない（中身が「Claude のタイトル or 最初の依頼」になる）。</li><li><code>ClaudeFormatLog</code> の <code>KnownSkipped</code> は変えない。</li><li>Phase 番号は 37（Issue #17 の 34〜36 の次）。コミット番号は 37-1〜37-4。</li></ul>
+<h2>10. 実装するセッションへの注意（必ず読む）</h2>
+<h3>10.1 始める前に</h3>
+<ul><li>作業ブランチ <code>feature/issue23-claude-session-title</code> にいること。このブランチには、設計の html・この計画・要件定義の変更が<b>まだコミットされていない</b>ことがある（未追跡の <code>docs/issue23/</code>）。別の作業ツリーでは見えない。見つからなければ利用者に聞く。</li><li>計画と要件定義（5.2・10・15 章の Phase 37）に食い違いが無いか確かめる。あれば要件定義が正。判断がつかなければ聞く。</li><li><code>CLAUDE.md</code> の決まり：返答は日本語、コミット・push・PR・マージは頼まれたときだけ、<code>git add</code> はパス指定（<code>-A</code> は使わない）、<code>~/.claude/</code> に書かない、会話ログの確認は構造だけ（本文・コマンド・パスを引用しない）、<code>dotnet build</code>/<code>test</code> の前にアプリを止める、完了報告に「ビルドしたかと出力先・テスト件数・できなかった確認」。</li><li>着手前に <code>dotnet test</code> を回して、いまの件数を控える。</li></ul>
+<h3>10.2 各フェーズの終わり</h3>
+<ul><li>37-1 → 37-2 は、テストを先に書いて落ちるのを確かめてから実装する。</li><li>フェーズの終わりに、テストの件数・ビルドの有無と出力先・できなかった確認を報告する。<b>37-3（表示の確認）で止まって報告する</b>。</li><li>37-2 の後に、利用者が望めばレビューを挟む（差分と品質ゲートの結果を渡す）。</li></ul>
+<p><b>状態：確定</b>（レビューは挟まず実装。37-1〜37-4 完了、2026-10-08）。</p>
+</body></html>

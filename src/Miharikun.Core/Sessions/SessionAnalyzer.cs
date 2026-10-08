@@ -31,7 +31,7 @@ public static class SessionAnalyzer
         var changedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var testRuns = new List<TestRun>();
 
-        string? autoTitle = null;
+        string? autoTitle = null, agentTitle = null;   // 最初の依頼のタイトル／エージェント自身のタイトル（最後のもの）
         int prompts = 0, stops = 0, tools = 0, compactions = 0;
         var subagents = new List<SubagentInfo>();
         string? model = null, modelParams = null, branch = null, startBranch = null, startHead = null, latestHead = null;
@@ -138,6 +138,10 @@ public static class SessionAnalyzer
                         changedFiles.Add(e.FilePath);
                     break;
 
+                case AgentEventKind.TitleChanged:
+                    if (!string.IsNullOrWhiteSpace(e.Text)) agentTitle = e.Text;   // 状態・件数・最終活動には影響させない（Issue #23）
+                    break;
+
                 case AgentEventKind.Compacted:
                     compactions++;
                     lastCompaction = e.Compaction;
@@ -158,7 +162,7 @@ public static class SessionAnalyzer
             key,
             imported ? (noHook ? SessionState.NoHook : SessionState.Imported) : closed ? SessionState.Closed : turnState,
             !imported && turnState == SessionState.Running,
-            autoTitle,
+            agentTitle ?? autoTitle,
             prompts, stops,
             startedAt, last.At,
             endedDuration ?? (last.At - startedAt),

@@ -211,7 +211,7 @@ Cursor は、ツール系などのイベントで `model` に `"default"` を入
 | `isApiErrorMessage` の返答 | TurnEnded（Error） | `system` の `api_error` は再試行されることがあるので、最初は使わない（実機で確認） |
 | `AskUserQuestion`・`ExitPlanMode` の `tool_use` | TurnEnded（Completed） | ユーザーの返事待ち＝ボスの番。その結果（回答・承認）が来たら PromptSubmitted（Text は「（回答）」＋内容）にして、実行中に戻す。**回答も依頼数・ターン数・最近の入力に数える** |
 | 圧縮（コンパクト） | （未対応） | 実物が無く未確認。出たら Compacted を追加 |
-| `custom-title` / `ai-title` | （後回し） | セッションのタイトル候補。最初は「最初の依頼の先頭 40 文字」のまま |
+| `custom-title` | **TitleChanged**（Text = `customTitle`） | Claude Code 自身のセッションのタイトル（Issue #23）。実ログ（2.1.197〜2.1.293）では、冒頭（10〜50 行目あたり）に入り、その後も同じ値で繰り返し追記される。**行に `timestamp` が無い**（項目は `type`・`customTitle`・`sessionId` のみ）ので、`At` は**直前に見た `timestamp`**（まだ無ければ出さない。後の繰り返しで拾える）。**空白だけは出さない**。最後の値を採用する（Claude 側で変わったら追従）。最終活動・件数・状態・タイムラインには影響させない。`ai-title` は実物が無く未対応（出たら足す） |
 | 上記以外（`attachment`・`queue-operation`・`file-history-*` など） | 読み飛ばす | 知らない種類・壊れた行も、止まらずに飛ばす（ログは 11.1） |
 
 Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagents | FileEdits | TurnStatus | Transcript`（`RealtimeHooks`・`SessionEnd`・`Compaction` はなし。`Compaction` は実機で確認できたら追加。`TokenUsage` は扱わない）
@@ -397,7 +397,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 ### 派生値
 | 項目 | 算出 |
 |---|---|
-| タイトル | メタの手動タイトル優先。なければ最初の `beforeSubmitPrompt.prompt` の先頭40文字（改行は空白に） |
+| タイトル | メタの手動タイトル優先。なければ、**Claude Code は最後の `TitleChanged` のタイトル（Issue #23。切らずにそのまま。カードでは省略表示）**。なければ最初の `beforeSubmitPrompt.prompt` の先頭40文字（改行は空白に）。Cursor は取れないので最後のまま（`state.vscdb` は読まない） |
 | 依頼数 / ターン数 | `beforeSubmitPrompt` の件数 / `stop` の件数 |
 | 開始時刻 | `sessionStart` の received_at（なければ最初のイベント） |
 | 最後の動き | 最後のイベントの received_at |
@@ -991,6 +991,15 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 配布 zip の `README.txt`・`docs/release.md`、本書の状況の更新
 - 状況：実施済み。配布 zip の `README.txt`（`scripts/publish.ps1`）に、会社の PC などで Hook が動かないとき（⚙ → 設定… → Hook exe の置き場所・hooks.json の登録の自動採用・記録先は変わらない）と、「Hook なし」の帯の意味（導入・置き場所の変更の直後に出たら、まず Cursor を再起動。hook-error.log を開くボタン）を追記。`docs/release.md` の出す前のチェックに、置き場所（受け入れ・設定画面・導入し直し）と「Hook なし」の警告の確認を追加。`CLAUDE.md` は変えていない（守ることに変化なし）。**Issue #17 の実装は、これで 34〜36 がすべて完了**（本物の Cursor での確認は利用者の作業。計画 10.2）。リリースはしていない。コミットはまだしていない
 
+## [x] Phase 37: Claude Code のセッションタイトル（Issue #23）
+- `AgentEventKind.TitleChanged` を足し、`ClaudeTranscriptNormalizer` で `custom-title` を変換（5.1 の表）。`SessionAnalyzer` が最後のタイトルを持ち、表示するタイトルは「手動 → Claude のタイトル → 最初の依頼の先頭 40 文字」（10 章）。Core のテスト先行
+- 完了条件：Claude のカード・詳細・最近の一覧・検索に Claude のタイトルが出る。✏️の手動タイトルが優先される。`TitleChanged` が状態・件数・最終活動・タイムラインを変えない。Cursor は変わらない
+- 設計：`docs/issue23/issue23-claude-title-design.html`
+- 状況（2026-10-08 完了）：実装済み（37-1〜37-3。計画のレビューは挟まず実装）。`AgentEventKind.TitleChanged`、`ClaudeTranscriptNormalizer`（`_lastAt`＝直前の timestamp、`_lastTitle`＝同じ値の繰り返しは出さない、空白だけ・文字でないものは出さずエラーにもしない、改行は空白・前後を Trim、タイトルの文字はログに書かない）、`SessionAnalyzer`（最後の `TitleChanged` を `AutoTitle` に。`TitleChanged` は状態・件数・最終活動・タイムラインを変えない）。画面は変更なし（`SessionMeta.DisplayTitle` の手動優先のまま。カード・詳細の `TextTrimming` が長いタイトルを省略）。実ログ（2.1.197〜2.1.293）の確認：`custom-title` の行は `type`・`customTitle`・`sessionId` のみで timestamp が無く、21/21 本で最初の timestamp の行より後に入る。
+  - テスト：Tests 1106 → 1126（Normalizer 9・要約とタイムライン 8・追記読み 1・ViewModel 2。スキップ 29 のまま）、UiTests 52 合格・スキップ 3。
+  - 確認（隔離環境。手書きのダミー会話ログ 5 本で、利用者が mac で目視 OK）：タイトルあり／なし／途中で変わる／空白／長い、のカード・詳細・最近の一覧・検索・✏️の手動優先と空にして戻す、ダーク・ライト。
+  - 未対応：`ai-title`（実物が無い）、Cursor（`state.vscdb` を読まない方針のまま。最初の依頼の先頭 40 文字）。本物の Claude のログでの確認はしていない。
+
 ## 16. テスト方針
 
 - Core は xUnit で網羅：`CursorAgent.Normalize` の対応表どおりの変換、状態遷移（再開・中断・エラー・stop 欠落）、実行中ツールの保険クリア、
@@ -1013,5 +1022,5 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - タスク・課題の更新表示
 - 承認待ち状態の判定
 - ドキュメントタブ：本文検索、md の編集、ボード表示、索引のキャッシュ
-- Claude Code：セッションのタイトル（`custom-title` / `ai-title`）の取り込み、サブエージェントの詳細表示（`GetSubagentEvents`）、古いセッションの「直近 N 日」の設定（初回の読み込みが遅いとき）
+- Claude Code：`ai-title` の取り込み（実物が出たら。`custom-title` は Phase 37 で対応）、サブエージェントの詳細表示（`GetSubagentEvents`）、古いセッションの「直近 N 日」の設定（初回の読み込みが遅いとき）
 - macOS：Intel の mac（`osx-x64`）、Apple の署名・公証（Apple Developer Program。年 99 USD。入れれば 8.1 の手順が要らなくなる。切り替えは CI と README だけ）、上のメニューバー（「設定…」⌘, など）、Homebrew での配布

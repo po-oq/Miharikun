@@ -8,6 +8,8 @@ public enum AgentEventKind
     ToolStarted, ToolSucceeded, ToolFailed,
     AssistantMessage, AssistantThought,
     SubagentStarted, SubagentStopped, FileEdited, Compacted,
+    /// <summary>エージェント自身が付けたセッションのタイトル（Claude Code の custom-title。Text = タイトル。Issue #23）。状態・件数・タイムラインには影響しない。</summary>
+    TitleChanged,
 }
 
 public enum TurnOutcome { Completed, Aborted, Error, Unknown }
