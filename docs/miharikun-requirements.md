@@ -972,9 +972,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - 未確認：mac の zip の展開 → `xattr` → 起動 → Hook の導入 → Cursor で会話 → 表示、版を上げた再導入、`.app` を「アプリケーション」以外に置いたときの案内（32-2 の未確認と同じ。`docs/release.md` のチェックに入れた）。タグを push した本番のリリースは未実施。
 - 完了（2026-10-08）：手動実行のワークフローで両 OS の zip と `.sha256` ができ、Windows の zip は利用者が展開して、単一ファイルの exe でプレビューが出ること・`README.txt` に版が入ることを確認した。**後回しのまま残る項目**（利用者が了承）：mac の zip を展開 → `xattr` → 起動 → Hook の導入（印の解除と `--probe`）→ Cursor で会話 → 表示、版を上げた再導入（Hook の更新）、`.app` を「アプリケーション」以外に置いたときの案内、タグを push した本番のリリース（Phase 33 の通し確認、または初回のリリースの試運転で行う。`docs/release.md` の出す前のチェックに入れてある）、`LSMinimumSystemVersion=14.0` と実行ファイルの `minos 12.0` の食い違い。
 
-## [ ] Phase 33: 両 OS の通し確認・仕上げ
+## [x] Phase 33: 両 OS の通し確認・仕上げ
 - Windows：Cursor・Claude Code。mac：Cursor（Hobby）・Claude Code。リリースの zip で通す。`CLAUDE.md`・本書（状況）の更新
 - 完了条件：目視確認 OK。未確認項目が「確認済み」または「保留」に整理されている
+- 状況（2026-10-08 完了）：利用者が、手動実行（run 37758114529・版 0.0.0-dev）の mac・Windows の zip で、**実機の通し確認 OK**（下の①②）。**保留**：③タグを push する本番のリリース（頼まれたときに `docs/release.md` の手順で行う。リリースのジョブが GitHub Release に載せる流れだけは未確認）。以下は途中の記録：`CLAUDE.md` は更新済み（1 行目を Windows・macOS／Avalonia に。「macOS 対応を進めている」の行を消した。`~\.claude\` の書き方も `~/.claude/` に）。**確認済み**：`LSMinimumSystemVersion=14.0` と実行ファイルの `minos 12.0`（`libAvaloniaNative` は 11.0）の食い違いは、Info.plist のほうが厳しい値（.NET 10 の対応 OS に合わせて 14.0 未満を弾く）で、不具合ではなく意図どおり。**利用者の実機確認が残る**（これが済むまで `[x]` にしない）：①mac：zip を展開 → `xattr` → 起動 → Hook の導入（`--probe`）→ Cursor で会話 → 表示、版を上げた再導入、`.app` を「アプリケーション」以外に置いたときの案内、Claude Code の会話の表示 ②Windows：リリースの zip で Cursor・Claude Code ③タグを push する本番のリリース（`docs/release.md`。頼まれたときだけ）。保留にするものは、結果と理由をここに書く
 
 ※ Phase 34〜36（Issue #17）は、27〜33（Issue #22）より先に main に入った。Issue #22 のブランチには 2026-10-07 にマージ済みで、Phase 28 以降は、その変更（Hook の置き場所・「Hook なし」の警告）も含めて移す（計画 `docs/macos-support/macos-support-plan.md` の 1 章）。
 

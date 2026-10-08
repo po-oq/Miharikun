@@ -1,8 +1,7 @@
 # Miharikun（みはりくん）
 
-Cursor IDE と Claude Code のチャットセッションを、プロジェクト単位で一覧・状態把握・概要/メモ管理する Windows デスクトップツール（C# / WPF）。
-Cursor は Hook で記録したイベント、Claude Code は会話ログ（`~\.claude\projects\`、読み取りだけ）から読む。
-※ macOS 対応（画面を Avalonia 12 に移す）を進めている：要件定義 15 章の Phase 27〜33（Issue #22）
+Cursor IDE と Claude Code のチャットセッションを、プロジェクト単位で一覧・状態把握・概要/メモ管理する Windows・macOS のデスクトップツール（C# / Avalonia）。
+Cursor は Hook で記録したイベント、Claude Code は会話ログ（`~/.claude/projects/`、読み取りだけ）から読む。
 
 ## 必読
 - 仕様の正：`docs/miharikun-requirements.md`（要件定義・実装方針・実装フェーズ）
