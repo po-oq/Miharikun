@@ -42,6 +42,10 @@ public sealed class ClaudeTranscriptNormalizer
     private bool _started;
     /// <summary>最後に Git として伝えたブランチ。変わったときだけ、その行の最初のイベントに載せる。</summary>
     private string? _lastBranch;
+    /// <summary>直前に見た timestamp。timestamp を持たない custom-title の行の時刻に使う（Issue #23）。</summary>
+    private DateTimeOffset? _lastAt;
+    /// <summary>最後に TitleChanged として出したタイトル。同じ値の繰り返しは出さない。</summary>
+    private string? _lastTitle;
 
     /// <param name="sessionId">セッション ID（SessionKey の元）。</param>
     /// <param name="fileName">ログに書くファイル名（行の中身ではなく、場所の手がかり）。</param>
@@ -126,6 +130,15 @@ public sealed class ClaudeTranscriptNormalizer
     private void Convert(JsonObject root, string type, long seq, List<AgentEvent> events)
     {
         var at = Timestamp(root);
+        if (at is not null)
+            _lastAt = at;
+
+        if (type == "custom-title")
+        {
+            AddStarted(root, at, seq, events);
+            AddTitle(root, seq, events);
+            return;
+        }
 
         if (type is not ("user" or "assistant"))
         {
@@ -158,6 +171,22 @@ public sealed class ClaudeTranscriptNormalizer
         _lastBranch = branch;
         if (events[0].Git?.Branch is null)
             events[0] = events[0] with { Git = new GitSnapshot(branch, events[0].Git?.Head) };
+    }
+
+    /// <summary>
+    /// セッションのタイトル（Issue #23）。実ログの行は timestamp を持たず、同じ値が繰り返し入るので、
+    /// 時刻は直前の timestamp（まだ無ければ出さない。あとの繰り返しで拾える）、変わったときだけ出す。
+    /// 空白だけ・文字でないものは出さない（エラーにもしない）。タイトルの文字はログに書かない。
+    /// </summary>
+    private void AddTitle(JsonObject root, long seq, List<AgentEvent> events)
+    {
+        if (_lastAt is not { } at || Str(root, "customTitle") is not { } raw)
+            return;
+        var title = raw.ReplaceLineEndings(" ").Trim();
+        if (title.Length == 0 || title == _lastTitle)
+            return;
+        _lastTitle = title;
+        events.Add(new AgentEvent(_key, seq, at, AgentEventKind.TitleChanged, Text: title));
     }
 
     private void AddStarted(JsonObject root, DateTimeOffset? at, long seq, List<AgentEvent> events)

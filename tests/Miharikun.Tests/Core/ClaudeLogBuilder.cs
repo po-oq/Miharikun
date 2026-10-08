@@ -162,4 +162,13 @@ public sealed class ClaudeLogBuilder(string sessionId = "sess-1", string cwd = @
             }
         return S(o);
     }
+
+    /// <summary>セッションのタイトルの行。実ログと同じく、timestamp などは持たない（type・customTitle・sessionId だけ）。</summary>
+    public string CustomTitle(JsonNode? title)
+    {
+        var o = new JsonObject { ["type"] = "custom-title" };   // 時刻を進めない（timestamp を持たない行なので）
+        o["customTitle"] = title;
+        o["sessionId"] = sessionId;
+        return S(o);
+    }
 }

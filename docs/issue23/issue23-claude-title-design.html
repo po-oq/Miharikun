@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>Issue #23 Claude のセッションタイトル 設計イメージ</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>Issue #23：Claude Code のセッションタイトルをカードに出す</h1>
+<p><b>状態：確定</b>（Q1〜Q3 は推奨どおり。2026-10-08）。</p>
+<p>ゴール：Claude Code のカード・詳細のタイトルを、「最初の依頼の先頭 40 文字」でなく、Claude Code 自身が持つセッションのタイトル（会話ログの <code>custom-title</code>）にする。Cursor は変えない。</p>
+
+<h2>1. 調べた結果（事実）</h2>
+<table>
+<tr><th>対象</th><th>結果</th><th>根拠</th></tr>
+<tr><td>Claude Code</td><td class="ok">取れる</td><td>会話ログに <code>{type:"custom-title", customTitle, sessionId}</code> の行がある。手元 29 本中 21 本（版 2.1.197〜2.1.293）。冒頭（10〜50 行目）に入り、その後も同じ値で繰り返し追記される。<b>この 21 本では 1 本につき値は 1 種類</b>。<code>ai-title</code> は 0 件。<b>行の項目は <code>type</code>・<code>customTitle</code>・<code>sessionId</code> のみで、<code>timestamp</code> は無い</b>（確認済み）</td></tr>
+<tr><td>Cursor</td><td class="ng">取れない（方針上）</td><td>Hook の payload にタイトルの項目なし。<code>agent-transcripts</code> の行は <code>role</code>/<code>message</code> だけ。チャット名の置き場は <code>state.vscdb</code> と思われる（読み書きしない決まり。確認もしていない）</td></tr>
+</table>
+
+<h2>2. 画面イメージ</h2>
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="18" font-weight="bold">いま（Claude Code のカード）</text>
+<rect x="10" y="26" width="440" height="70" fill="#fff" stroke="#999" rx="6"/>
+<circle cx="24" cy="44" r="5" fill="#0969da"/><text x="34" y="48" font-size="11">実行中</text>
+<text x="100" y="48" font-weight="bold">このリポジトリの Issue 23 について調べて、実現可…</text>
+<text x="20" y="80" font-size="11" fill="#666">12 依頼 ・ 2 分前</text>
+<text x="500" y="18" font-weight="bold">変更後</text>
+<rect x="500" y="26" width="450" height="70" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2" rx="6"/>
+<circle cx="514" cy="44" r="5" fill="#0969da"/><text x="524" y="48" font-size="11">実行中</text>
+<text x="590" y="48" font-weight="bold">Claude のタイトル（例：セッションタイトル取得）</text>
+<text x="510" y="80" font-size="11" fill="#666">12 依頼 ・ 2 分前</text>
+<text x="590" y="112" font-size="12" fill="#c05000">← 変わるのはタイトルの文字だけ。配置・項目は変えない</text>
+<text x="10" y="150" font-weight="bold">✏️で付けた手動タイトルがあるとき</text>
+<rect x="10" y="158" width="440" height="50" fill="#fff" stroke="#999" rx="6"/>
+<text x="20" y="188" font-weight="bold">手動タイトル</text><text x="150" y="188" font-size="12" fill="#c05000">← いまと同じ。Claude のタイトルより常に優先</text>
+<text x="10" y="236" font-size="12" fill="#666">詳細ヘッダー・拡大時のタイトル・最近の一覧・全文検索（タイトルを検索対象にしている）も、同じ表示用タイトルを使うので自動で揃う</text>
+</svg>
+
+<h2>3. 概念図</h2>
+<svg viewBox="0 0 960 330" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="30" width="190" height="62" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="52" font-weight="bold">Claude の会話ログ</text><text x="18" y="70" font-size="12">custom-title の行</text><text x="18" y="85" font-size="11" fill="#666">（読み取りだけ）</text>
+<rect x="250" y="30" width="230" height="86" fill="#dfd" stroke="#383"/>
+<text x="260" y="52" font-weight="bold">ClaudeTranscriptNormalizer</text><text x="260" y="70" font-size="12">custom-title を読み飛ばさず</text><text x="260" y="86" font-size="12">TitleChanged イベントにする</text><text x="260" y="104" font-size="11" fill="#c05000">新規イベント種別</text>
+<rect x="530" y="30" width="200" height="86" fill="#fef" stroke="#a3a"/>
+<text x="540" y="52" font-weight="bold">AgentEvent</text><text x="540" y="70" font-size="12">共通イベント（App はこれだけ）</text><text x="540" y="86" font-size="12">Kind=TitleChanged</text><text x="540" y="102" font-size="12">Text=タイトル</text>
+<rect x="780" y="30" width="170" height="86" fill="#dfd" stroke="#383"/>
+<text x="788" y="52" font-weight="bold">SessionAnalyzer</text><text x="788" y="70" font-size="12">最後の TitleChanged を</text><text x="788" y="86" font-size="12">AgentTitle に入れる</text>
+<line x1="200" y1="60" x2="250" y2="60" stroke="#333" marker-end="url(#a)"/>
+<line x1="480" y1="60" x2="530" y2="60" stroke="#333" marker-end="url(#a)"/>
+<line x1="730" y1="60" x2="780" y2="60" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="160" font-weight="bold">表示するタイトルの決め方（SessionMeta.DisplayTitle）</text>
+<rect x="10" y="172" width="200" height="50" fill="#e8f1fd" stroke="#0b63c5"/><text x="18" y="194" font-weight="bold">① 手動タイトル</text><text x="18" y="211" font-size="12">TitleIsManual</text>
+<rect x="270" y="172" width="230" height="50" fill="#dfd" stroke="#383"/><text x="278" y="194" font-weight="bold">② Claude のタイトル（新規）</text><text x="278" y="211" font-size="12">最後の custom-title（空白だけは無視）</text>
+<rect x="560" y="172" width="240" height="50" fill="#dff" stroke="#08a"/><text x="568" y="194" font-weight="bold">③ 最初の依頼の先頭 40 文字</text><text x="568" y="211" font-size="12">いまの AutoTitle（Cursor はこれ）</text>
+<line x1="210" y1="197" x2="270" y2="197" stroke="#333" marker-end="url(#a)"/><text x="215" y="189" font-size="11" fill="#555">無ければ</text>
+<line x1="500" y1="197" x2="560" y2="197" stroke="#333" marker-end="url(#a)"/><text x="505" y="189" font-size="11" fill="#555">無ければ</text>
+<text x="10" y="260" font-size="12" fill="#c05000">※ Claude が後でタイトルを変えると、手動タイトルが無い限り表示も追従する（最後の行を採用）</text>
+<text x="10" y="280" font-size="12" fill="#c05000">※ ✏️で空にして戻すと、②（無ければ③）に戻る</text>
+<text x="10" y="300" font-size="12" fill="#666">※ ログの本文は書かない決まり。app.log に出すのは件数だけ（タイトルの文字も書かない）</text>
+</svg>
+
+<h2>4. 変更点</h2>
+<table>
+<tr><th>場所</th><th>いま</th><th>変更</th></tr>
+<tr><td><code>Agents/AgentEvent.cs</code></td><td>種別 13 個</td><td><code>TitleChanged</code> を追加（Text = タイトル）</td></tr>
+<tr><td><code>Agents/ClaudeTranscriptNormalizer.cs</code></td><td><code>custom-title</code> は読み飛ばし（timestamp が無い行は At が決まらない）</td><td><code>custom-title</code> を <code>TitleChanged</code> にする。<code>At</code> は直前に見た timestamp（まだ無ければ出さない）。空白だけのタイトルは出さない</td></tr>
+<tr><td><code>Agents/ClaudeFormatLog.cs</code></td><td><code>custom-title</code> を「既知の読み飛ばし」に含む（13 行目。確認済み）</td><td>変更なし（<code>custom-title</code> は変換が先に処理するので、一覧はそのまま）</td></tr>
+<tr><td><code>Sessions/SessionAnalyzer.cs</code> / <code>SessionSummary.cs</code></td><td><code>AutoTitle</code> は最初の依頼から</td><td><code>TitleChanged</code> の最後の値を持つ。<code>AutoTitle</code> の決め方（Claude のタイトル → 最初の依頼）をここに集める。最終活動時刻・件数・状態には影響させない</td></tr>
+<tr><td>タイムライン／状態判定</td><td>イベント種別ごとに処理</td><td><code>TitleChanged</code> は表示も状態の変化もしない。確認済み：<code>Timeline.cs</code> と <code>SessionAnalyzer.cs</code> の switch に該当なし（足すだけ）。<code>SessionAnalyzer</code> は最後のイベントの <code>At</code> を最終活動に使うが、<code>TitleChanged</code> の <code>At</code> は直前の timestamp なので変わらない。Claude には <code>SessionEnded</code> が無いので閉じ判定も変わらない</td></tr>
+<tr><td><code>Meta/SessionMeta.cs</code>・画面</td><td><code>DisplayTitle(autoTitle)</code></td><td>変更なし（手動優先のまま）</td></tr>
+<tr><td><code>docs/miharikun-requirements.md</code></td><td>5.2 の表で「後回し」</td><td>5.2・10.1・タイトル（400 行付近）・15 章に反映</td></tr>
+</table>
+
+<h2>5. 決めたいこと（回答済み）</h2>
+<table>
+<tr><th>Q</th><th>決定</th></tr>
+<tr><td>取り込んだタイトルと手動タイトルの優先</td><td>手動タイトルが常に優先</td></tr>
+<tr><td>Claude 側でタイトルが変わったとき</td><td>手動が無ければ自動で追従</td></tr>
+<tr><td>Cursor の <code>state.vscdb</code> 読み取り</td><td>対象外のまま</td></tr>
+</table>
+
+<h2>6. 設計の細部（回答済み：すべて推奨 A）</h2>
+<div class="q"><b>Q1.</b> タイトルの運び方<br>
+A) 新しいイベント種別 <code>TitleChanged</code> … 共通イベントだけを扱う原則（5.1）に合い、他の Source にも使える。種別を足すので switch の洗い出しが要る<br>
+B) 既存のイベントに <code>Title</code> 項目を足して載せる … 種別は増えないが、どの行に載せるか（timestamp の無い行）が不自然<br>
+<span class="rec">推奨：A</span></div>
+<div class="q"><b>Q2.</b> <code>custom-title</code> の行に timestamp が無いときの時刻<br>
+A) 直前の timestamp を使う（最終活動時刻はずれない） … 先頭より前に来た行は出さない（その後の繰り返しで拾える）<br>
+B) 取り込んだ時刻（現在） … 最終活動が「いま」になってしまう<br>
+<span class="rec">推奨：A</span></div>
+<div class="q"><b>Q3.</b> 長いタイトルの扱い<br>
+A) 切らずにそのまま出す（カード側で省略表示） … 実データでは 15 文字程度で短い<br>
+B) 40 文字で切る … 既存と揃うが、利用者が付けた名前を欠く<br>
+<span class="rec">推奨：A</span></div>
+
+<h2>7. リスクと対策</h2>
+<table>
+<tr><th>リスク</th><th>対策</th></tr>
+<tr><td>会話ログは非公開仕様。<code>custom-title</code> が将来変わる・消える</td><td>無い・壊れた行は今まで通り飛ばし、③（最初の依頼）に戻る。項目名が想定と違えば <code>app.log</code> に種類と件数だけ書く（本文は書かない）</td></tr>
+<tr><td>新しい種別を足して、タイムラインや件数、状態判定に紛れ込む</td><td>Core のテスト先行：<code>TitleChanged</code> が入っても状態・件数・最終活動・タイムラインが変わらないことを確認</td></tr>
+<tr><td>実ログに <code>ai-title</code> など別の種類が出る</td><td>今回は <code>custom-title</code> のみ（実物で確認できたものだけ）。<code>ai-title</code> は実物が出たときに足す</td></tr>
+<tr><td>実機のログを引用してしまう</td><td>フィクスチャは構造を真似て手書き。実ログのコピーはしない</td></tr>
+</table>
+</body></html>

@@ -414,6 +414,24 @@ public sealed class ClaudeSessionSourceTests : IDisposable
         Assert.Equal(Key("s"), Only(_source.ReadNew()).Key);
     }
 
+    [Fact]
+    public void A_title_added_or_changed_later_reaches_the_summary_through_the_store()
+    {
+        var b = B("s");
+        Append(Main, "s", b.User("最初の依頼"));
+        var store = new ProjectEventStore([_source], log: _logs.Add);
+        store.Refresh();
+        Assert.Equal("最初の依頼", store.GetSummary(Key("s"))!.AutoTitle);
+
+        Append(Main, "s", b.CustomTitle("つけた名前"), b.CustomTitle("つけた名前"));
+        Assert.Equal([Key("s")], store.Refresh());
+        Assert.Equal("つけた名前", store.GetSummary(Key("s"))!.AutoTitle);
+
+        Append(Main, "s", b.AssistantText("返事", stopReason: "end_turn"), b.CustomTitle("変えた名前"));
+        store.Refresh();
+        Assert.Equal("変えた名前", store.GetSummary(Key("s"))!.AutoTitle);
+    }
+
     // ---- Store を通して ----
 
     [Fact]
