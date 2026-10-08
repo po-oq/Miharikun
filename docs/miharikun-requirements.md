@@ -1055,10 +1055,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - テスト：Tests 1197（変わらず）、UiTests 52 → 65（`DocumentsViewTests` 拡大 8・`DocumentsEscapeTests` 5。スキップ 3 のまま）。
   - 確認（隔離環境の手書きの md・html。mac で利用者が目視 OK）：拡大⇄戻す、目次で移る、Esc（ページの中・目次・ボタンの後）、位置、保存で目次が替わる、リンクで別の md／html、ダッシュボードとの Esc。Windows は Phase 41。
 
-## [ ] Phase 41: 両 OS の実機確認・仕上げ
+## [x] Phase 41: 両 OS の実機確認・仕上げ
 - Windows（WebView2）で、試作の Q1〜Q7 にあたる確認（ページからの知らせ・Esc・目次で移る・位置の補正が Chromium の働きと二重にならない）、両 OS のライト/ダークの目視、本書の状況・`docs/release.md` のチェックの更新
 - 完了条件：両 OS で全体の完了条件を満たす。Windows で `invokeCSharpAction` が使えなければ、代わりの形（独自の URL への移動を取り消して受ける）にして確かめる
-- 状況（2026-10-09）：41-2 の文書分だけ実施。`docs/release.md` の「出す前のチェック」に拡大モードの項目を追加。**41-1（Windows の実機確認）は未実施のため `[ ]` のまま**。mac は Phase 40 の確認で OK（利用者が目視）。
+- 状況（2026-10-09 完了）：41-1 Windows（WebView2）の実機で利用者が確認 OK（ページの中の Esc・目次で移る・位置の補正など、`docs/release.md` の拡大モードの項目）。`invokeCSharpAction` はそのまま使えたので代わりの形は入れず、`overflow-anchor: none` も足していない。41-2 `docs/release.md` の「出す前のチェック」に拡大モードの項目を追加。mac は Phase 40 の確認で OK。**Issue #28 の実装は、これで 38〜41 がすべて完了**。
 
 ## 16. テスト方針
 

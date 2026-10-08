@@ -1,7 +1,7 @@
-# 引き継ぎ（Issue #28：Phase 38〜40 実装済み・mac 確認 OK。残りは Windows の実機確認）— 2026-10-09
+# 引き継ぎ（Issue #28：Phase 38〜41 すべて完了・両 OS で確認 OK。次は PR）— 2026-10-09
 
 ## 現状
-- **Issue #28（ドキュメントタブの拡大モード：目次｜プレビュー）**。作業ブランチ `feature/issue28-documents-expand-mode`。**Phase 38〜40 は実装済みで、mac の実機は利用者が確認 OK**（要件定義 15 章は `[x]`）。Phase 41 は文書分（`docs/release.md` のチェック項目）だけ済んでいて、**41-1（Windows の実機確認）が未実施のため `[ ]`**。
+- **Issue #28（ドキュメントタブの拡大モード：目次｜プレビュー）**。作業ブランチ `feature/issue28-documents-expand-mode`。**Phase 38〜41 はすべて完了**。mac・Windows の実機は利用者が確認 OK（要件定義 15 章は `[x]`）。残りは PR を出して main にマージするだけ（頼まれたとき）。
   - 技術調査：`docs/issue28/issue28-tech-investigation.md`／設計：`docs/issue28/issue28-documents-expand-design.html`／要件定義 12.7.1・12.4.1・15 章 Phase 38〜41／実装計画（確定。md と HTML の対）：`docs/issue28/issue28-documents-expand-plan.md`・`.html`
   - 実装：Docs の `MarkdownRenderer.RenderWithOutline`・`MarkdownOutline`（38）、Presentation の `DocumentsViewModel.Expand.cs`・`OutlineItemViewModel`・`PreviewScripts`・`IPreviewHost` の新しい口（39）、画面の `MarkdownPreview`・`DocumentsView`・`DepthIndentConverter`・`DashboardView` の Esc（40）。
   - テスト：Tests 1197 合格・スキップ 29、UiTests 65 合格・スキップ 3。
@@ -9,7 +9,7 @@
 - Issue #7（業務で便利になったかの壁打ち）は閉じた。結果は `docs/issue7/issue7-business-value.md`。そこから Issue #27（検索のヒット箇所）・#28（拡大モード）・#29（README に PATH の使い方）を作った。
 
 ## 未実施・保留
-1. **Issue #28 の Windows（WebView2）の実機確認**（41-1。利用者の作業）。見る項目は `docs/release.md` の「ドキュメントの拡大モード」。とくに、ページの中の Esc・目次で移る・位置の補正が Chromium の働きと二重にならない。`invokeCSharpAction` が使えない／`Body` の形が違うときは計画 7.4 の代わりの形、位置が二重にずれるときは md のページに `overflow-anchor: none`。済んだら要件定義の Phase 41 を `[x]` にし、最後のコミットに `Fixes #28`（PR 本文に `Closes #28`）。
+1. **Issue #28 の PR**（頼まれたとき。本文に `Closes #28`。最後のコミットに `Fixes #28`）。CI は PR で push 側と pull_request 側の 2 回走る。
 2. Issue #28 の保留（17 章）：今見ている見出しの強調（Q9）。
 3. Issue #27・#29 は未着手。#27 は画面に手が入るので、ペライチから。#29 は文書だけ。
 4. CI の注意（release の実行で出た）：Node.js 20 の actions（`checkout@v4`・`setup-dotnet@v4`・`upload-artifact@v4`・`download-artifact@v4`）が非推奨、`ubuntu-latest` が 2026-10-19 から Ubuntu 26 に切り替わる。いまは動いている。
@@ -39,4 +39,4 @@
 - `superpowers:finishing-a-development-branch`（ブランチの片付けを頼まれたとき）
 
 ## 次にやること
-Windows の確認の結果を聞き、直す点があれば直す（41-1）。問題なければ要件定義の Phase 41 を `[x]` にして `Fixes #28` のコミット、PR は頼まれたときだけ。ほかの作業を頼まれたら、そちらを優先する。
+PR を頼まれたら出す（`Closes #28`）。ほかの作業を頼まれたら、そちらを優先する（#27・#29 は未着手）。
