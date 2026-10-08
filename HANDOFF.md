@@ -1,37 +1,42 @@
-# 引き継ぎ（Issue #22・#23 は main にマージ済み）— 2026-10-08
+# 引き継ぎ（Issue #28：Phase 38〜41 すべて完了・両 OS で確認 OK。次は PR）— 2026-10-09
 
 ## 現状
-- Issue #22（macOS 対応。Phase 27〜33）と Issue #23（Claude Code のセッションタイトル。Phase 37）は、どちらも完了して main にマージ済み。PR は [#25](https://github.com/po-oq/Miharikun/pull/25)・[#26](https://github.com/po-oq/Miharikun/pull/26)。作業ブランチは両方とも削除済み（ローカル・リモート）。
-- 各 Phase の中身・結果・計画との違いは、要件定義 15 章の各 Phase の「状況」（`docs/miharikun-requirements.md`）。計画は `docs/macos-support/macos-support-plan.md`、`docs/issue23/issue23-claude-title-plan.md`。リリース手順は `docs/release.md`。ここには書き写さない。
-- Issue #23：`custom-title` を `AgentEventKind.TitleChanged` にし、`SessionAnalyzer` が最後の値を `AutoTitle` にする（表示は「手動 → Claude のタイトル → 最初の依頼の先頭 40 文字」）。Cursor は変わらない。実ログ（2.1.197〜2.1.293）の `custom-title` の行は timestamp を持たず、同じ値が繰り返し入る。
-- テスト（最後に回した時点）：Tests 1126 合格・スキップ 29、UiTests 52 合格・スキップ 3。
-- 両 OS の通し確認（Phase 33）は、手動実行の release ワークフロー（run 37758114529・版 `0.0.0-dev`）の zip で、利用者が mac・Windows の実機で OK とした。
+- **Issue #28（ドキュメントタブの拡大モード：目次｜プレビュー）**。作業ブランチ `feature/issue28-documents-expand-mode`。**Phase 38〜41 はすべて完了**。mac・Windows の実機は利用者が確認 OK（要件定義 15 章は `[x]`）。残りは PR を出して main にマージするだけ（頼まれたとき）。
+  - 技術調査：`docs/issue28/issue28-tech-investigation.md`／設計：`docs/issue28/issue28-documents-expand-design.html`／要件定義 12.7.1・12.4.1・15 章 Phase 38〜41／実装計画（確定。md と HTML の対）：`docs/issue28/issue28-documents-expand-plan.md`・`.html`
+  - 実装：Docs の `MarkdownRenderer.RenderWithOutline`・`MarkdownOutline`（38）、Presentation の `DocumentsViewModel.Expand.cs`・`OutlineItemViewModel`・`PreviewScripts`・`IPreviewHost` の新しい口（39）、画面の `MarkdownPreview`・`DocumentsView`・`DepthIndentConverter`・`DashboardView` の Esc（40）。
+  - テスト：Tests 1197 合格・スキップ 29、UiTests 65 合格・スキップ 3。
+- リリース `v0.6.0` を出した（2026-10-08。タグ `v0.6.0` は `247ce9a`。release ワークフロー run 37767777027）。release のジョブが GitHub Release に両 OS の zip と `.sha256` の 4 ファイルを載せる流れを、これで初めて確かめた。
+- Issue #7（業務で便利になったかの壁打ち）は閉じた。結果は `docs/issue7/issue7-business-value.md`。そこから Issue #27（検索のヒット箇所）・#28（拡大モード）・#29（README に PATH の使い方）を作った。
 
 ## 未実施・保留
-1. **タグを push する本番のリリース**（`docs/release.md`）。release のジョブが GitHub Release に両 OS の zip と `.sha256` を載せる流れは、まだ一度も確かめていない（手動実行では release のジョブがスキップされるため）。頼まれたときだけ行う。
-2. Phase 28 の差分と品質ゲートのレビュー（計画 10.2）、30-1 の後・30-2 の後のレビュー。Issue #23 の計画はレビューを挟まず実装した。利用者が望めば別セッションで。
-3. html をダークテーマに対応させる案（`prefers-color-scheme` など）。html は配色をファイル側が持つため、WebView の地はダークでも白にしてある。別の課題。
-4. 後回しのままの確認（Phase 31・32 の「状況」）のうち、Phase 33 の通し確認に含まれなかったかもしれないもの：iframe を含む html で既定のブラウザが勝手に開かない（mac。手元に該当の html が無い）、Windows の Runtime 未導入の案内、mermaid を含む md のダークでの見え方。
-5. Issue #23 の未確認：本物の Claude のログでの表示（隔離環境の手書きダミーでだけ目視 OK）。`ai-title` は実物が無く未対応。Cursor のタイトル（チャット名）は `state.vscdb` を読まない方針のため取れない。
-6. CI の揺れ：PR #26 の push 側の実行で macos の UiTests `DocumentsViewTests.Selecting_a_row_shows_the_overview_and_enables_the_buttons`（`vm.Overview` が null）が 1 回だけ落ち、失敗したジョブの再実行（`gh run rerun <run-id> --failed`）で通った。待ち方が不安定な可能性。原因は未調査。また落ちたら調べる（`superpowers:systematic-debugging`）。
+1. **Issue #28 の PR**（頼まれたとき。本文に `Closes #28`。最後のコミットに `Fixes #28`）。CI は PR で push 側と pull_request 側の 2 回走る。
+2. Issue #28 の保留（17 章）：今見ている見出しの強調（Q9）。
+3. Issue #27・#29 は未着手。#27 は画面に手が入るので、ペライチから。#29 は文書だけ。
+4. CI の注意（release の実行で出た）：Node.js 20 の actions（`checkout@v4`・`setup-dotnet@v4`・`upload-artifact@v4`・`download-artifact@v4`）が非推奨、`ubuntu-latest` が 2026-10-19 から Ubuntu 26 に切り替わる。いまは動いている。
+5. CI の揺れ：PR #26 の push 側の実行で macos の UiTests `DocumentsViewTests.Selecting_a_row_shows_the_overview_and_enables_the_buttons`（`vm.Overview` が null）が 1 回だけ落ち、再実行で通った。原因は未調査。また落ちたら調べる（`superpowers:systematic-debugging`）。Issue #28 で同じテストファイルに足すので、待ち方に気をつける。
+6. 前からの保留（変わらず）：Phase 28・30-1・30-2 の後のレビュー（利用者が望めば）、html をダークテーマに対応させる案、Phase 31・32 の後回しの確認（iframe を含む html・Windows の Runtime 未導入の案内・mermaid のダーク）、Issue #23 の本物の Claude のログでの表示と `ai-title`。
 
 ## 守ること・作業の決まり
-- `CLAUDE.md` の「作業の決まり」「守ること」に従う。返答は日本語、コミット・push・PR・マージ・リリース・ブランチ削除は頼まれたときだけ、`git add` はパス指定（`-A` は使わない）、作業の前に main から作業ブランチを切る、完了報告に「ビルドしたかと出力先・テスト件数・できなかった確認」を書く、本物の `~/.cursor/hooks.json` やデータは勝手に触らない、`~/.claude/` には書かない（読み取りだけ。会話ログの確認は構造だけで、本文は引用しない）。
-- 私は画面を撮れない。mac の見た目は `tests/Miharikun.UiTests`（Avalonia.Headless）のスクリーンショットか、利用者が手元で見る。隔離環境で見せるときは、`MIHARIKUN_DATA_DIR`・`MIHARIKUN_CURSOR_DIR`・`MIHARIKUN_CLAUDE_DIR` を一時フォルダにして、手書きのダミー会話ログを置き、`src/Miharikun/bin/Debug/net10.0/Miharikun <プロジェクトのフォルダ>` を起動してもらう。
+- `CLAUDE.md` の「作業の決まり」「守ること」に従う。返答は日本語、コミット・push・PR・マージ・リリース・ブランチ削除は頼まれたときだけ、`git add` はパス指定（`-A` は使わない）、完了報告に「ビルドしたかと出力先・テスト件数・できなかった確認」を書く、本物の `~/.cursor/hooks.json` やデータは勝手に触らない、`~/.claude/` には書かない（読み取りだけ）。
+- `dotnet build`／`test` の前にアプリを止める。利用者が `dotnet run --project src/Miharikun` で起動していることがある（`pgrep -fl Miharikun` で確かめる）。止められないときは `-p:OutDir=` で別の場所に作る。
+- 私は画面を撮れない。mac の見た目は `tests/Miharikun.UiTests`（Avalonia.Headless）か、利用者が手元で見る。隔離環境で見せるときは、`MIHARIKUN_DATA_DIR`・`MIHARIKUN_CURSOR_DIR`・`MIHARIKUN_CLAUDE_DIR` を一時フォルダにし、手書きの md・ダミー会話ログを置いて、`src/Miharikun/bin/Debug/net10.0/Miharikun <プロジェクトのフォルダ>` を起動してもらう。
 
 ## 今回の途中で分かったこと（文書に書いていない部分）
-- `LSMinimumSystemVersion=14.0`（`scripts/dist/Info.plist`）と実行ファイルの `minos 12.0`（`libAvaloniaNative` は 11.0）の食い違いは、Info.plist のほうが厳しい値（.NET 10 の対応 OS に合わせて 14.0 未満を弾く）で、意図どおり。直さない。
-- release ワークフローの手動実行の artifact は二重の zip（外側を展開すると、中に本物の zip と `.sha256`）。ダウンロードは `gh run download <run-id> --repo po-oq/Miharikun -n <artifact名>`。
-- 署名はアドホックのみ。Apple の署名・公証はしない。`xattr` が要るのは、ダウンロードした zip のとき。
-- ヘッドレスの UiTests では本物の WebView を作らない（`MarkdownPreview.WebViewDisabled`）。プレビューの中身は実機で見る。
-- PR を出すと CI は push 側と pull_request 側の 2 回走る。
+- WebView の試作は、スクラッチパッドに置いた捨てる小さな Avalonia アプリ（本体と同じ版の Avalonia 12.1.3・Avalonia.Controls.WebView 12.1.0）で行った。セッションと一緒に消えるので残っていない。やり方と結果は技術調査の文書にある。作り直すなら、`NativeWebView` を 1 つ置いた画面で、自動の確認は `InvokeScript` とログで行い、実キーの Esc だけ利用者に押してもらう（ウィンドウが 1 分ほど出ることを先に伝える）。
+- Avalonia.Controls.WebView 12.1.0 の API の説明（xml）は、パッケージの `lib/net10.0-android36.0/` にしか入っていない。`invokeCSharpAction` の仕組みは公式の文書が薄く、DLL の文字列と試作で確かめた。
+- Markdig の振る舞いを手早く試すには、入っている `dotnet-script`（2.0.0）で `#r "nuget: Markdig, 1.4.0"` と書いた `.csx` を動かす（パッケージはキャッシュにある）。
+- ペライチ・計画の HTML の図は、アプリ内のブラウザで `file://` を開けば、`svg-check.js` 相当の JS を実行して、はみ出し・重なりを数えられる（ファイルを直したら開き直す。再読み込みでは古いまま）。
+- ダッシュボードの Esc が、ほかのタブでも効く不具合は、利用者が mac の実機で再現を確かめた（Issue #28 の Phase 40 で直す予定）。
+- 前回からの分（変わらず）：`LSMinimumSystemVersion=14.0` と `minos 12.0` の食い違いは意図どおり／release の手動実行の artifact は二重の zip／署名はアドホックのみ／ヘッドレスの UiTests では本物の WebView を作らない（`MarkdownPreview.WebViewDisabled`）／PR を出すと CI は push 側と pull_request 側の 2 回走る。
 
 ## 推奨スキル（次のエージェントが Skill で呼ぶ）
 - `superpowers:using-superpowers`（開始時）
-- `superpowers:verification-before-completion`（完了報告・リリース前）
-- `superpowers:systematic-debugging`（CI の揺れ・リリースの不具合を調べるとき）
-- `peraichi` → `impl-plan`（次に大きい修正をするとき。CLAUDE.md の流れ）
+- `superpowers:executing-plans`（計画に従って Phase ごとに実装するとき）
+- `superpowers:test-driven-development`（Phase 38・39。テスト先行）
+- `superpowers:verification-before-completion`（各 Phase の完了報告の前）
+- `superpowers:systematic-debugging`（CI の揺れ・実機での不具合）
+- `peraichi` → `impl-plan`（ほかの大きい修正をするとき。#27 など）
 - `superpowers:finishing-a-development-branch`（ブランチの片付けを頼まれたとき）
 
 ## 次にやること
-利用者に、次の作業を聞く（本番のリリース、CI の揺れの調査、別の課題のどれか）。
+PR を頼まれたら出す（`Closes #28`）。ほかの作業を頼まれたら、そちらを優先する（#27・#29 は未着手）。

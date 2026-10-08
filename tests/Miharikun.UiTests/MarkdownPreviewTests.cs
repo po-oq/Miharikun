@@ -23,6 +23,9 @@ public sealed class MarkdownPreviewTests
         public List<string> Logs { get; } = [];
         public void Log(string message) => Logs.Add(message);
         public void OpenLocalLink(string fullPath) { }
+        public event Action<string>? HeadingScrollRequested { add { } remove { } }
+        public void OnOutline(PreviewSource? source, IReadOnlyList<OutlineHeading> headings) { }
+        public void OnPageEscape() { }
         public void Raise(PreviewSource? source, bool reload = false) => PreviewChanged?.Invoke(source, reload);
     }
 

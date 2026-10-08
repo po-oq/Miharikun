@@ -32,6 +32,8 @@ public partial class MarkdownPreview : UserControl
     private bool _loadingPage;          // 自分で開いたページを読み込んでいる間（iframe の読み込みを通すため。PreviewNavigationPolicy）
     private int? _restoreScrollY;       // 再読み込みの後に戻すスクロール位置
     private int _version;               // 連続した選択で、古い読み込みの結果を捨てるための番号
+    private string? _pendingHeadingId;  // 読み込み中に頼まれた、読み込み後に移る見出し（目次。Issue #28）
+    private bool _pageIsHtml;           // いま開くページが html か（html には読み込み後に Esc の受け口を入れる）
 
     public MarkdownPreview()
     {
@@ -42,11 +44,15 @@ public partial class MarkdownPreview : UserControl
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_vm is not null)
+        {
             _vm.PreviewChanged -= OnPreviewChanged;
+            _vm.HeadingScrollRequested -= OnHeadingScrollRequested;
+        }
         _vm = DataContext as IPreviewHost;
         if (_vm is not null)
         {
             _vm.PreviewChanged += OnPreviewChanged;
+            _vm.HeadingScrollRequested += OnHeadingScrollRequested;
             MessageText.Text = _vm.EmptyText;
         }
     }
@@ -78,41 +84,58 @@ public partial class MarkdownPreview : UserControl
         switch (source)
         {
             case null:
+                _vm?.OnOutline(null, []);
                 ShowMessage(_vm?.EmptyText ?? "");
                 return;
             case PreviewSource.Message message:
+                _vm?.OnOutline(source, []);
                 ShowMessage(message.Text);
                 return;
         }
 
         if (source is PreviewSource.File file && !System.IO.File.Exists(file.FullPath))
         {
+            _vm?.OnOutline(source, []);
             ShowMessage("ファイルが見つかりません");
             return;
         }
 
         if (!EnsureWebView())
+        {
+            _vm?.OnOutline(source, []);
             return;
+        }
 
         string pagePath;
+        IReadOnlyList<OutlineHeading> outline = [];
         try
         {
-            pagePath = source switch
+            switch (source)
             {
-                PreviewSource.File { Kind: DocumentKind.Html } html => html.FullPath,
-                PreviewSource.File md => await RenderMarkdownFileAsync(md),
-                PreviewSource.Markdown memo => await RenderMarkdownTextAsync(memo),
-                _ => throw new InvalidOperationException(),
-            };
+                case PreviewSource.File { Kind: DocumentKind.Html } html:
+                    pagePath = html.FullPath;
+                    break;
+                case PreviewSource.File md:
+                    (pagePath, outline) = await RenderMarkdownFileAsync(md);
+                    break;
+                case PreviewSource.Markdown memo:
+                    pagePath = await RenderMarkdownTextAsync(memo);
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _vm?.Log($"{NameOf(source)} を表示できない: {ex.Message}");
+            _vm?.OnOutline(source, []);
             ShowMessage($"ファイルを読めません：{ex.Message}");
             return;
         }
         if (version != _version)
-            return;
+            return;                                   // 古い結果は、目次も渡さない
+        _vm?.OnOutline(source, outline);
+        _pageIsHtml = source is PreviewSource.File { Kind: DocumentKind.Html };
 
         MessageText.IsVisible = false;
         WebHost.IsVisible = true;
@@ -135,6 +158,7 @@ public partial class MarkdownPreview : UserControl
         else
         {
             _restoreScrollY = null;
+            _pendingHeadingId = null;
             _loadingPage = true;
             web.Navigate(new Uri(MarkdownRenderer.FileUri(pagePath)));
         }
@@ -151,7 +175,7 @@ public partial class MarkdownPreview : UserControl
     };
 
     /// <summary>md を読んで HTML にし、一時ファイルに書く（重い md でも画面を止めないよう背景で）。</summary>
-    private async Task<string> RenderMarkdownFileAsync(PreviewSource.File target)
+    private async Task<(string PagePath, IReadOnlyList<OutlineHeading> Outline)> RenderMarkdownFileAsync(PreviewSource.File target)
     {
         var isDark = _vm?.IsDark ?? false;
         var previewDir = _vm!.PreviewDir;
@@ -162,8 +186,13 @@ public partial class MarkdownPreview : UserControl
             using (var reader = new StreamReader(stream))
                 text = reader.ReadToEnd();
 
-            var html = MarkdownRenderer.Render(text, Path.GetDirectoryName(target.FullPath)!, isDark, Path.GetFileName(target.FullPath));
-            return PreviewFiles.Write(previewDir, target.FullPath, html);
+            var rendering = MarkdownRenderer.RenderWithOutline(text, Path.GetDirectoryName(target.FullPath)!, isDark, Path.GetFileName(target.FullPath));
+            var path = PreviewFiles.Write(previewDir, target.FullPath, rendering.Html);
+            // Docs の見出しを Presentation の型へ写す（Presentation は Docs を参照しない）。
+            IReadOnlyList<OutlineHeading> outline = rendering.Headings
+                .Select(h => new OutlineHeading(h.Level, h.Text, h.Id, h.Done, h.TasksDone, h.TasksTotal))
+                .ToList();
+            return (path, outline);
         });
     }
 
@@ -196,6 +225,7 @@ public partial class MarkdownPreview : UserControl
             web.EnvironmentRequested += OnEnvironmentRequested;
             web.NavigationStarted += OnNavigationStarted;
             web.NavigationCompleted += OnNavigationCompleted;
+            web.WebMessageReceived += OnWebMessageReceived;
             web.NewWindowRequested += OnNewWindowRequested;
             _web = web;
             WebHost.Children.Add(web);
@@ -262,12 +292,41 @@ public partial class MarkdownPreview : UserControl
     private void OnNavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
     {
         _loadingPage = false;
-        if (_restoreScrollY is { } y)
+        if (_pageIsHtml)
+            _ = _web?.InvokeScript(MarkdownRenderer.EscapeListenerScript);   // html は自前のページなので、Esc の受け口を後から入れる（md は最初から入っている）
+        if (_pendingHeadingId is { } headingId)
+        {
+            _pendingHeadingId = null;
+            _restoreScrollY = null;
+            _ = _web?.InvokeScript(PreviewScripts.ScrollToHeading(headingId));
+        }
+        else if (_restoreScrollY is { } y)
         {
             _restoreScrollY = null;
             if (y > 0)
                 _ = _web?.InvokeScript($"window.scrollTo(0,{y})");
         }
+    }
+
+    // ページからの知らせ（invokeCSharpAction）。受けるのは Esc だけで、ほかは捨てる（html は利用者のファイルの JS が動く。中身はログに書かない）。
+    private void OnWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
+    {
+        if (PreviewScripts.IsEscapeMessage(e.Body))
+            Dispatcher.UIThread.Post(() => _vm?.OnPageEscape());
+    }
+
+    // 目次から頼まれた見出しへ移る。読み込み中なら終わってから（再読み込みの位置の復元より優先）。
+    private void OnHeadingScrollRequested(string id)
+    {
+        if (_web is null)
+            return;
+        if (_loadingPage)
+        {
+            _pendingHeadingId = id;
+            _restoreScrollY = null;
+            return;
+        }
+        _ = _web.InvokeScript(PreviewScripts.ScrollToHeading(id));
     }
 
     // target="_blank" や window.open：同じ振り分けにして、新しいウィンドウは作らない。

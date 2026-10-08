@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>ドキュメントタブの拡大モード 実装計画（図解）</title>
+<style>
+body{font-family:"Yu Gothic UI","Hiragino Sans","Noto Sans JP",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.6;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:30px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:10px 0} .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px} .rec{color:#c05000;font-weight:bold}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%;height:auto}
+</style></head><body>
+<!-- 内容は issue28-documents-expand-plan.md と同じにする（連動ルール）。節番号も同じ -->
+<h1>ドキュメントタブの拡大モード 実装計画（図解）（Issue #28）</h1>
+<div class="sync"><b>連動ルール</b>：この HTML と <code>issue28-documents-expand-plan.md</code> は対。<b>どちらかを直したら、もう一方も同じ内容に直す。</b><br>
+仕様の正は <code>docs/miharikun-requirements.md</code>（12.7.1 ドキュメントの拡大モード、12.4.1 の Esc の行、15 章 Phase 38〜41）。設計の資料は <code>docs/issue28/issue28-documents-expand-design.html</code>（確定。Q1〜Q9 はすべて推奨）、技術調査（試作 Q1〜Q7）は <code>docs/issue28/issue28-tech-investigation.md</code>。<br>
+この計画は、実装の分け方・コミット・ファイル構成と、<b>実装で迷いやすい所の決めごと（7 章）</b>。<br>
+進め方：Docs（テスト先行）→ ViewModel（テスト先行）→ 画面 → 両 OS の実機確認・仕上げ。各フェーズの終わりに <code>dotnet test</code> と隔離環境で確かめ、要件定義 15 章の該当 Phase の「状況」を更新して報告する。コミットは頼まれたときだけ（ここは区切りの目安）。途中のコミットは <code>Refs #28</code>、最後だけ <code>Fixes #28</code>（PR 本文に <code>Closes #28</code>）。<br>
+作業ブランチ：<code>feature/issue28-documents-expand-mode</code>（<code>main</code> から切った）。</div>
+
+<h2>1. 全体像</h2>
+<svg viewBox="0 0 960 140" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="210" height="100" fill="#dff" stroke="#08a"/><text x="20" y="42" font-weight="bold">38 目次（Docs）</text><text x="20" y="62" font-size="12">RenderWithOutline</text><text x="20" y="78" font-size="12">ページの JS</text><text x="20" y="102" font-size="12" fill="#555">2 コミット（テスト先行）</text>
+<rect x="250" y="20" width="210" height="100" fill="#dff" stroke="#08a"/><text x="260" y="42" font-weight="bold">39 ViewModel</text><text x="260" y="62" font-size="12">目次・拡大の状態</text><text x="260" y="78" font-size="12">Esc・見出しへ移る</text><text x="260" y="102" font-size="12" fill="#555">2 コミット（テスト先行）</text>
+<rect x="490" y="20" width="210" height="100" fill="#efe" stroke="#383"/><text x="500" y="42" font-weight="bold">40 画面</text><text x="500" y="62" font-size="12">MarkdownPreview</text><text x="500" y="78" font-size="12">DocumentsView・Esc</text><text x="500" y="102" font-size="12" fill="#555">3 コミット（mac で確認）</text>
+<rect x="730" y="20" width="220" height="100" fill="#eee" stroke="#888"/><text x="740" y="42" font-weight="bold">41 実機確認・仕上げ</text><text x="740" y="62" font-size="12">Windows の確認</text><text x="740" y="78" font-size="12">要件定義・release.md</text><text x="740" y="102" font-size="12" fill="#555">2 コミット（Fixes #28）</text>
+<line x1="220" y1="70" x2="250" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="460" y1="70" x2="490" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="700" y1="70" x2="730" y2="70" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ul>
+<li>新しい依存パッケージ：無い（Markdig 1.4.0・Avalonia.Controls.WebView 12.1.0 のまま。<code>System.Text.Json</code> は .NET に入っている）。</li>
+<li>守る制約：
+<ul>
+<li><code>Miharikun.Presentation</code>（ViewModel）は <code>Miharikun.Docs</code>（Markdig）を参照しない。Docs も Core を参照しない。見出しの一覧は、App（<code>MarkdownPreview</code>）で Docs の型から Presentation の型へ写す（7.2）。</li>
+<li>プレビュー（<code>MarkdownPreview</code>）を親から外さない・別の場所へ動かさない（外すと WebView が作り直され、ページと位置を失う。試作 Q4）。</li>
+<li>WebView の上に Avalonia の要素を重ねない（12.7）。目次は WebView の隣の列に置く。</li>
+<li>メモタブも同じ <code>MarkdownPreview</code> を使う。メモの見た目・動きは変えない。</li>
+</ul></li>
+<li><b>共通化だけのフェーズは無い</b>。ただし <code>MarkdownRenderer</code>（38）と <code>MarkdownPreview</code>（40-1）はメモタブと共用なので、品質ゲート 3 で今までの動きが変わらないことを確かめる。</li>
+<li>いまのテスト：Tests 1126 合格・スキップ 29、UiTests 52 合格・スキップ 3（HANDOFF.md の値。その後 main のコードは変わっていない。着手前に <code>dotnet test</code> で取り直す）。うち <code>MarkdownRendererTests</code> は 48 件。<b>件数は減らさない</b>。</li>
+</ul>
+<h3>品質ゲート（各フェーズの終わり）</h3>
+<ol>
+<li>テストが全部通る（件数を減らさない。スキップの数が増えない）。</li>
+<li><code>dotnet build</code> が警告を増やさない。</li>
+<li>今までの動きが変わらない（Phase 38・40 の後は必ず。隔離環境で目視）：
+<ul>
+<li>ドキュメントタブの通常の画面：ツリー・一覧・概要カード・md のプレビュー（チェックボックス・mermaid・色付け・相対パスの画像）・<code>#見出し</code> のリンク・別の md へのリンク（アプリ内で選ぶ）・http のリンク（既定のブラウザ）・保存で再読み込み（位置が戻る）・テーマの切り替え・タブを切り替えて戻ってもそのまま・html のプレビュー</li>
+<li>メモタブ：プレビュー・メモの中のリンク → ドキュメントタブ・編集の入れ替え・テーマ</li>
+<li>ダッシュボード：タイムラインの拡大と Esc（ダッシュボードが見えているとき）</li>
+</ul></li>
+<li>確かめ方：隔離環境（<code>MIHARIKUN_DATA_DIR</code>・<code>MIHARIKUN_CURSOR_DIR</code>・<code>MIHARIKUN_CLAUDE_DIR</code> を一時フォルダに。対象フォルダも一時フォルダで、手書きの md・html を置く。7.10）。本物のデータは使わない。<code>dotnet build</code>／<code>test</code> の前にアプリを止める（止められないときは <code>-p:OutDir=</code> で別の場所に作る）。</li>
+</ol>
+
+<h2>2. Phase 38：目次（Docs。テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>38-1</td><td><code>MarkdownRenderer.RenderWithOutline</code>・<code>MarkdownOutline</code>・<code>MarkdownHeading</code></td><td>md を 1 回だけ解析し（<code>Markdown.Parse</code> → <code>ToHtml</code>）、HTML と見出しの一覧を返す（7.5）。<code>Render</code> は中で <code>RenderWithOutline(...).Html</code> を返す（呼び出し側は変えない）</td><td>新規 <code>Docs/MarkdownOutlineTests</code>：id が HTML の <code>id</code> と一致（同じ名前・日本語・<code>[x]</code>・引用とリストの中・setext）／<code>[x]</code> <code>[X]</code> <code>[ ]</code> と無し／記号を外した文字／節のタスク数（下の段の分を含む・入れ子のリスト・番号付き・コードブロックの中は数えない・最初の見出しより前は数えない）／空の見出しを出さない／<code>Render</code> と <code>RenderWithOutline(...).Html</code> が同じ</td></tr>
+<tr><td>38-2</td><td>ページの JS</td><td>md のページの最後に、Esc の受け口と位置の補正を足す（7.6）。Esc の受け口は <code>MarkdownRenderer.EscapeListenerScript</code>（<code>&lt;script&gt;</code> なしの本文）として公開し、html にも入れられるようにする</td><td><code>MarkdownRendererTests</code> に追加：2 つのスクリプトが 1 回ずつ入る・本文（<code>&lt;body&gt;</code> の中の Markdig の出力）は変わらない。既存の 48 件はそのまま通る</td></tr></table>
+<p>完了条件：テストが通る。品質ゲート 1〜3（3 はメモタブと通常のプレビュー。ページの見た目が変わらないこと）。<b>ここで止まって報告する。</b></p>
+
+<h2>3. Phase 39：ViewModel（テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>39-1</td><td>目次の口と <code>DocumentsViewModel</code> の目次</td><td><code>IPreviewHost</code> に <code>OnOutline</code>・<code>OnPageEscape</code>・<code>HeadingScrollRequested</code> を足す（7.2〜7.4）。<code>OutlineHeading</code>（Presentation の型）、<code>OutlineItemViewModel</code>。<code>DocumentsViewModel</code>：<code>Outline</code>（使い回して中身を合わせる。7.7）・<code>ProgressText</code>・<code>HasProgress</code>・<code>IsOutlineEmpty</code>・古い結果を捨てる・別のファイルに替わったら目次を空に・再読み込みでは保つ。<code>MemoViewModel</code> は新しい口で何もしない</td><td>新規 <code>Presentation/DocumentsExpandViewModelTests</code>：7.7 の表の行ごと（使い回し・増減・進み具合・古い結果・ファイルの切り替え・再読み込み・html）</td></tr>
+<tr><td>39-2</td><td>拡大の状態と見出しへ移る</td><td><code>IsExpanded</code>・<code>ToggleExpandedCommand</code>（選択が無いと押せない）・<code>Collapse()</code>（戻すだけ）・<code>OnPageEscape</code> → <code>Collapse</code>・選択が無くなったら戻す・<code>IsOutlineVisible</code>・<code>JumpToHeadingCommand</code> → <code>HeadingScrollRequested(id)</code>。新規 <code>PreviewScripts</code>（Presentation。見出しへ移るスクリプトの文字列・ページの知らせの判定。7.3・7.4）</td><td>同じテストに 7.1 の表の行ごと（Esc 2 回・通常での Esc・ファイルが消えたら戻る・リンクで別の md／html・同じ項目を 2 回押す）。<code>PreviewScriptsTests</code>：id の文字（<code>"</code>・<code>\</code>・<code>'</code>・<code>&lt;/script&gt;</code>・改行・日本語）を入れても壊れない文字列になる、<code>key:Escape</code> と <code>"key:Escape"</code> だけを Esc とみなす</td></tr></table>
+<p>完了条件：テストが通る。品質ゲート 1・2。<b>ここで止まって報告する。</b></p>
+
+<h2>4. Phase 40：画面</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認（隔離環境・mac）</th></tr>
+<tr><td>40-1</td><td><code>MarkdownPreview</code></td><td>描いた md の見出しを写して <code>OnOutline</code> へ（html・案内・無しは空）。<code>WebMessageReceived</code> で <code>PreviewScripts.IsEscapeMessage</code> なら <code>OnPageEscape</code>。html は読み込みの後で <code>EscapeListenerScript</code> を入れる。<code>HeadingScrollRequested</code> で見出しへ移る（読み込み中なら後で）（7.2〜7.4）</td><td>品質ゲート 3（メモタブ・通常のプレビューが変わらない）。目次・Esc の目視は、40-2・40-3 の後にまとめて行う（40-1 の時点では、画面に拡大ボタンも目次の列も無い）</td></tr>
+<tr><td>40-2</td><td><code>DocumentsView</code>：拡大ボタン・目次の列・隠し方</td><td>内容カードの見出しに「⤢ 拡大／⤡ 戻す」と、拡大中の「— タイトル　相対パス」。内容カードの中を「目次｜区切り｜プレビュー」の 3 列に（プレビューは列 2 に置いたまま動かさない）。上段・ツリー・一覧・概要カードを隠し、幅を保存・復元（7.8）。目次の項目（字下げ・✅/⬜・タスク数・押して移る・Enter）・進み具合・「見出しがありません」（7.7）。新規 <code>Converters/DepthIndentConverter</code></td><td>UiTests（<code>DocumentsViewTests</code> に追加）：拡大で上段・ツリー・一覧・概要が隠れ、内容カードが全幅／戻すと元の幅／目次の列は md の拡大中だけ（html では出ない）／<code>MarkdownPreview</code> が同じインスタンスで画面に載ったまま／目次の項目の文字・タスク数・進み具合。mac の実機：md で拡大・目次で移る・同じ項目をもう一度・保存で目次が替わる（目次の位置がそのまま）・リンクで別の md／html・メモのリンクから・テーマ・タブの切り替え・拡大⇄戻すで位置がずれない・区切り線のドラッグでも位置がずれない</td></tr>
+<tr><td>40-3</td><td>Esc</td><td><code>DocumentsView</code> がウィンドウの KeyDown で Esc を受ける（ドキュメントタブが見えていて拡大中だけ。7.4）。<code>DashboardView</code> の Esc を、ダッシュボードが見えているときだけにする（12.4.1）</td><td>UiTests（新規 <code>DocumentsEscapeTests</code>）：拡大中の Esc で戻る／通常の Esc は <code>Handled</code> にしない／ドキュメントが隠れていると戻らない／ダッシュボードが隠れているとタイムラインの拡大は戻らない／両方拡大していて見えている方だけ戻る。既存の <code>RightPaneTests</code> の Esc はそのまま通る。mac の実機：Esc（ページの中・目次・ボタンの後・どこにも無い）、ダッシュボードで拡大したままドキュメントタブで Esc</td></tr></table>
+<p>完了条件：12.7.1 の各動作を mac の実機で確かめる（ライト/ダークの両方）。品質ゲート 1〜3。<b>ここで止まって報告する</b>（Windows の確認は Phase 41）。</p>
+
+<h2>5. Phase 41：両 OS の実機確認・仕上げ</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th></tr>
+<tr><td>41-1</td><td>Windows の確認（と、要れば直す）</td><td>利用者が Windows の実機で、40-2・40-3 の mac の確認と同じ項目を見る（とくに：ページの中の Esc・目次で移る・位置の補正が Chromium の働きと二重にならない）。<code>invokeCSharpAction</code> が使えない・<code>Body</code> の形が違うときは、7.4 の代わりの形にする。位置が二重にずれるときは、md のページに <code>overflow-anchor: none</code> を足す</td></tr>
+<tr><td>41-2</td><td>仕上げ</td><td>要件定義 15 章の Phase 38〜41 を <code>[x]</code> に・「状況」を書く。<code>docs/release.md</code> の「出す前のチェック」に拡大モードの確認を足す。計画の状態を「確定」に。HANDOFF.md は頼まれたら。<code>Fixes #28</code></td></tr></table>
+
+<h2>6. ファイル構成（追加・変更）</h2>
+<pre>src/Miharikun.Docs/
+├─ MarkdownRenderer.cs                 38-1 変更：RenderWithOutline（1 回の解析で HTML と見出し）。Render はその Html を返す
+│                                      38-2 変更：ページの JS（Esc の受け口・位置の補正）。EscapeListenerScript を公開
+└─ MarkdownOutline.cs                  38-1 新規：MarkdownHeading・MarkdownRendering（型）と Extract（見出し・✅/⬜・節のタスク数）
+
+src/Miharikun.Presentation/
+├─ PreviewScripts.cs                   39-2 新規：ScrollToHeading(id)・IsEscapeMessage(body)
+└─ ViewModels/
+   ├─ IPreviewHost.cs                  39-1 変更：OutlineHeading、OnOutline・OnPageEscape・HeadingScrollRequested
+   ├─ OutlineItemViewModel.cs          39-1 新規：目次の 1 行（Depth・DisplayText・TaskText・Update）
+   ├─ DocumentsViewModel.cs            39-1・39-2 変更：SetSelectedPath で選択が無くなったら戻す、RaisePreview でファイルが替わったら目次を空に
+   ├─ DocumentsViewModel.Expand.cs     39-1・39-2 新規（partial）：拡大の状態・目次・進み具合・見出しへ移る
+   └─ MemoViewModel.cs                 39-1 変更：新しい口は何もしない
+
+src/Miharikun/
+├─ Views/MarkdownPreview.axaml.cs      40-1 変更：OnOutline へ渡す・WebMessageReceived・html への受け口・見出しへ移る
+├─ Views/DocumentsView.axaml           40-2 変更：拡大ボタン・見出しの文字・目次の列・IsVisible
+├─ Views/DocumentsView.axaml.cs        40-2 変更：列の隠し方と幅（7.8）・目次の項目を押す／Enter
+│                                      40-3 変更：ウィンドウの KeyDown で Esc
+├─ Views/DashboardView.axaml.cs        40-3 変更：Esc は IsEffectivelyVisible のときだけ
+└─ Converters/DepthIndentConverter.cs  40-2 新規：段の深さ → 左の余白
+
+tests/Miharikun.Tests/
+├─ Docs/MarkdownOutlineTests.cs                        38-1 新規
+├─ Docs/MarkdownRendererTests.cs                       38-2 変更：ページの JS
+├─ Presentation/DocumentsExpandViewModelTests.cs       39-1・39-2 新規
+└─ Presentation/PreviewScriptsTests.cs                 39-2 新規
+
+tests/Miharikun.UiTests/
+├─ DocumentsViewTests.cs               40-2 変更：拡大・目次の列・プレビューが動かない
+└─ DocumentsEscapeTests.cs             40-3 新規：Esc とタブ
+
+docs/miharikun-requirements.md         各 Phase の終わり：[x]・状況
+docs/release.md                        41-2 変更：出す前のチェック</pre>
+
+<h2>7. 実装の決めごと（迷いやすい所）</h2>
+<h3>7.1 拡大の状態（<code>DocumentsViewModel</code>）</h3>
+<p>状態は「通常」と「拡大中」の 2 つ。拡大中は、開いているのが md なら「目次｜プレビュー」、html なら「プレビューだけ」（目次の列を出さない）。</p>
+<svg viewBox="0 0 960 225" width="960" font-size="13" font-family="sans-serif">
+<rect x="20" y="40" width="250" height="120" fill="#dff" stroke="#08a"/><text x="32" y="64" font-weight="bold">通常</text><text x="32" y="86" font-size="12">ツリー・一覧・概要が見える</text><text x="32" y="104" font-size="12">目次は出さない</text><text x="32" y="122" font-size="12">選択が無いと拡大できない</text>
+<rect x="600" y="30" width="340" height="150" fill="#e8f1fd" stroke="#0b63c5"/><text x="612" y="52" font-weight="bold">拡大中（保存しない）</text>
+<rect x="612" y="62" width="316" height="30" fill="#fff" stroke="#888"/><text x="620" y="82" font-size="12">md：目次｜プレビュー</text>
+<rect x="612" y="100" width="316" height="30" fill="#fff" stroke="#888"/><text x="620" y="120" font-size="12">html：プレビューだけ（全幅）</text>
+<text x="612" y="156" font-size="11" fill="#555">リンクで md⇄html を行き来しても拡大のまま</text>
+<line x1="270" y1="60" x2="600" y2="60" stroke="#333" marker-end="url(#a)"/><text x="290" y="54" font-size="12">「⤢ 拡大」（ファイルを選んでいるとき）</text>
+<line x1="600" y1="110" x2="270" y2="110" stroke="#383" stroke-width="2" marker-end="url(#a)"/><text x="290" y="104" font-size="12" fill="#383">「⤡ 戻す」・Esc（戻すだけ。2 回でも同じ）</text>
+<line x1="600" y1="150" x2="270" y2="150" stroke="#b33" marker-end="url(#a)"/><text x="290" y="144" font-size="12" fill="#b33">開いているファイルが無くなった</text>
+<path d="M100,160 C100,188 170,188 170,160" fill="none" stroke="#888" marker-end="url(#a)"/><text x="20" y="208" font-size="12" fill="#555">Esc：何もしない（Handled にしない）</text>
+<path d="M700,180 C700,205 770,205 770,180" fill="none" stroke="#888" marker-end="url(#a)"/><text x="600" y="218" font-size="12" fill="#555">保存・テーマ・タブの切り替え：拡大のまま</text>
+</svg>
+<table><tr><th>操作</th><th>結果</th></tr>
+<tr><td>初期（起動・タブを最初に開く）</td><td>通常（<code>IsExpanded = false</code>）。ファイルを選んでいないので「⤢ 拡大」は押せない（<code>CanExecute = HasSelection</code>）</td></tr>
+<tr><td>ファイルを選んで「⤢ 拡大」</td><td>拡大中。上段・ツリー・一覧・概要カードを隠す。md なら目次の列を出す（<code>IsOutlineVisible</code>）。html なら出さない</td></tr>
+<tr><td>拡大中に「⤡ 戻す」</td><td>通常。開いているファイル・プレビューの位置・ツリーと一覧の選択・列の幅（区切り線で動かした幅も）が元のまま</td></tr>
+<tr><td>拡大中に Esc（ページの中にフォーカス）</td><td>通常（ページの知らせ → <code>OnPageEscape</code> → <code>Collapse</code>）</td></tr>
+<tr><td>拡大中に Esc（目次・ボタン・どこにも無い）</td><td>通常（ウィンドウの KeyDown → <code>Collapse</code>。<code>e.Handled = true</code>）</td></tr>
+<tr><td>通常のときに Esc</td><td>何もしない。<code>e.Handled</code> も立てない</td></tr>
+<tr><td>Esc が続けて 2 回届く</td><td>通常のまま（<code>Collapse</code> は戻すだけ。切り替えない）</td></tr>
+<tr><td>ドキュメントタブが見えていないときの Esc</td><td>ドキュメントの拡大は変わらない</td></tr>
+<tr><td>ダッシュボードが見えていないときの Esc</td><td>タイムラインの拡大は変わらない（40-3 の修正。今はどのタブでも戻る）</td></tr>
+<tr><td>拡大中にタブを切り替えて戻る</td><td>拡大のまま。プレビューの位置もそのまま</td></tr>
+<tr><td>拡大中に md の中のリンクで別の md へ</td><td>拡大のまま。目次を空にしてから、新しい目次に替える</td></tr>
+<tr><td>拡大中にリンクで html へ／html から md へ</td><td>拡大のまま。目次の列を隠す／出す</td></tr>
+<tr><td>拡大中にメモタブのリンクから「ドキュメントで開く」</td><td>拡大のまま、そのファイルに替わる</td></tr>
+<tr><td>拡大中に開いている md が保存される</td><td>拡大のまま。目次を作り直す（同じ位置の項目は使い回す。7.7）。プレビューは今のとおり元の位置に戻る</td></tr>
+<tr><td>拡大中にテーマを変える</td><td>拡大のまま。目次は同じ中身（再読み込み）</td></tr>
+<tr><td>拡大中に開いているファイルが消える・除外される</td><td>通常に戻る（<code>SetSelectedPath(null)</code> のとき <code>IsExpanded = false</code>）。プレビューは空</td></tr>
+<tr><td>拡大中に全再走査（フォルダの変更・設定の保存）</td><td>走査中は待つ（<code>RefreshNow</code> の今の決まり）。走査の後もファイルがあれば拡大のまま</td></tr>
+<tr><td>アプリを閉じて開く</td><td>通常（保存しない）</td></tr></table>
+<ul>
+<li><code>Collapse()</code> は <code>public</code>（ウィンドウの KeyDown から呼ぶ）。戻り値 <code>bool</code>（戻したら true）にして、View は true のときだけ <code>e.Handled = true</code> にする。</li>
+<li><code>IsOutlineVisible</code> = <code>IsExpanded &amp;&amp; CurrentTarget is { Kind: DocumentKind.Markdown }</code>。<code>IsExpanded</code> と選択の変化で通知する。</li>
+</ul>
+
+<h3>7.2 目次の流れ（描く → VM へ）</h3>
+<svg viewBox="0 0 960 260" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="210" height="50" fill="#efe" stroke="#383"/><text x="20" y="42" font-weight="bold">RaisePreview（VM）</text><text x="20" y="60" font-size="12">別のファイルなら目次を空に</text>
+<rect x="250" y="20" width="270" height="50" fill="#dff" stroke="#08a"/><text x="260" y="40" font-weight="bold" font-size="12">MarkdownPreview.ShowAsync</text><text x="260" y="58" font-size="12">種類で分ける</text>
+<line x1="220" y1="45" x2="250" y2="45" stroke="#333" marker-end="url(#a)"/>
+<rect x="580" y="20" width="370" height="50" fill="#eee" stroke="#888"/><text x="590" y="40" font-size="12" font-weight="bold">html・メモ・案内・無し・読めない・WebView なし</text><text x="590" y="58" font-size="12">OnOutline(source, 空)</text>
+<line x1="520" y1="45" x2="580" y2="45" stroke="#333" marker-end="url(#a)"/>
+<line x1="385" y1="70" x2="385" y2="100" stroke="#333" marker-end="url(#a)"/><text x="392" y="90" font-size="12">md のファイル</text>
+<rect x="250" y="100" width="270" height="50" fill="#dff" stroke="#08a"/><text x="260" y="120" font-weight="bold" font-size="12">RenderWithOutline（背景）</text><text x="260" y="138" font-size="12">一時 HTML を書く → version を確認</text>
+<rect x="10" y="185" width="290" height="55" fill="#efe" stroke="#383"/><text x="20" y="205" font-weight="bold" font-size="12">新しい描画</text><text x="20" y="223" font-size="12">見出しを写して OnOutline → 開く</text>
+<rect x="330" y="185" width="300" height="55" fill="#e8f1fd" stroke="#0b63c5"/><text x="340" y="205" font-weight="bold" font-size="12">VM：source ＝ CurrentTarget なら</text><text x="340" y="223" font-size="12">7.7 の決まりで Outline を合わせる</text>
+<rect x="660" y="185" width="290" height="55" fill="#fde" stroke="#b33"/><text x="670" y="205" font-weight="bold" font-size="12">古い描画（version が違う）</text><text x="670" y="223" font-size="12">捨てる（目次も渡さない）</text>
+<line x1="330" y1="150" x2="155" y2="185" stroke="#333" marker-end="url(#a)"/><line x1="520" y1="140" x2="805" y2="185" stroke="#333" marker-end="url(#a)"/><line x1="300" y1="212" x2="330" y2="212" stroke="#333" marker-end="url(#a)"/>
+</svg>
+<ol>
+<li>VM が <code>RaisePreview(reload)</code> を出す（今のまま）。<b>別のファイルに替わるとき</b>（<code>reload == false</code> で、前に目次を作ったファイルと違う）は、その前に <code>Outline</code> を空にする。再読み込み（保存・テーマ・「再読み込み」）では空にしない（目次がちらつかず、目次の位置も保つ）。</li>
+<li><code>MarkdownPreview.ShowAsync</code> が種類で分ける：
+<ul>
+<li>md のファイル：背景で <code>MarkdownRenderer.RenderWithOutline</code> → 一時 HTML を書く → <code>version</code> が古ければ捨てる（目次も渡さない）→ 見出しを <code>OutlineHeading</code> に写して <code>_vm.OnOutline(source, headings)</code> → <code>Navigate</code>／<code>Refresh</code>。</li>
+<li>html のファイル・メモ（<code>PreviewSource.Markdown</code>）・案内・null・ファイルが無い・読めない・WebView を作れない：<code>_vm.OnOutline(source, [])</code>（メモの VM は何もしない）。</li>
+</ul></li>
+<li><code>DocumentsViewModel.OnOutline(source, headings)</code>：<code>source</code> が <code>CurrentTarget</code> と違えば捨てる（record の比較）。同じなら 7.7 の決まりで <code>Outline</code> を合わせ、<code>ProgressText</code> を作り直す。</li>
+</ol>
+<ul>
+<li>WebView が無いとき（Windows の Runtime 未導入・ヘッドレスのテスト）は目次が来ない（要件どおり）。テストでは <code>OnOutline</code> を直接呼ぶ（7.10）。</li>
+<li>写し替え（Docs の <code>MarkdownHeading</code> → Presentation の <code>OutlineHeading</code>）は <code>MarkdownPreview</code> に置く。2 つの型は同じ項目：<code>Level</code>（1〜6）・<code>Text</code>・<code>Id</code>・<code>Done</code>（<code>bool?</code>。true＝<code>[x]</code>、false＝<code>[ ]</code>、null＝印なし）・<code>TasksDone</code>・<code>TasksTotal</code>。</li>
+</ul>
+
+<h3>7.3 見出しへ移る</h3>
+<ol>
+<li>目次の項目を押す（<code>Tapped</code>）か、項目で Enter → <code>JumpToHeadingCommand.Execute(item)</code> → <code>HeadingScrollRequested(item.Id)</code>。<b>同じ項目でも毎回出す</b>（一覧の選択の変化は使わない）。</li>
+<li><code>MarkdownPreview.OnHeadingScrollRequested(id)</code>：
+<ul>
+<li><code>_web</code> が無い → 何もしない。</li>
+<li>読み込み中（<code>_loadingPage</code>）→ <code>_pendingHeadingId = id</code>、<code>_restoreScrollY = null</code>（利用者の操作を、再読み込みの位置の復元より優先する）。</li>
+<li>それ以外 → <code>_web.InvokeScript(PreviewScripts.ScrollToHeading(id))</code>。</li>
+</ul></li>
+<li><code>OnNavigationCompleted</code>：<code>_pendingHeadingId</code> があれば移って消す。無ければ今のとおり <code>_restoreScrollY</code> を戻す。新しいファイルを開くとき（<code>ShowAsync</code> の <code>Navigate</code> の前）は <code>_pendingHeadingId</code> を消す。</li>
+</ol>
+<ul>
+<li><code>PreviewScripts.ScrollToHeading(id)</code> は <code>(function(){var el=document.getElementById("…");if(el)el.scrollIntoView();})()</code>。<code>…</code> は <code>JsonEncodedText.Encode(id)</code>（<code>"</code>・<code>\</code>・<code>&lt;</code>・改行・U+2028 などを逃がす。反射を使わない）。<code>location.hash</code> は使わない（<code>&lt;base&gt;</code> のため別の URL への移動になる）。</li>
+<li>見出しが見つからない（目次が古い）ときは何もしない（例外にしない）。</li>
+</ul>
+
+<h3>7.4 Esc の 2 つの受け口</h3>
+<ul>
+<li><b>ウィンドウ</b>：<code>DocumentsView</code> が <code>TopLevel</code> の <code>KeyDown</code>（Bubble）を受ける（<code>DashboardView</code> と同じ付け方・外し方）。条件：<code>e.Key == Key.Escape &amp;&amp; !e.Handled &amp;&amp; IsEffectivelyVisible &amp;&amp; _vm.Collapse()</code>、成り立てば <code>e.Handled = true</code>。</li>
+<li><b>ダッシュボードの修正</b>：<code>DashboardView.OnKeyDown</code> の条件に <code>IsEffectivelyVisible</code> を足す（<code>MainWindow</code> はタブの中身の <code>IsVisible</code> を切り替えるので、隠れたタブでは false）。</li>
+<li><b>ページ</b>：md は 38-2 のスクリプト。html は <code>OnNavigationCompleted</code> で、表示中が html なら <code>_web.InvokeScript(MarkdownRenderer.EscapeListenerScript)</code>（スクリプトは <code>window.__miharikunEsc</code> で 2 回入らない）。<code>MarkdownPreview</code> が <code>WebMessageReceived</code> を受け、<code>PreviewScripts.IsEscapeMessage(e.Body)</code> なら <code>Dispatcher.UIThread.Post(() =&gt; _vm?.OnPageEscape())</code>。ほかの知らせは捨てる（ログにも中身を書かない）。</li>
+<li><code>IsEscapeMessage</code>：<code>key:Escape</code> と、前後を <code>"</code> で囲んだ <code>"key:Escape"</code> だけを true（Windows で <code>Body</code> が JSON の形で来るかもしれない。要確認・Phase 41）。</li>
+<li>メモタブのページの Esc：<code>MemoViewModel.OnPageEscape</code> は何もしない（メモには拡大が無い）。</li>
+<li>代わりの形（Phase 41 で、Windows で <code>invokeCSharpAction</code> が使えないと分かったときだけ）：ページが <code>location.href = 'miharikun-msg:escape'</code> に移ろうとし、<code>NavigationStarted</code> で scheme が <code>miharikun-msg</code> なら取り消して Esc とみなす（<code>PreviewNavigationPolicy</code> に分け道を足す）。</li>
+</ul>
+
+<h3>7.5 見出しの一覧の作り方（Docs）</h3>
+<ul>
+<li><code>RenderWithOutline(markdown, baseFolder, isDark, title)</code>：<code>var doc = Markdown.Parse(markdown, Pipeline)</code> → <code>var body = ReadOnlyCheckboxes(doc.ToHtml(Pipeline))</code> → <code>MarkdownOutline.Extract(doc)</code>。<code>Parse</code> → <code>ToHtml</code> の HTML は <code>Markdown.ToHtml</code> と同じ（試作で確認）。id は <code>HeadingBlock.GetAttributes().Id</code> をそのまま使う（自前で作らない）。</li>
+<li><code>Extract</code> は <code>doc.Descendants()</code> を 1 回なめる（ブロックもインラインも、本文の順に来る。Markdig 1.4.0 で確認）。開いている見出しのスタックを持ち：
+<ul>
+<li><code>HeadingBlock</code>（段 L）：スタックから段 L 以上を下ろし、新しい見出しを積む。</li>
+<li><code>Markdig.Extensions.TaskLists.TaskList</code>：スタックのすべての見出しの <code>TasksTotal</code> を 1 増やし、<code>Checked</code> なら <code>TasksDone</code> も 1 増やす（下の段の見出しの分も、上の見出しに入る）。最初の見出しより前のタスクは、どこにも数えない。</li>
+<li><code>TaskList</code> は、プレビューでチェックボックスになるものだけ（コードブロック・段落の中の <code>[x]</code> は来ない。試作で確認）。</li>
+</ul></li>
+<li>文字：<code>HeadingBlock.Inline</code> をたどる。<code>LiteralInline</code> → 文字、<code>CodeInline</code> → 中身、<code>ContainerInline</code>（強調・リンク）→ 中をたどる、<code>LineBreakInline</code> → 空白、<code>HtmlEntityInline</code> → 変換後の文字、<code>HtmlInline</code> → 捨てる、<code>AutolinkInline</code> → URL。最後に空白の連続を 1 つにして前後を <code>Trim</code>。</li>
+<li>印：文字の先頭が <code>^\[([ xX])\](\s+|$)</code> なら <code>Done</code> を決めて、その部分を外す。</li>
+<li>文字が空になった見出し（<code>## </code> だけ・<code>## [x]</code> だけ）は出さない（進み具合にも数えない）。</li>
+<li>id が無い（来ないはず）ときは、項目は出すが、押しても移らない（7.3 の「見つからない」と同じ）。</li>
+</ul>
+
+<h3>7.6 ページの JS（md のページ。38-2）</h3>
+<p><code>MarkdownRenderer.Render</code> の最後（今の <code>#見出し</code> のスクリプトの後）に、次の 2 つを足す。ドキュメントとメモのどちらの md にも入る。</p>
+<pre>// Esc の受け口（EscapeListenerScript。html にも InvokeScript で入れる）
+(function () {
+  if (window.__miharikunEsc) return;
+  window.__miharikunEsc = true;
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' &amp;&amp; !e.defaultPrevented &amp;&amp; typeof invokeCSharpAction === 'function')
+      invokeCSharpAction('key:Escape');
+  });
+})();
+
+// 幅が変わっても、見ていた所を保つ（md のページだけ）
+(function () {
+  var anchor = null, anchorTop = 0, adjusting = false;
+  function remember() {
+    var els = document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,pre,table,blockquote');
+    for (var i = 0; i &lt; els.length; i++) {
+      var t = els[i].getBoundingClientRect().top;
+      if (t &gt;= 0) { anchor = els[i]; anchorTop = t; return; }
+    }
+  }
+  window.addEventListener('scroll', function () { if (!adjusting) remember(); }, { passive: true });
+  window.addEventListener('resize', function () {
+    if (!anchor) return;
+    adjusting = true;
+    window.scrollBy(0, anchor.getBoundingClientRect().top - anchorTop);
+    requestAnimationFrame(function () { adjusting = false; });
+  });
+  remember();
+})();</pre>
+<ul>
+<li><code>e.defaultPrevented</code> のときは知らせない（html のページが自分で Esc を使っている：ダイアログを閉じるなど）。</li>
+<li><code>overflow-anchor</code> は今は触らない（Chromium の働きを残す）。Windows で二重にずれたら、41-1 で <code>body { overflow-anchor: none; }</code> を足す。</li>
+<li>位置の補正は、拡大⇄戻すのほか、区切り線のドラッグ・ウィンドウの大きさの変更でも働く（要件どおり。通常の画面の見た目は変わらない）。</li>
+</ul>
+
+<h3>7.7 目次の表示と、作り直し（<code>OutlineItemViewModel</code>・<code>DocumentsViewModel</code>）</h3>
+<table><tr><th>入力</th><th>結果</th></tr>
+<tr><td>見出し 0 件の md を拡大</td><td>目次の列に「見出しがありません」（<code>IsOutlineEmpty</code>）。進み具合は出さない</td></tr>
+<tr><td><code>[x]</code>／<code>[ ]</code> 付きの見出しが 1 つ以上</td><td>目次の上に「✅ 済み / 全部」（<code>ProgressText</code>。数えるのは見出しの印だけ）</td></tr>
+<tr><td>印付きの見出しが無い</td><td>進み具合を出さない（<code>HasProgress = false</code>）</td></tr>
+<tr><td>項目の文字</td><td><code>Done</code> が true なら「✅ 」、false なら「⬜ 」を先頭に付ける（<code>DisplayText</code>）。長ければ省略（<code>TextTrimming</code>）し、ツールチップに全文</td></tr>
+<tr><td>節のタスクがある</td><td>右に「済み/全部」（<code>TaskText</code>。例「2/5」）。0 件なら出さない</td></tr>
+<tr><td>段の字下げ</td><td><code>Depth</code> = <code>Level</code> − その md の見出しの最小の段（<code>##</code> から始まる md でも、いちばん浅い段は字下げしない）。余白は 1 段 14px（<code>DepthIndentConverter</code>）</td></tr>
+<tr><td>再読み込み（同じファイル）で見出しが同じ</td><td><code>Outline</code> の中身は変えない（同じインスタンス・通知なし）。目次のスクロール位置がそのまま</td></tr>
+<tr><td>再読み込みで一部が変わった（文字・印・タスク数）</td><td>同じ位置の項目は <code>Update</code> でプロパティだけ変える（変わった所だけ通知）。項目の数が増減したら、末尾で足す・消す。<code>Clear()</code> はしない</td></tr>
+<tr><td>別のファイルに替わった</td><td><code>Clear()</code> してから新しい目次（7.2 の 1）</td></tr>
+<tr><td><code>CurrentTarget</code> と違う <code>source</code> の <code>OnOutline</code></td><td>捨てる</td></tr></table>
+<ul>
+<li><code>Outline</code> は <code>ObservableCollection&lt;OutlineItemViewModel&gt;</code> を 1 つだけ持ち、入れ物ごとは差し替えない（<code>ItemsSource</code> を差し替えると、一覧のスクロール位置が先頭に戻るため）。</li>
+<li>一覧の選択（<code>SelectedItem</code>）は見た目だけ。移るのは 7.3 の押したとき。作り直しで選択がずれても、プレビューは動かさない。</li>
+</ul>
+
+<h3>7.8 列の隠し方と幅（<code>DocumentsView</code>）</h3>
+<svg viewBox="0 0 960 315" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="20" font-weight="bold">通常</text>
+<rect x="10" y="28" width="940" height="20" fill="#fff" stroke="#999"/><text x="18" y="42" font-size="11">上段：読み直し・パスで絞り込み・件数</text>
+<rect x="10" y="54" width="150" height="96" fill="#fff" stroke="#999"/><text x="18" y="72" font-size="12">ツリー（列 0）</text><text x="18" y="90" font-size="11" fill="#555">幅 200</text>
+<rect x="170" y="54" width="180" height="96" fill="#fff" stroke="#999"/><text x="178" y="72" font-size="12">一覧（列 2）</text><text x="178" y="90" font-size="11" fill="#555">幅 260</text>
+<rect x="360" y="54" width="590" height="96" fill="#f7f7f7" stroke="#bbb"/>
+<rect x="368" y="60" width="574" height="22" fill="#fff" stroke="#bbb"/><text x="376" y="75" font-size="11">概要カード</text>
+<rect x="368" y="88" width="574" height="56" fill="#fff" stroke="#bbb"/><text x="376" y="102" font-size="11">内容　［⤢ 拡大］</text>
+<text x="376" y="128" font-size="11" fill="#555">目次の列：幅 0</text>
+<rect x="470" y="108" width="464" height="30" fill="#e8f1fd" stroke="#0b63c5"/><text x="478" y="128" font-size="12">MarkdownPreview（列 2）</text>
+<text x="10" y="178" font-weight="bold">拡大中</text>
+<rect x="10" y="186" width="940" height="18" fill="none" stroke="#999" stroke-dasharray="5,3"/><text x="18" y="199" font-size="11" fill="#555">上段・ツリー・一覧・概要カード：幅 0／隠す（ツリーと一覧の幅は覚えておく）</text>
+<rect x="10" y="210" width="940" height="92" fill="#fff" stroke="#bbb"/><text x="18" y="226" font-size="11">内容 — タイトル　相対パス　［⤡ 戻す］</text>
+<rect x="18" y="234" width="200" height="60" fill="#dfd" stroke="#383"/><text x="26" y="254" font-size="12">目次（列 0・幅 260）</text><text x="26" y="272" font-size="11">✅/⬜・タスク数</text>
+<line x1="226" y1="234" x2="226" y2="294" stroke="#999" stroke-dasharray="3,3"/>
+<rect x="234" y="234" width="708" height="60" fill="#e8f1fd" stroke="#0b63c5"/><text x="242" y="256" font-size="12">MarkdownPreview（列 2・同じインスタンス）</text><text x="242" y="278" font-size="11" fill="#c05000">親は変わらない → WebView は作り直されない（試作 Q4）</text>
+</svg>
+<ul>
+<li><b>プレビューは動かさない</b>：内容カードの中の Grid を <code>ColumnDefinitions="260,8,*"</code>（目次・区切り・プレビュー）にし、見出しの行は <code>Grid.ColumnSpan="3"</code>、<code>MarkdownPreview</code> は <code>Grid.Row="1" Grid.Column="2"</code> に置く（XAML の書き換えで、実行中に親は変わらない）。</li>
+<li><b>拡大</b>（<code>ApplyExpanded(true)</code>。<code>DashboardView.ApplyTimelineExpanded</code> と同じやり方）：ツリー（列 0）と一覧（列 2）の幅を覚えてから、<code>MinWidth = 0</code>・<code>Width = 0</code>、ツリー・一覧・区切り 2 本を <code>IsVisible = false</code>。上段（<code>DockPanel</code>）と概要カード（<code>Border</code>）は XAML で <code>IsVisible="{Binding !IsExpanded}"</code>。</li>
+<li><b>戻す</b>（<code>ApplyExpanded(false)</code>）：<code>MinWidth</code> を 120／160 に、幅を覚えた値に（無ければ 200／260）、<code>IsVisible = true</code>。</li>
+<li><b>目次の列</b>（<code>ApplyOutlineVisible</code>）：隠すときは目次の列の幅を覚えて（0 より大きければ）、目次と区切りの列を <code>Width = 0</code>・<code>MinWidth = 0</code>、目次と区切りを <code>IsVisible = false</code>。出すときは <code>MinWidth = 160</code>、幅を覚えた値（無ければ 260）、区切りの列を 8。<b><code>Auto</code> に頼らない</b>（区切り線を動かすと列が px になり、隠しても空白が残るため）。</li>
+<li>VM の <code>IsExpanded</code>・<code>IsOutlineVisible</code> の変化を <code>PropertyChanged</code> で受けて呼ぶ（<code>DashboardView</code> と同じ）。<code>DataContext</code> が付いたときにも 1 回呼ぶ。</li>
+<li>拡大中の見出しの文字：<code>Overview.Title</code> と <code>Overview.RelativePath</code>（概要は背景で読むので、一瞬空でもよい）。<code>IsVisible="{Binding IsExpanded}"</code>。</li>
+<li>ボタン：<code>Content</code> は <code>BoolTextConverter</code> で「⤢ 拡大|⤡ 戻す」（タイムラインと同じ）、<code>ToolTip.Tip</code>「目次とプレビューを画面いっぱいに広げる／戻す（Esc でも戻る）」、<code>AutomationId="DocExpandButton"</code>。目次は <code>AutomationId="DocOutline"</code>、進み具合は <code>DocProgress</code>、空の文は <code>DocOutlineEmpty</code>。</li>
+<li>ウィンドウの最小幅は 900 のまま（目次 260 ＋ プレビュー 240 以上が入る）。</li>
+</ul>
+
+<h3>7.9 起動・初期化のタイミング</h3>
+<ul>
+<li><code>DocumentsViewModel.Start()</code> はタブが最初に見えたとき（今のまま）。選択が無い間は「⤢ 拡大」を押せない。前回のファイルの復元（<code>RestoreLastOpened</code>）でも、7.2 の流れで目次が来る。</li>
+<li><code>MarkdownPreview</code> は <code>HeadingScrollRequested</code> を <code>OnDataContextChanged</code> で付け外しする（<code>PreviewChanged</code> と同じ所）。<code>WebMessageReceived</code> は WebView を作るとき（<code>EnsureWebView</code>）に付ける。</li>
+<li>拡大の状態は VM が持つ。View が作り直されることは無い（タブは載せたまま隠す）が、<code>DataContext</code> が付いたときに <code>ApplyExpanded</code>・<code>ApplyOutlineVisible</code> を今の値で呼ぶ。</li>
+</ul>
+
+<h3>7.10 テストと確かめ方</h3>
+<ul>
+<li>VM のテスト：<code>DocumentsViewModelTests</code> と同じ組み立て（一時フォルダ・<code>ImmediateSynchronizationContext</code>・<code>FakeUiServices</code>）。<code>OpenFromOutside("docs/a.md")</code> で選び、<code>vm.OnOutline(vm.CurrentTarget!, …)</code> で目次を直接渡す。ファイルが消えた場合は、ファイルを消して <code>Rescan()</code> → 走査の終わりを待つ。</li>
+<li>UiTests：<code>MarkdownPreview.WebViewDisabled = true</code>（<code>TestSetup</code>）なので、プレビューは目次を空で渡す。目次はテストから <code>OnOutline</code> で渡す。Esc は <code>window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None)</code>（<code>RightPaneTests</code> と同じ）。タブの代わりに、<code>Grid</code> に <code>DashboardView</code>（<code>MainVmHarness</code>）と <code>DocumentsView</code> を重ねて置き、<code>IsVisible</code> を切り替える。</li>
+<li>実機（隔離環境）：対象フォルダに手書きの md を置く。<code>plan.md</code>（<code>## [x] Phase 1</code>〜<code>## [ ] Phase 6</code>、各 Phase に <code>- [ ]</code> を数個と <code>###</code> の小見出し、mermaid 1 つ、長い本文、<code>other.md</code> と <code>page.html</code> へのリンク）、<code>other.md</code>（見出しなし）、<code>page.html</code>（自前の keydown で Esc を使わないもの）。保存は手元のエディタで行う。</li>
+</ul>
+
+<h2>8. リスクと対策</h2>
+<table><tr><th>リスク</th><th>対策</th></tr>
+<tr><td>Windows（WebView2）で、ページからの知らせ・Esc・位置の補正を確かめていない</td><td>41-1 で実機確認。知らせが使えなければ 7.4 の代わりの形、<code>Body</code> の形が違えば <code>IsEscapeMessage</code> で吸収、二重にずれれば <code>overflow-anchor: none</code></td></tr>
+<tr><td>共用の <code>MarkdownRenderer</code>・<code>MarkdownPreview</code> を変えて、メモタブや通常のプレビューが変わる</td><td>品質ゲート 3。<code>Render</code> の HTML の本文は変えず、足すのは最後のスクリプトだけ。既存の <code>MarkdownRendererTests</code> を変えずに通す</td></tr>
+<tr><td>プレビューを動かして WebView が作り直される</td><td>7.8：XAML で最初から列 2 に置き、実行中は列の幅と <code>IsVisible</code> だけを変える。UiTests で同じインスタンスが載ったままを確かめる</td></tr>
+<tr><td>目次の id と本文の id が食い違う</td><td>1 回の解析から両方を作る（7.5）。テストで HTML の <code>id</code> と突き合わせる</td></tr>
+<tr><td>古い描画の結果の目次が、新しいファイルに出る</td><td><code>version</code> の確認の後で渡す（7.2）。VM でも <code>CurrentTarget</code> と比べて捨てる</td></tr>
+<tr><td>保存のたびに目次がちらつく・先頭に戻る</td><td>7.7：入れ物を差し替えず、同じ位置の項目を使い回す</td></tr>
+<tr><td>ダッシュボードとドキュメントの Esc がぶつかる</td><td>両方とも <code>IsEffectivelyVisible</code> の条件（7.4）。UiTests で、重ねた 2 つのうち見えている方だけが戻ることを確かめる</td></tr>
+<tr><td>html のページの JS が <code>invokeCSharpAction</code> を勝手に呼ぶ</td><td><code>key:Escape</code> だけを受ける。届いても拡大を戻すだけ。中身はログに書かない</td></tr>
+<tr><td>html の iframe の中にフォーカスがあると Esc が届かない</td><td>受け入れる（要件どおり。「⤡ 戻す」で戻せる）</td></tr>
+<tr><td><code>TaskList</code> を数える範囲が、プレビューのチェックボックスと食い違う</td><td>Markdig が <code>TaskList</code> にしたもの＝チェックボックスになるものだけを数える（7.5）。テストで入れ子・番号付き・コードブロックを固定</td></tr></table>
+
+<h2>9. 決定事項（確認済み。設計の質問 Q1〜Q9）</h2>
+<ol>
+<li>Q1：html も拡大できる。目次の列は出さず、プレビューを全幅に。</li>
+<li>Q2：目次はすべての段（<code>#</code>〜<code>######</code>）を字下げで出す。</li>
+<li>Q3：目次の上に進み具合の集計を出す（<code>[x]</code>／<code>[ ]</code> 付きの見出しがあるときだけ）。</li>
+<li>Q4：見出しの右に、その節（下の段の分も含む）のタスクの数「2/5」。集計は見出しだけを数える。</li>
+<li>Q5：拡大中は上段（読み直し・絞り込み・件数）も隠す。</li>
+<li>Q6：位置の補正は md のページで常に効かせる。html には入れない（Esc の受け口だけ）。</li>
+<li>Q7：本文の幅に上限は付けない。</li>
+<li>Q8：ダッシュボードの Esc の不具合を一緒に直す。</li>
+<li>Q9：今見ている見出しの強調はしない（保留。17 章）。</li>
+</ol>
+<p>計画で決めたこと（仕様にない細部。違えば言ってください）：</p>
+<ul>
+<li>見出しが 0 件の md を拡大したら、目次の列に「見出しがありません」と出す（列は隠さない）。</li>
+<li>目次の字下げは、その md のいちばん浅い段を 0 にする（<code>##</code> から始まる md でも左に寄せる）。1 段 14px。</li>
+<li>文字が空になる見出し（<code>## [x]</code> だけ等）は目次に出さず、進み具合にも数えない。</li>
+<li>目次の項目は、押したとき（<code>Tapped</code>）と Enter で移る。一覧の選択の変化では移らない。</li>
+<li>読み込み中に目次を押したら、再読み込みの位置の復元より、押した見出しを優先する。</li>
+<li>別のファイルに替わるときは目次をすぐ空にし、再読み込みでは空にしない。</li>
+<li><code>Collapse()</code> は戻したかどうかを返し、View は戻したときだけ <code>Handled</code> にする（通常の Esc を邪魔しない）。</li>
+<li>ページの Esc は <code>e.defaultPrevented</code> のときは知らせない（html が自分で Esc を使っている場合）。</li>
+<li>拡大中の見出しは「— タイトル　相対パス」（タイトルは概要カードと同じ）。</li>
+<li>目次の列の初期幅は 260、最小 160。拡大をやめても、目次の幅は覚えておく（アプリを閉じるまで）。</li>
+<li>Phase 番号は 38〜41（Issue #23 の 37 の次）。コミット番号は 38-1〜41-2。</li>
+</ul>
+
+<h2>10. 実装するセッションへの注意（必ず読む）</h2>
+<h3>10.1 始める前に</h3>
+<ul>
+<li>作業ブランチ <code>feature/issue28-documents-expand-mode</code> にいること。このブランチには、設計の html・技術調査・この計画・要件定義の変更が<b>まだコミットされていない</b>ことがある（未追跡の <code>docs/issue28/</code>、変更中の <code>docs/miharikun-requirements.md</code>）。別の作業ツリーでは見えない。見つからなければ、推測で進めずに利用者に聞く。</li>
+<li>計画と要件定義（12.7.1・12.4.1・15 章の Phase 38〜41）に食い違いが無いか確かめる。あれば要件定義が正。判断がつかなければ聞く。</li>
+<li><code>CLAUDE.md</code> の決まり：返答は日本語、コミット・push・PR・マージは頼まれたときだけ、<code>git add</code> はパス指定（<code>-A</code> は使わない）、<code>dotnet build</code>／<code>test</code> の前にアプリを止める、完了報告に「ビルドしたかと出力先・テスト件数・できなかった確認」、本物のデータ・<code>~/.cursor/hooks.json</code> は触らない、<code>~/.claude/</code> には書かない。</li>
+<li>着手前に <code>dotnet test</code> を回して、いまの件数を控える。</li>
+</ul>
+<h3>10.2 各フェーズの終わり</h3>
+<ul>
+<li>38・39 は、テストを先に書いて落ちるのを確かめてから実装する。</li>
+<li>フェーズの終わりに、品質ゲートを確かめ、要件定義の該当 Phase の「状況」を書き、<code>[x]</code> にして（そのフェーズのコミットに入れる）、テストの件数・ビルドの有無と出力先・できなかった確認を報告する。<b>次のフェーズに進む前に止まって報告する</b>。</li>
+<li>Phase 40 の実機確認は mac で、利用者に見てもらう（私は画面を撮れない。UiTests のスクリーンショットは補助）。Phase 41 の Windows の確認は利用者の作業。</li>
+<li>39 の後に、利用者が望めば差分のレビューを挟む。</li>
+</ul>
+<p><b>状態：確定</b>（2026-10-09。別セッションのレビューは挟まず、利用者が OK とした。Issue #23 と同じ扱い）。</p>
+</body></html>

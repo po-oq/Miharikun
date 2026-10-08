@@ -78,7 +78,8 @@ public partial class DashboardView : UserControl
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && !e.Handled && _viewModel is { IsTimelineExpanded: true })
+        // 隠れているタブ（ドキュメントなどを見ているとき）の拡大は戻さない
+        if (e.Key == Key.Escape && !e.Handled && IsEffectivelyVisible && _viewModel is { IsTimelineExpanded: true })
         {
             _viewModel.ToggleTimelineExpandedCommand.Execute(null);
             e.Handled = true;

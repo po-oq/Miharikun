@@ -238,4 +238,29 @@ public sealed class MarkdownRendererTests
         Assert.Contains(@"type=""checkbox""", html);                  // 要件定義のチェックリスト
         Assert.Contains("<table>", html);
     }
+
+    // ── ページの JS（Esc の受け口・位置の補正。Issue #28）────────────────
+
+    [Fact]
+    public void Page_has_the_escape_listener_and_the_scroll_keeper_once_each()
+    {
+        var html = Html("# 見出し\n");
+        Assert.Equal(1, Count(html, Regex.Escape("window.__miharikunEsc = true")));
+        Assert.Equal(1, Count(html, Regex.Escape("invokeCSharpAction('key:Escape')")));
+        Assert.Equal(1, Count(html, Regex.Escape("window.scrollBy(0, anchor.getBoundingClientRect().top - anchorTop)")));
+    }
+
+    [Fact]
+    public void Escape_listener_script_is_exposed_without_script_tags()
+    {
+        Assert.DoesNotContain("<script", MarkdownRenderer.EscapeListenerScript);
+        Assert.Contains("window.__miharikunEsc", MarkdownRenderer.EscapeListenerScript);
+        Assert.Contains("invokeCSharpAction('key:Escape')", MarkdownRenderer.EscapeListenerScript);
+    }
+
+    [Fact]
+    public void Body_is_not_changed_by_the_added_scripts()
+    {
+        Assert.Equal("<h1 id=\"見出し\">見出し</h1>\n", Body("# 見出し\n").Split("<script>")[0].TrimStart());
+    }
 }

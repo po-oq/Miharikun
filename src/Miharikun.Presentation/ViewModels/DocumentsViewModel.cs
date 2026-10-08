@@ -96,7 +96,14 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
         }
     }
 
-    private void RaisePreview(bool reload) => PreviewChanged?.Invoke(CurrentTarget, reload);
+    private void RaisePreview(bool reload)
+    {
+        // 別のファイルに替わるときは、描き直しの結果が来る前に目次を空にする。再読み込み（保存・テーマ）では空にしない。
+        var path = _selectedPath;
+        if (!reload && !string.Equals(path, _outlinePath, StringComparison.OrdinalIgnoreCase))
+            ResetOutline(path);
+        PreviewChanged?.Invoke(CurrentTarget, reload);
+    }
 
     /// <summary>テーマが変わった。md は色を変えて作り直す（html はファイルの見た目を尊重するので、View 側で作り直さない）。</summary>
     public void OnThemeChanged()
@@ -209,10 +216,15 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
     {
         _selectedPath = path;
         HasSelection = path is not null;
+        OnPropertyChanged(nameof(IsOutlineVisible));
+        if (path is null)
+            IsExpanded = false;                       // 開いているファイルが無くなったら、拡大を戻す
     }
 
     /// <summary>ファイルを選んでいるか（プレビューのボタンの有効/無効）。</summary>
-    [ObservableProperty] private bool _hasSelection;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ToggleExpandedCommand))]
+    private bool _hasSelection;
 
     /// <summary>ツリーの根（「すべて」の 1 件だけ）。</summary>
     public ObservableCollection<FolderNodeViewModel> TreeRoots { get; }
