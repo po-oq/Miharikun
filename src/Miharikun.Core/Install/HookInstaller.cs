@@ -29,7 +29,11 @@ public sealed record HookInstallResult(bool Success, string Message, string? Bac
 /// </summary>
 public sealed class HookInstaller
 {
-    public const string HookExeName = "Miharikun.Hook.exe";
+    /// <summary>Hook の名前から拡張子を除いたもの。<see cref="IsOurs"/> は両 OS の名前に当たるよう、これで見る。</summary>
+    public const string HookStemName = "Miharikun.Hook";
+
+    /// <summary>Hook の実行ファイル名（Windows は <c>Miharikun.Hook.exe</c>、mac は拡張子なしの <c>Miharikun.Hook</c>）。</summary>
+    public static readonly string HookExeName = OperatingSystem.IsWindows() ? HookStemName + ".exe" : HookStemName;
     public const string CursorDirEnvVar = "MIHARIKUN_CURSOR_DIR";
     private const int TimeoutSeconds = 5;
 
@@ -112,13 +116,18 @@ public sealed class HookInstaller
     /// <summary>hooks.json に書くコマンド。フルパスを / 区切りにし、空白を含むときは引用符で囲む（空白の扱いは Step 0 で要確認）。</summary>
     public static string BuildCommand(string exePath)
     {
-        var path = Path.GetFullPath(exePath).Replace('\\', '/');
+        var path = Path.GetFullPath(exePath);
+        if (OperatingSystem.IsWindows())
+            path = path.Replace('\\', '/');   // mac の \ はふつうのファイル名の文字なので、替えない
         return (path.Contains(' ') ? $"\"{path}\"" : path) + " --agent cursor";
     }
 
     /// <summary>自分のエントリか。導入先が移動して古いパスになっていても見分けられるよう、exe 名で判定する。</summary>
     public static bool IsOurs(string? command) =>
-        command is not null && command.Contains(HookExeName, StringComparison.OrdinalIgnoreCase);
+        command is not null && command.Contains(HookStemName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHookFileName(string name) =>
+        name.Equals(HookStemName, StringComparison.OrdinalIgnoreCase) || name.Equals(HookStemName + ".exe", StringComparison.OrdinalIgnoreCase);
 
     // ---------------------------------------------------------------- 登録の読み取り（Issue #17。要件 8.2）
 
@@ -188,7 +197,7 @@ public sealed class HookInstaller
         if (rawPath.Length == 0 || rawPath.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || !Path.IsPathFullyQualified(rawPath))
             return false;
         if (NormalizeFullOrNull(rawPath) is not { } full
-            || !Path.GetFileName(full).Equals(HookExeName, StringComparison.OrdinalIgnoreCase))
+            || !IsHookFileName(Path.GetFileName(full)))
             return false;
 
         path = full;
@@ -264,7 +273,7 @@ public sealed class HookInstaller
     public HookInstallResult Install()
     {
         if (_bundledExePath is null)
-            return new(false, $"{HookExeName} が見つかりません（Miharikun.exe と同じフォルダに置いてください）。");
+            return new(false, $"{HookExeName} が見つかりません（{HookWording.BundledPlace}に置いてください）。");
         if (!_createExeDirectory && Path.GetDirectoryName(_installedExePath) is { } exeDir && !Directory.Exists(exeDir))
             return new(false, $"Hook の置き場所 {exeDir} が見つかりません（⚙ → 設定… で直してください）。");
         if (!TryLoad(out var root, out var error))
@@ -469,7 +478,24 @@ public sealed class HookInstaller
         {
             try
             {
-                File.Copy(_bundledExePath, _installedExePath, overwrite: true);
+                if (OperatingSystem.IsWindows())
+                {
+                    File.Copy(_bundledExePath, _installedExePath, overwrite: true);
+                    return true;
+                }
+
+                // mac：同じフォルダの一時ファイルに写してから名前を付け替える（新しいファイルになる）。署名つきの実行ファイルを
+                // 同じ場所で上書きすると次の起動で止められることがあり、Cursor が Hook を動かしている最中の書き換えも避けられる（計画 7.12）。
+                var temp = _installedExePath + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
+                try
+                {
+                    File.Copy(_bundledExePath, temp, overwrite: true);
+                    File.Move(temp, _installedExePath, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(temp)) File.Delete(temp);
+                }
                 return true;
             }
             catch (IOException) when (attempt < 20)

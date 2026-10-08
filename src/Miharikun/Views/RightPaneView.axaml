@@ -1,0 +1,112 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Miharikun.Converters"
+             xmlns:b="clr-namespace:Miharikun.Behaviors"
+             xmlns:views="clr-namespace:Miharikun.Views"
+             xmlns:vm="clr-namespace:Miharikun.ViewModels;assembly=Miharikun.Presentation"
+             x:Class="Miharikun.Views.RightPaneView">
+    <!-- 右ペイン：メモ・タイムライン・最近の入力（要件 12.4）。DataContext は MainViewModel -->
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="160" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="150" MinHeight="60" />
+        </Grid.RowDefinitions>
+        <!-- メモ：入力するたびにメモリへ、フォーカスアウトでファイルへ保存 -->
+        <Border Grid.Row="0" Classes="section" IsVisible="{Binding !IsTimelineExpanded}">
+            <StackPanel>
+                <TextBlock Classes="heading" Text="メモ" />
+                <TextBox x:Name="MemoBox" AutomationProperties.AutomationId="MemoBox" Text="{Binding Detail.MemoText}"
+                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" MaxHeight="160"
+                         PlaceholderText="放置した理由・続きの予定など"
+                         IsEnabled="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}"
+                         b:TextBoxBehaviors.LostFocusCommand="{Binding Detail.SaveMemoCommand}" />
+            </StackPanel>
+        </Border>
+
+        <!-- タイムライン -->
+        <Border Grid.Row="1" Classes="section" Margin="0" Padding="0">
+            <Grid RowDefinitions="Auto,*">
+                <views:TimelineHeadingView Grid.Row="0" />
+                <!-- 行の高さがまちまちな長い一覧：仮想化とスクロールは TimelinePanel が受け持つ（標準の ListBox だと位置と行の対応が崩れる）。バーは標準 -->
+                <ScrollViewer Grid.Row="1" Margin="6,0,2,6" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                              AutomationProperties.AutomationId="TimelineScroll">
+                    <views:TimelinePanel x:Name="TimelineList" ItemsSource="{Binding Timeline.VisibleItems}"
+                                         AutomationProperties.AutomationId="TimelineList">
+                        <views:TimelinePanel.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TimelineItemViewModel">
+                            <Border Classes="trow" PointerPressed="OnRowPressed"
+                                    Classes.input="{Binding Kind, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Input}"
+                                    Classes.response="{Binding Kind, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Response}"
+                                    Classes.compaction="{Binding Kind, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Compaction}"
+                                    Classes.highlighted="{Binding IsHighlighted}"
+                                    Classes.truncated="{Binding IsTruncated}"
+                                    Classes.copied="{Binding JustCopied}">
+                                <StackPanel>
+                                    <DockPanel MinHeight="14">
+                                        <!-- マウスを載せたときだけ出す。コピーしたら「コピーしました」に変わる -->
+                                        <Border Classes="bubble" DockPanel.Dock="Right">
+                                            <Panel>
+                                                <TextBlock Classes="hinttext" Text="ダブルクリックでコピー" />
+                                                <TextBlock Classes="copiedtext" Text="✓ コピーしました" />
+                                            </Panel>
+                                        </Border>
+                                        <TextBlock Text="{Binding TimeText}" FontSize="10" Opacity="0.7" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <TextBlock Classes="body" Text="{Binding DisplayText}" />
+                                    <!-- 長い本文だけ：クリックで全文を開閉 -->
+                                    <TextBlock FontSize="10" Opacity="0.7" Margin="0,2,0,0" IsVisible="{Binding IsTruncated}"
+                                               Text="{Binding IsExpanded, Converter={x:Static conv:BoolTextConverter.Instance}, ConverterParameter='▼ クリックで全文を表示|▲ クリックで閉じる'}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                        </views:TimelinePanel.ItemTemplate>
+                    </views:TimelinePanel>
+                </ScrollViewer>
+                
+            </Grid>
+        </Border>
+
+        <!-- 区切りをドラッグして、タイムラインと下の 2 つのリストの高さを調整できる -->
+        <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" Background="Transparent" ResizeDirection="Rows"
+                      IsVisible="{Binding !IsTimelineExpanded}" />
+
+        <!-- 最近の入力・最近閉じたセッション -->
+        <Border Grid.Row="3" Classes="section" Margin="0" IsVisible="{Binding !IsTimelineExpanded}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,14,0">
+                    <TextBlock Classes="heading" Text="最近の入力（全セッション）" />
+                    <ItemsControl ItemsSource="{Binding RecentInputs}" Margin="0,0,0,10" AutomationProperties.AutomationId="RecentInputs">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Classes="jump" Padding="4,2"
+                                        Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).SelectRecentCommand}" CommandParameter="{Binding}">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Classes="dim" Text="{Binding TimeText}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Classes="heading" Text="最近閉じたセッション" />
+                    <ItemsControl ItemsSource="{Binding RecentClosed}" AutomationProperties.AutomationId="RecentClosed">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Classes="jump" Padding="4,2"
+                                        Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).SelectRecentCommand}" CommandParameter="{Binding}">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Classes="dim" Text="{Binding TimeText}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

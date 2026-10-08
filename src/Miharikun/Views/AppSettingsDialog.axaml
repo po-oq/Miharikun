@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Miharikun.Views.AppSettingsDialog"
+        Title="設定"
+        Width="560" SizeToContent="Height" MinWidth="460"
+        CanResize="False" ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+    <!-- アプリ全体の設定（要件 12.9）：停止とみなす時間と、Cursor の Hook の置き場所（8.2）。「保存」の有効・無効は Revalidate でまとめて決める -->
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button x:Name="SaveButton" Content="保存" Classes="accent" IsDefault="True" Click="OnSaveClick" AutomationProperties.AutomationId="SaveButton" />
+            <Button Content="キャンセル" IsCancel="True" Click="OnCancelClick" AutomationProperties.AutomationId="CancelButton" />
+        </StackPanel>
+
+        <StackPanel>
+            <TextBlock Text="実行中のまま動きがないとき、停止とみなす時間（分）" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Spacing="8">
+                <TextBox x:Name="MinutesBox" Width="100" MaxLength="6" AutomationProperties.AutomationId="RunningTimeoutBox" />
+                <TextBlock Text="分" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock x:Name="ErrorText" Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                       Foreground="{DynamicResource StateErrorBrush}" AutomationProperties.AutomationId="RunningTimeoutError" />
+            <TextBlock Margin="0,4,0,0" Opacity="0.7" TextWrapping="Wrap" FontSize="12"
+                       Text="「実行中」のまま新しい記録がこの時間なかったセッションを、一覧で「停止」と表示します（Claude Code には終了の記録がないため）。サブエージェントやコマンドの結果を待っている間は、停止にしません。0 で無効（既定 10 分）。保存するとすぐ反映されます。" />
+
+            <TextBlock x:Name="HookDirLabel" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,20,0,0" />
+            <DockPanel Margin="0,8,0,0" LastChildFill="True">
+                <Button DockPanel.Dock="Right" Content="既定に戻す" Margin="8,0,0,0" Click="OnResetHookDirClick" AutomationProperties.AutomationId="HookDirResetButton" />
+                <Button DockPanel.Dock="Right" Content="参照…" Margin="8,0,0,0" Click="OnBrowseHookDirClick" AutomationProperties.AutomationId="HookDirBrowseButton" />
+                <TextBox x:Name="HookDirBox" AutomationProperties.AutomationId="HookDirBox" />
+            </DockPanel>
+            <TextBlock x:Name="HookDirErrorText" Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                       Foreground="{DynamicResource StateErrorBrush}" AutomationProperties.AutomationId="HookDirError" />
+            <TextBlock x:Name="HookDirHelp" Margin="0,4,0,0" Opacity="0.7" TextWrapping="Wrap" FontSize="12" />
+        </StackPanel>
+    </DockPanel>
+</Window>

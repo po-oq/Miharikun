@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>macOS 対応のアーキテクチャ案（調査）</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>macOS 対応のアーキテクチャ案（調査。Issue #22）</h1>
+<p style="background:#fff6dd;border:1px solid #e0c060;padding:6px 14px">※ 2026-10-07 追記：main の Issue #17（Hook の置き場所・「Hook なし」の警告）をマージしたため、要件定義の「Windows と macOS の違い」は <b>12.11 → 12.12</b> に移った（12.11 は「Hook が記録していないときの警告」）。本書の「12.11」は 12.12 と読み替える。影響の説明：<code>docs/macos-support/issue17-merge-impact.html</code></p>
+<p><b>状態：方針決定（Q1〜Q7）</b>。Q7 は FluentTheme と SukiUI の試作で見比べて決める（Phase 30-2）。コードは変えていない。</p>
+<p>ゴール：Windows と macOS の両方で、いまと同じ機能（ダッシュボード／ドキュメント／メモ）を使えるようにする。<b>機能は変えない</b>。画面の配置はなるべく変えず、変えないとできない所だけ変える。</p>
+
+<h2>0. 結論（先に）</h2>
+<p><span class="rec">おすすめ：案 A「画面を Avalonia 12 で作り直し、Windows と mac で同じ画面を 1 つにする」</span></p>
+<ul>
+<li>いまの部品（3 ペインと分割バー・ツリー・仮想化した一覧・折りたたみ・タブ・右クリックメニュー）が Avalonia にそろっていて、<b>画面の配置はそのまま再現できる</b>。</li>
+<li>プレビューの要の WebView が、<b>Avalonia 12 から MIT の標準部品</b>（<code>NativeWebView</code>）になった。Windows は WebView2、mac は WKWebView（OS に最初から入っている）を同じ書き方で使える。リンクの振り分けに要るイベント（<code>NavigationStarted</code> の取り消し・<code>NewWindowRequested</code>）もある。</li>
+<li>C# と MVVM（CommunityToolkit.Mvvm）のまま。<b>Core 約 5,500 行・Docs・Hook・テスト 842 件はそのまま使える</b>。「App は <code>AgentEvent</code> だけを扱う」「Core は AOT 互換」の決まりも崩れない。</li>
+<li>書き直すのは画面（XAML 約 1,400 行と画面まわりの C# 約 1,100 行）。規模は<b>中〜大（7 フェーズ程度。メモタブの 2 倍弱）</b>、難易度は<b>中</b>。</li>
+</ul>
+
+<h2>1. いまの構成と、Windows でしか動かない所</h2>
+<svg viewBox="0 0 960 400" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="15" width="160" height="50" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="35" font-weight="bold">Cursor IDE</text><text x="18" y="54" font-size="12">Hook に JSON を渡す</text>
+<line x1="170" y1="40" x2="205" y2="40" stroke="#333" marker-end="url(#a)"/>
+<rect x="205" y="10" width="215" height="62" fill="#dfd" stroke="#383"/>
+<text x="213" y="28" font-weight="bold">Miharikun.Hook</text>
+<text x="213" y="46" font-size="12">NativeAOT・win-x64 で発行</text>
+<text x="213" y="63" font-size="12">名前（.exe）が前提</text>
+<line x1="420" y1="40" x2="455" y2="40" stroke="#333" marker-end="url(#a)"/>
+<text x="422" y="33" font-size="11" fill="#555">追記</text>
+<rect x="455" y="15" width="235" height="50" fill="#eee" stroke="#888"/>
+<text x="463" y="35" font-weight="bold">events\cursor\*.jsonl</text><text x="463" y="54" font-size="12">%LOCALAPPDATA%\Miharikun</text>
+<rect x="710" y="15" width="240" height="50" fill="#ffe9c8" stroke="#a70"/>
+<text x="718" y="35" font-weight="bold">Claude Code の会話ログ</text><text x="718" y="54" font-size="12">~\.claude\projects（読むだけ）</text>
+<rect x="205" y="120" width="215" height="62" fill="#dff" stroke="#08a"/>
+<text x="213" y="138" font-weight="bold">Miharikun.Docs</text>
+<text x="213" y="156" font-size="12">md→HTML（Markdig）</text>
+<text x="213" y="173" font-size="12">net10.0。OS に依らない</text>
+<rect x="455" y="120" width="495" height="62" fill="#dff" stroke="#08a"/>
+<text x="463" y="138" font-weight="bold">Miharikun.Core（net10.0・AOT 互換）約 5,500 行</text>
+<text x="463" y="156" font-size="12">読み込み（ISessionSource）・状態判定・git・ドキュメントの索引・メモ</text>
+<text x="463" y="173" font-size="12">OS に依らない書き方。直すのは数か所（Hook の exe 名・パスの表記など）</text>
+<line x1="572" y1="65" x2="572" y2="120" stroke="#333" marker-end="url(#a)"/>
+<line x1="830" y1="65" x2="830" y2="120" stroke="#333" marker-end="url(#a)"/>
+<rect x="10" y="215" width="940" height="148" fill="#fff" stroke="#b33" stroke-width="2"/>
+<text x="20" y="236" font-weight="bold">Miharikun（画面）net10.0-windows・WPF</text>
+<text x="330" y="236" font-size="12" fill="#b33">← Windows でしか動かない（WPF・WPF-UI・WebView2）</text>
+<rect x="20" y="248" width="225" height="105" fill="#fde" stroke="#b33"/>
+<text x="28" y="267" font-weight="bold">画面の XAML 約 1,400 行</text>
+<text x="28" y="285" font-size="11">WPF-UI（FluentWindow・Mica・</text>
+<text x="28" y="301" font-size="11">TitleBar・ui:Button 42 か所）</text>
+<text x="28" y="317" font-size="11">DataTrigger 30・Setter 158</text>
+<rect x="255" y="248" width="225" height="105" fill="#fde" stroke="#b33"/>
+<text x="263" y="267" font-weight="bold">画面まわりの C# 約 1,100 行</text>
+<text x="263" y="285" font-size="11">テーマ（WPF-UI）・クリップボード</text>
+<text x="263" y="301" font-size="11">（COM）・MessageBox・</text>
+<text x="263" y="317" font-size="11">explorer.exe /select</text>
+<rect x="490" y="248" width="225" height="105" fill="#fde" stroke="#b33"/>
+<text x="498" y="267" font-weight="bold">プレビュー：WebView2</text>
+<text x="498" y="285" font-size="11">Edge の Runtime（Windows だけ）</text>
+<text x="498" y="301" font-size="11">MarkdownPreview・</text>
+<text x="498" y="317" font-size="11">WebViewEnvironment</text>
+<rect x="725" y="248" width="215" height="105" fill="#dfd" stroke="#383"/>
+<text x="733" y="267" font-weight="bold">ViewModel 約 2,100 行</text>
+<text x="733" y="285" font-size="11">CommunityToolkit.Mvvm</text>
+<text x="733" y="301" font-size="11">WPF の型は数か所だけ</text>
+<text x="733" y="317" font-size="11">DispatcherTimer・ICollectionView</text>
+<line x1="312" y1="182" x2="312" y2="215" stroke="#333" marker-end="url(#a)"/>
+<line x1="700" y1="182" x2="700" y2="215" stroke="#333" marker-end="url(#a)"/>
+<rect x="10" y="378" width="14" height="14" fill="#dff" stroke="#08a"/><text x="30" y="390" font-size="12">OS に依らない（そのまま）</text>
+<rect x="210" y="378" width="14" height="14" fill="#dfd" stroke="#383"/><text x="230" y="390" font-size="12">数か所直す</text>
+<rect x="330" y="378" width="14" height="14" fill="#fde" stroke="#b33"/><text x="350" y="390" font-size="12">Windows 専用（作り直し）</text>
+<rect x="540" y="378" width="14" height="14" fill="#ffe9c8" stroke="#a70"/><text x="560" y="390" font-size="12">外部（Hook で受ける／読むだけ）</text>
+<rect x="790" y="378" width="14" height="14" fill="#eee" stroke="#888"/><text x="810" y="390" font-size="12">保存先</text>
+</svg>
+<p>Windows でしか動かないのは、ほぼ<b>画面のプロジェクト（<code>src/Miharikun/</code>）だけ</b>。Core・Docs・Hook のコードは OS に依らない書き方になっていて、直すのは数か所。</p>
+
+<h3>Windows を前提にしている所（コードで確認）</h3>
+<table>
+<tr><th>#</th><th>場所</th><th>いま</th><th>mac で起きること</th><th>対応</th></tr>
+<tr><td>1</td><td><code>src/Miharikun/Miharikun.csproj</code> と XAML 全部</td><td>WPF（<code>net10.0-windows</code>）＋ WPF-UI（<code>FluentWindow</code>・Mica・<code>TitleBar</code>）</td><td>動かない（WPF は Windows だけ）</td><td>画面の仕組みを置き換える（2 章の案）</td></tr>
+<tr><td>2</td><td><code>Views/MarkdownPreview.xaml.cs</code>・<code>WebViewEnvironment.cs</code></td><td>WebView2（Edge の Runtime）。<code>NavigationStarting</code>・<code>NewWindowRequested</code> でリンクを振り分け</td><td>WebView2 が無い</td><td>mac は WKWebView（OS に最初から入っている）</td></tr>
+<tr><td>3</td><td>ViewModel（<code>MainViewModel.cs:111</code>・<code>TimelineViewModel.cs:102</code>・<code>DocumentsViewModel.cs:59</code>・<code>MemoViewModel.cs:49</code> ほか）</td><td>WPF の <code>CollectionViewSource</code>/<code>ICollectionView</code>（一覧の絞り込み）と <code>DispatcherTimer</code></td><td>WPF の型なので動かない</td><td>絞り込みは自前（絞った一覧を作る）、タイマーは画面の仕組みのものに</td></tr>
+<tr><td>4</td><td><code>ClipboardHelper.cs</code></td><td>WPF の <code>Clipboard</code>（<code>COMException</code> でやり直し）</td><td>動かない</td><td>画面の仕組みのクリップボード</td></tr>
+<tr><td>5</td><td><code>ShellOpen.cs:28</code></td><td>「フォルダで開く」＝ <code>explorer.exe /select,</code></td><td>無い</td><td>mac は <code>open -R &lt;ファイル&gt;</code>（Finder で選んだ状態）。既定のアプリで開く（<code>UseShellExecute</code>）は .NET が mac で <code>open</code> を使うので、そのままの見込み（要確認）</td></tr>
+<tr><td>6</td><td><code>ThemeService.cs</code></td><td>WPF-UI の <code>ApplicationThemeManager</code>・<code>SystemThemeWatcher</code>・Mica</td><td>動かない</td><td>画面の仕組みのテーマ切り替え（ライト/ダーク・OS 追従）。Mica は mac に無い（見た目だけの差）</td></tr>
+<tr><td>7</td><td><code>HookSetup.cs</code>・<code>MainWindow.xaml.cs</code></td><td>WPF の <code>MessageBox</code></td><td>動かない</td><td>確認ダイアログを自前で（<code>UnsavedMemoDialog</code> と同じ作り）</td></tr>
+<tr><td>8</td><td><code>Core/Storage/AppPaths.cs:18</code></td><td><code>LocalApplicationData</code> → <code>%LOCALAPPDATA%\Miharikun</code></td><td>.NET 8 以降の mac では <code>~/Library/Application Support/Miharikun</code> になる（Microsoft の文書で確認）</td><td>コードはそのまま。要件 6 章・README の表記を OS 別に</td></tr>
+<tr><td>9</td><td><code>Core/Install/HookInstaller.cs:32</code></td><td><code>HookExeName = "Miharikun.Hook.exe"</code>。<code>IsOurs</code> は名前を含むかで判定</td><td>mac の実行ファイルは拡張子なし。導入先のパスに空白（<code>Application Support</code>）が必ず入る</td><td>OS で名前を変える。空白入りのパスを Cursor が正しく起動できるかは<b>要確認</b>（だめなら空白の無い場所に置く）</td></tr>
+<tr><td>10</td><td><code>Core/Projects/ProjectPath.cs</code>・<code>Core/Sessions/ClaudeFolderName.cs</code></td><td>大文字小文字を無視・<code>/c:/</code> の形を直す</td><td>コード上は動く：<code>/Users/x/repo</code> → Claude 式の名前は <code>-Users-x-repo</code>（同じ規則）</td><td>mac の Cursor の <code>workspace_roots</code> の形、Claude のフォルダ名は<b>実機で要確認</b>（Step 0）</td></tr>
+<tr><td>11</td><td><code>Core/Agents/CursorTranscriptImporter.cs</code></td><td><code>~\.cursor\projects\&lt;slug&gt;\agent-transcripts</code></td><td>mac で slug の規則が同じかは不明</td><td><b>実機で要確認</b></td></tr>
+<tr><td>12</td><td><code>Core/Documents/DocumentWatcher.cs</code>・<code>SessionMonitor</code></td><td><code>FileSystemWatcher</code></td><td>mac では FSEvents で動くが、通知がまとめられる・名前変更の出方が違うことがある</td><td>3 秒のポーリングと「読み直し」があるので、大きくは困らない見込み（mac でテストを回して確認）</td></tr>
+<tr><td>13</td><td><code>Core/Storage/AtomicFile.cs</code></td><td><code>File.Replace</code>＋ <code>~RF*.TMP</code> の掃除</td><td>.NET の Unix 版も置き換え（rename）で動く見込み。掃除は空振りするだけ</td><td>mac でテストを回して確認</td></tr>
+<tr><td>14</td><td><code>Hook/PayloadRecovery.cs</code></td><td>日本語 Windows の PowerShell 経由の文字化けの修復</td><td>mac では起きない見込み</td><td>そのまま（害は無い）</td></tr>
+<tr><td>15</td><td><code>scripts/publish.ps1</code>・<code>.github/workflows/release.yml</code></td><td><code>win-x64</code> だけ。ランナーは <code>windows-latest</code></td><td>NativeAOT（Hook）は<b>その OS の上でしかビルドできない</b>（mac は Xcode が要る）</td><td><code>macos-latest</code> のジョブを足し、<code>osx-arm64</code> で発行</td></tr>
+<tr><td>16</td><td>配布</td><td>zip に exe が 2 つ</td><td>mac は <code>.app</code> にまとめる。署名が無いと、ダウンロードしたものを Gatekeeper が止める（Hook も）</td><td>署名＋公証（Apple Developer Program、年 99 USD）か、README に解除の手順（Q3）</td></tr>
+<tr><td>17</td><td><code>tests/Miharikun.Tests/</code></td><td>24 ファイルに <code>C:\</code> 形のパス（<code>ProjectPathTests</code>・<code>ClaudeLocationsTests</code>・<code>DocumentLinkRuleTests</code> など）</td><td>mac で回すと一部が落ちる見込み</td><td>Windows だけのテストに印を付ける／OS ごとのパスで書き直す</td></tr>
+</table>
+
+<h2>2. 候補の比較</h2>
+<svg viewBox="0 0 960 400" width="960" font-size="12" font-family="sans-serif">
+<!-- 行の見出し -->
+<text x="10" y="40" font-weight="bold">案</text>
+<text x="10" y="88" font-size="11.5">画面（XAML）</text>
+<text x="10" y="138" font-size="11.5">プレビュー</text>
+<text x="10" y="188" font-size="11.5">ViewModel</text>
+<text x="10" y="232" font-size="11.5">Core・Docs・</text><text x="10" y="247" font-size="11.5">Hook</text>
+<text x="10" y="288" font-size="11.5">mac での作法</text>
+<text x="10" y="332" font-size="11.5">規模／難易度</text>
+<!-- A -->
+<rect x="110" y="10" width="160" height="46" fill="#e8f1fd" stroke="#0b63c5" stroke-width="2"/>
+<text x="118" y="29" font-weight="bold">A. Avalonia 12</text><text x="118" y="47" font-size="11" fill="#c05000" font-weight="bold">★ おすすめ</text>
+<rect x="110" y="62" width="160" height="44" fill="#ffe9c8" stroke="#a70"/><text x="118" y="80" font-size="11">Avalonia の XAML に</text><text x="118" y="96" font-size="11">書き直し（WPF に近い）</text>
+<rect x="110" y="112" width="160" height="44" fill="#dfd" stroke="#383"/><text x="118" y="130" font-size="11">NativeWebView（MIT）</text><text x="118" y="146" font-size="11">WebView2／WKWebView</text>
+<rect x="110" y="162" width="160" height="44" fill="#dfd" stroke="#383"/><text x="118" y="180" font-size="11">少し直す</text><text x="118" y="196" font-size="11">タイマー・絞り込みなど</text>
+<rect x="110" y="212" width="160" height="44" fill="#dff" stroke="#08a"/><text x="118" y="230" font-size="11">そのまま</text><text x="118" y="246" font-size="11">＋数か所（名前・パス）</text>
+<rect x="110" y="262" width="160" height="44" fill="#dff" stroke="#08a"/><text x="118" y="280" font-size="11">デスクトップの</text><text x="118" y="296" font-size="11">作法で動く</text>
+<rect x="110" y="312" width="160" height="46" fill="#fff" stroke="#999"/><text x="118" y="331" font-weight="bold">中〜大／中</text><text x="118" y="349" font-size="11">7 フェーズ程度</text>
+<!-- B -->
+<rect x="280" y="10" width="160" height="46" fill="#fff" stroke="#999"/>
+<text x="288" y="29" font-weight="bold">B. Uno Platform</text><text x="288" y="47" font-size="11" fill="#666">WinUI の XAML</text>
+<rect x="280" y="62" width="160" height="44" fill="#ffe9c8" stroke="#a70"/><text x="288" y="80" font-size="11">WinUI の XAML に</text><text x="288" y="96" font-size="11">書き直し</text>
+<rect x="280" y="112" width="160" height="44" fill="#fde" stroke="#b33"/><text x="288" y="130" font-size="11">mac（Skia）では</text><text x="288" y="146" font-size="11">WebView2 が未対応 ※</text>
+<rect x="280" y="162" width="160" height="44" fill="#dfd" stroke="#383"/><text x="288" y="180" font-size="11">少し直す</text>
+<rect x="280" y="212" width="160" height="44" fill="#dff" stroke="#08a"/><text x="288" y="230" font-size="11">そのまま</text><text x="288" y="246" font-size="11">＋数か所</text>
+<rect x="280" y="262" width="160" height="44" fill="#ffe9c8" stroke="#a70"/><text x="288" y="280" font-size="11">Skia は可。Catalyst</text><text x="288" y="296" font-size="11">にすると iPad 寄り</text>
+<rect x="280" y="312" width="160" height="46" fill="#fff" stroke="#999"/><text x="288" y="331" font-weight="bold">大／高</text><text x="288" y="349" font-size="11">プレビューが壁</text>
+<!-- C -->
+<rect x="450" y="10" width="160" height="46" fill="#fff" stroke="#999"/>
+<text x="458" y="29" font-weight="bold">C. Web の画面</text><text x="458" y="47" font-size="11" fill="#666">Photino＋Blazor など</text>
+<rect x="450" y="62" width="160" height="44" fill="#fde" stroke="#b33"/><text x="458" y="80" font-size="11">HTML/CSS で</text><text x="458" y="96" font-size="11">全部作り直し</text>
+<rect x="450" y="112" width="160" height="44" fill="#ffe9c8" stroke="#a70"/><text x="458" y="130" font-size="11">画面の中の HTML。</text><text x="458" y="146" font-size="11">ファイルの配信が要る</text>
+<rect x="450" y="162" width="160" height="44" fill="#ffe9c8" stroke="#a70"/><text x="458" y="180" font-size="11">Razor 向けに</text><text x="458" y="196" font-size="11">組み直し</text>
+<rect x="450" y="212" width="160" height="44" fill="#dff" stroke="#08a"/><text x="458" y="230" font-size="11">そのまま</text><text x="458" y="246" font-size="11">＋数か所</text>
+<rect x="450" y="262" width="160" height="44" fill="#ffe9c8" stroke="#a70"/><text x="458" y="280" font-size="11">メニュー・ダイアログ</text><text x="458" y="296" font-size="11">は自前で補う</text>
+<rect x="450" y="312" width="160" height="46" fill="#fff" stroke="#999"/><text x="458" y="331" font-weight="bold">大／中〜高</text><text x="458" y="349" font-size="11">10 フェーズ前後</text>
+<!-- D -->
+<rect x="620" y="10" width="160" height="46" fill="#fff" stroke="#999"/>
+<text x="628" y="29" font-weight="bold">D. .NET MAUI</text><text x="628" y="47" font-size="11" fill="#666">mac は Mac Catalyst</text>
+<rect x="620" y="62" width="160" height="44" fill="#fde" stroke="#b33"/><text x="628" y="80" font-size="11">MAUI の XAML に書き直し</text><text x="628" y="96" font-size="11">分割バー・ツリーが無い</text>
+<rect x="620" y="112" width="160" height="44" fill="#dfd" stroke="#383"/><text x="628" y="130" font-size="11">WebView</text><text x="628" y="146" font-size="11">（mac は WKWebView）</text>
+<rect x="620" y="162" width="160" height="44" fill="#dfd" stroke="#383"/><text x="628" y="180" font-size="11">少し直す</text>
+<rect x="620" y="212" width="160" height="44" fill="#dff" stroke="#08a"/><text x="628" y="230" font-size="11">そのまま</text><text x="628" y="246" font-size="11">＋数か所</text>
+<rect x="620" y="262" width="160" height="44" fill="#fde" stroke="#b33"/><text x="628" y="280" font-size="11">Mac Catalyst</text><text x="628" y="296" font-size="11">（iPad アプリ寄り）</text>
+<rect x="620" y="312" width="160" height="46" fill="#fff" stroke="#999"/><text x="628" y="331" font-weight="bold">大／高</text><text x="628" y="349" font-size="11">部品の自作が多い</text>
+<!-- E -->
+<rect x="790" y="10" width="160" height="46" fill="#fff" stroke="#999"/>
+<text x="798" y="29" font-weight="bold">E. Avalonia XPF</text><text x="798" y="47" font-size="11" fill="#666">有償。WPF のまま動かす</text>
+<rect x="790" y="62" width="160" height="44" fill="#dff" stroke="#08a"/><text x="798" y="80" font-size="11">ほぼそのまま</text><text x="798" y="96" font-size="11">（WPF-UI は要確認）</text>
+<rect x="790" y="112" width="160" height="44" fill="#ffe9c8" stroke="#a70"/><text x="798" y="130" font-size="11">WebView2 の</text><text x="798" y="146" font-size="11">差し替え（要確認）</text>
+<rect x="790" y="162" width="160" height="44" fill="#dff" stroke="#08a"/><text x="798" y="180" font-size="11">そのまま</text>
+<rect x="790" y="212" width="160" height="44" fill="#dff" stroke="#08a"/><text x="798" y="230" font-size="11">そのまま</text><text x="798" y="246" font-size="11">＋数か所</text>
+<rect x="790" y="262" width="160" height="44" fill="#dfd" stroke="#383"/><text x="798" y="280" font-size="11">WPF の見た目のまま</text><text x="798" y="296" font-size="11">動く</text>
+<rect x="790" y="312" width="160" height="46" fill="#fff" stroke="#999"/><text x="798" y="331" font-weight="bold">小〜中／低〜中</text><text x="798" y="349" font-size="11" fill="#b33">費用 €9,500/年〜</text>
+<!-- 凡例 -->
+<rect x="10" y="374" width="14" height="14" fill="#dff" stroke="#08a"/><text x="30" y="386" font-size="12">そのまま</text>
+<rect x="110" y="374" width="14" height="14" fill="#dfd" stroke="#383"/><text x="130" y="386" font-size="12">少し直す</text>
+<rect x="210" y="374" width="14" height="14" fill="#ffe9c8" stroke="#a70"/><text x="230" y="386" font-size="12">書き直し・手間がかかる</text>
+<rect x="400" y="374" width="14" height="14" fill="#fde" stroke="#b33"/><text x="420" y="386" font-size="12">できない・大きな難あり</text>
+<text x="610" y="386" font-size="11" fill="#666">※ 調査時点の Uno の公式情報。要再確認</text>
+</svg>
+
+<h3>各案の利点・欠点</h3>
+<table>
+<tr><th style="width:15%">案</th><th style="width:36%">利点</th><th style="width:36%">欠点</th><th>規模／難易度</th></tr>
+<tr><td><b>A. Avalonia 12</b><br>（画面を作り直し、Win と mac で 1 つ）</td>
+<td>・XAML と MVVM の書き方が WPF に近い。Grid と分割バー・<code>TreeView</code>・仮想化した <code>ListBox</code>・<code>Expander</code>・<code>TabControl</code>・右クリックメニューがそろう → <b>画面の配置をそのまま再現できる</b><br>・WebView が v12 から MIT（無料）の標準部品。Win＝WebView2、mac＝WKWebView を同じ API で。取り消しできる <code>NavigationStarted</code> と <code>NewWindowRequested</code> がある<br>・Core・Docs・Hook・テストはそのまま。CommunityToolkit.Mvvm もそのまま<br>・<b>以後の機能追加は 1 回で両 OS に入る</b></td>
+<td>・画面（XAML 約 1,400 行と画面まわりの C# 約 1,100 行）はほぼ書き直し。特に <code>DataTrigger</code>（30 か所）は Avalonia に無く、スタイルのクラス切り替えに書き換える<br>・<b>Windows 版も作り直しになる</b>（見た目が WPF-UI から Avalonia の Fluent に少し変わる。Windows での確認がもう一度要る）<br>・mac の WKWebView で、プロジェクト内の画像・相対リンク（<code>file://</code>）を読めるかは要確認（リスク #1）<br>・日本語入力（IME）の変換中の表示は、試作で確かめる</td>
+<td>中〜大／<b>中</b></td></tr>
+<tr><td><b>B. Uno Platform</b><br>（WinUI の XAML）</td>
+<td>・Windows は本物の WinUI 3（Fluent の見た目が一番きれい）<br>・C# と MVVM のまま</td>
+<td>・<b>mac の Skia 版では WebView2 が未対応</b>（Mac Catalyst 版だけ。調査時点の公式の文書と Discussion）→ ドキュメント／メモのプレビューが作れない<br>・Mac Catalyst にすると iPad 寄りのアプリになる<br>・WPF → WinUI の XAML の書き直し量は A と同じくらい。開発の道具が重い</td>
+<td>大／高</td></tr>
+<tr><td><b>C. Web の画面</b><br>（Photino＋Blazor。または Electron）</td>
+<td>・プレビューが HTML なので、画面全体と相性がよい<br>・CSS で両 OS の見た目をそろえやすい<br>・Photino なら C# の Core をそのまま呼べる</td>
+<td>・<b>画面を HTML/CSS/Razor で全部作り直し</b>。分割バー・ツリー・仮想スクロールは部品探しか自作<br>・ViewModel も Razor の部品向けに組み直し<br>・画面の中の HTML から <code>file://</code> の画像を読めないので、プロジェクトのファイルを配る仕組み（独自スキームなど）が要る<br>・Photino は小さなプロジェクトで、保守の続き具合は要確認。Electron にすると Core を別プロセスにするか JS で書き直し（さらに大きい）</td>
+<td>大／中〜高</td></tr>
+<tr><td><b>D. .NET MAUI</b><br>（mac は Mac Catalyst）</td>
+<td>・Microsoft の公式<br>・WebView は両 OS にある</td>
+<td>・mac は iPad アプリをデスクトップに持ってきた形。ウィンドウ・右クリックメニュー・キー操作の作法が弱い<br>・分割バー（<code>GridSplitter</code>）・<code>TreeView</code> が標準に無く、3 ペインとツリーの再現に自作が多い<br>・デスクトップの道具型アプリとの相性が悪い</td>
+<td>大／高</td></tr>
+<tr><td><b>E. Avalonia XPF</b><br>（有償。WPF をそのまま mac で）</td>
+<td>・WPF のコード・XAML・トリガーがほぼそのまま動く（公式の説明）<br>・<b>画面は一番変わらない</b></td>
+<td>・<b>費用：社内向けの一番安い区分でも年 €9,500</b>（アプリごと）。個人の PoC には重い<br>・WPF-UI と WebView2 がそのまま動くかは要確認（WebView は XPF 用のものに差し替えの見込み）</td>
+<td>小〜中／低〜中<br>（費用が壁）</td></tr>
+</table>
+<p>検討して外したもの：<b>SwiftUI で mac 専用に作る</b>（Core 約 5,500 行とテストを Swift で書き直し、2 つの言語を保守することになる）／<b>Wine・仮想マシンで WPF 版を動かす</b>（WebView2 が動かない。mac 側の Cursor・Claude Code のパスと噛み合わない）。</p>
+
+<h2>3. おすすめ案 A の構成（変更後）</h2>
+<svg viewBox="0 0 960 350" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="15" width="300" height="60" fill="#dff" stroke="#08a"/>
+<text x="18" y="35" font-weight="bold">Miharikun.Core</text><text x="18" y="53" font-size="12">そのまま＋数か所（Hook の名前・パスの表記）</text><text x="18" y="69" font-size="11" fill="#666">net10.0・AOT 互換のまま</text>
+<rect x="330" y="15" width="250" height="60" fill="#dff" stroke="#08a"/>
+<text x="338" y="35" font-weight="bold">Miharikun.Docs</text><text x="338" y="53" font-size="12">そのまま（md→HTML）</text>
+<rect x="600" y="15" width="350" height="60" fill="#dfd" stroke="#383"/>
+<text x="608" y="35" font-weight="bold">Miharikun.Hook（Cursor 用・NativeAOT）</text><text x="608" y="53" font-size="12">コードはそのまま。発行先を 2 つにする</text><text x="608" y="69" font-size="11" fill="#666">win-x64（Windows）と osx-arm64（mac のランナーで）</text>
+<line x1="160" y1="75" x2="160" y2="115" stroke="#333" marker-end="url(#a)"/>
+<line x1="455" y1="75" x2="455" y2="115" stroke="#333" marker-end="url(#a)"/>
+<rect x="10" y="115" width="940" height="80" fill="#dfd" stroke="#383"/>
+<text x="18" y="135" font-weight="bold">Miharikun.Presentation（新規・net10.0）</text>
+<text x="330" y="135" font-size="12" fill="#c05000">← いまの ViewModel を、WPF から切り離して移す</text>
+<text x="18" y="155" font-size="12">MainViewModel・SessionDetail・Timeline・Documents・Memo など。WPF も Avalonia も参照しない。</text>
+<text x="18" y="173" font-size="12">タイマー・クリップボード・「フォルダで表示」・確認ダイアログは interface（例：IUiServices）越しに使う。</text>
+<text x="18" y="189" font-size="11" fill="#666">おまけ：ViewModel のテストが net10.0 で書けるようになる（いまは画面のプロジェクトの中なので書けない）</text>
+<line x1="480" y1="195" x2="480" y2="215" stroke="#333" marker-end="url(#a)"/>
+<rect x="10" y="215" width="940" height="70" fill="#dfd" stroke="#383"/>
+<text x="18" y="235" font-weight="bold">Miharikun（Avalonia 12・net10.0）</text>
+<text x="290" y="235" font-size="12" fill="#c05000">← 画面を作り直し。Windows と mac で同じもの</text>
+<text x="18" y="255" font-size="12">3 ペイン・タブ・分割バー・拡大モードは、いまと同じ配置。プレビューは NativeWebView（リンクの振り分けは今の規則のまま）。</text>
+<text x="18" y="273" font-size="12">テーマは Avalonia の Fluent（ライト/ダーク・OS に追従）。色の定義（Colors.Light / Dark）は移して使う。</text>
+<line x1="240" y1="285" x2="240" y2="300" stroke="#333" marker-end="url(#a)"/>
+<line x1="720" y1="285" x2="720" y2="300" stroke="#333" marker-end="url(#a)"/>
+<rect x="10" y="300" width="460" height="40" fill="#eee" stroke="#888"/>
+<text x="18" y="325" font-size="12">Windows（win-x64）：WebView2・エクスプローラー・Ctrl・zip で配布</text>
+<rect x="490" y="300" width="460" height="40" fill="#eee" stroke="#888"/>
+<text x="498" y="325" font-size="12">macOS（osx-arm64）：WKWebView・Finder・⌘・.app で配布</text>
+</svg>
+
+<pre>
+src/
+├─ Miharikun.Core            そのまま（数か所：Hook の名前を OS で変える、など）
+├─ Miharikun.Docs            そのまま
+├─ Miharikun.Hook            そのまま（発行先に osx-arm64 を足す）
+├─ Miharikun.Presentation    新規：ViewModel（net10.0。画面の仕組みを参照しない）
+└─ Miharikun                 Avalonia 12 で作り直し（net10.0。Windows・mac 共通）
+tests/Miharikun.Tests        ViewModel のテストも置けるようになる／パスを OS 別に
+</pre>
+<p>決まり（CLAUDE.md）との関係：App は <code>AgentEvent</code> だけを扱う・Core は AOT 互換・<code>~/.claude/</code> には何も書かない、はどれも<b>変わらない</b>（触るのは画面の層と配布だけ）。</p>
+
+<h2>4. 画面イメージ（案 A）</h2>
+<svg viewBox="0 0 960 330" width="960" font-size="12" font-family="sans-serif">
+<text x="10" y="18" font-weight="bold">Windows（いま）</text>
+<text x="495" y="18" font-weight="bold">macOS（案 A。Windows も同じ部品で作る）</text>
+<!-- Windows -->
+<rect x="5" y="28" width="460" height="250" fill="#fff" stroke="#999"/>
+<rect x="5" y="28" width="460" height="24" fill="#f3f3f3" stroke="#999"/>
+<text x="14" y="45" font-size="11" fill="#444">Miharikun - C:\work\proj</text><text x="400" y="45" font-size="11" fill="#444">—　☐　✕</text>
+<rect x="5" y="52" width="460" height="26" fill="#fff" stroke="#ccc"/>
+<rect x="12" y="56" width="86" height="18" fill="#cfe3ff" stroke="#08c"/><text x="16" y="69" font-size="11">ダッシュボード</text>
+<text x="106" y="69" font-size="11">ドキュメント</text><text x="178" y="69" font-size="11">メモ</text>
+<text x="345" y="69" font-size="11" fill="#666">C:\work\proj　⚙</text>
+<rect x="10" y="82" width="140" height="190" fill="#fafafa" stroke="#bbb"/><text x="18" y="98" font-weight="bold" font-size="11">左：一覧</text>
+<rect x="16" y="106" width="128" height="34" fill="#fff" stroke="#ccc" rx="4"/><rect x="16" y="146" width="128" height="34" fill="#fff" stroke="#ccc" rx="4"/>
+<rect x="155" y="82" width="165" height="190" fill="#fafafa" stroke="#bbb"/><text x="163" y="98" font-weight="bold" font-size="11">中央：詳細</text>
+<rect x="161" y="106" width="153" height="40" fill="#fff" stroke="#ccc"/><rect x="161" y="152" width="153" height="60" fill="#fff" stroke="#ccc"/>
+<rect x="325" y="82" width="135" height="190" fill="#fafafa" stroke="#bbb"/><text x="333" y="98" font-weight="bold" font-size="11">右：メモ・タイムライン</text>
+<rect x="331" y="106" width="123" height="50" fill="#fff" stroke="#ccc"/><rect x="331" y="162" width="123" height="104" fill="#fff" stroke="#ccc"/>
+<!-- mac -->
+<rect x="495" y="28" width="460" height="250" fill="#fff" stroke="#999"/>
+<rect x="495" y="28" width="460" height="24" fill="#e8f1fd" stroke="#0b63c5"/>
+<circle cx="507" cy="40" r="5" fill="#ff5f57"/><circle cx="521" cy="40" r="5" fill="#febc2e"/><circle cx="535" cy="40" r="5" fill="#28c840"/>
+<text x="640" y="45" font-size="11" fill="#444">Miharikun - /Users/…/proj</text>
+<rect x="495" y="52" width="460" height="26" fill="#fff" stroke="#ccc"/>
+<rect x="502" y="56" width="86" height="18" fill="#cfe3ff" stroke="#08c"/><text x="506" y="69" font-size="11">ダッシュボード</text>
+<text x="596" y="69" font-size="11">ドキュメント</text><text x="668" y="69" font-size="11">メモ</text>
+<text x="820" y="69" font-size="11" fill="#666">~/proj　⚙</text>
+<rect x="500" y="82" width="140" height="190" fill="#fafafa" stroke="#bbb"/><text x="508" y="98" font-weight="bold" font-size="11">左：一覧</text>
+<rect x="506" y="106" width="128" height="34" fill="#fff" stroke="#ccc" rx="4"/><rect x="506" y="146" width="128" height="34" fill="#fff" stroke="#ccc" rx="4"/>
+<rect x="645" y="82" width="165" height="190" fill="#fafafa" stroke="#bbb"/><text x="653" y="98" font-weight="bold" font-size="11">中央：詳細</text>
+<rect x="651" y="106" width="153" height="40" fill="#fff" stroke="#ccc"/><rect x="651" y="152" width="153" height="60" fill="#fff" stroke="#ccc"/>
+<rect x="815" y="82" width="135" height="190" fill="#fafafa" stroke="#bbb"/><text x="823" y="98" font-weight="bold" font-size="11">右：メモ・タイムライン</text>
+<rect x="821" y="106" width="123" height="50" fill="#fff" stroke="#ccc"/><rect x="821" y="162" width="123" height="104" fill="#fff" stroke="#ccc"/>
+<text x="10" y="300" font-size="12" fill="#c05000">変わる所：タイトルバー（mac は OS 標準で、閉じるボタン類は左）・背景は Win＝Mica／mac＝すりガラス・ボタン類はテーマ（Q7）の見た目・</text>
+<text x="10" y="318" font-size="12" fill="#c05000">mac では保存が ⌘S、「フォルダで開く」が「Finder で表示」、等幅フォントは Menlo など。　変わらない所：上記以外（配置・項目・操作）。</text>
+</svg>
+
+<h3>画面で変わる所・変わらない所（案 A）</h3>
+<table>
+<tr><th>区分</th><th>内容</th></tr>
+<tr><td class="ok">変わらない</td><td>タブ 3 つ（ダッシュボード／ドキュメント／メモ）、対象フォルダと ⚙ の位置と ⚙ メニューの中身、3 ペインと分割バー、カード・ステータスとエージェントのチップ・検索、詳細の各ブロック、タイムライン（絞り込み・検索・コピー・拡大モード）、ドキュメントのツリー／一覧／概要／プレビュー、メモタブ（プレビュー⇄編集・未保存の確認）、設定ダイアログ。<b>機能はすべて同じ</b></td></tr>
+<tr><td class="rec">変わる（両 OS）</td><td>タイトルバー（WPF-UI の独自のもの → Avalonia。Windows は今に近い形にできる）、ボタン・入力欄の細かい見た目（テーマは Q7）。背景：Windows は Avalonia でも Mica を指定できる（12 でタイトルバーの拡張と組み合わせたときの不具合報告あり。要確認）、mac はすりガラス（Blur）にできる</td></tr>
+<tr><td class="rec">変わる（mac だけ）</td><td>閉じる・最小化ボタンが左上、ショートカットは ⌘（⌘S で保存）、「フォルダで開く」→「Finder で表示」、WebView2 Runtime が無いときの案内は出ない（WKWebView は OS に入っている）、等幅フォントの名前</td></tr>
+<tr><td>任意（やらなくてよい）</td><td>mac の上のメニューバーに「設定…（⌘,）」を足す。⚙ メニューは残すので、無くても困らない</td></tr>
+</table>
+
+<h2>5. 進め方と改修規模（案 A）</h2>
+<table>
+<tr><th>Phase（要件定義 15 章）</th><th>内容</th><th>規模</th><th>難しさ</th></tr>
+<tr><td>27. mac の実機確認（Step 0）</td><td><b>最初に、mac の Hobby プランで Hook が呼ばれるか</b>（Windows の Hobby では動いている）。そのうえで mac に Cursor の Hook を入れ、入力の JSON の形・<code>workspace_roots</code>・空白入りのコマンドの起動、Claude のフォルダ名、Cursor の会話ログの場所を<b>構造だけ</b>数える（本文は引用しない）。結果を要件 14 章に追記</td><td>小</td><td>低（mac の実機が要る）</td></tr>
+<tr><td>28. ViewModel を WPF から切り離す</td><td><code>Miharikun.Presentation</code> を作り、ViewModel を移す。タイマー・絞り込み・クリップボード・ダイアログを interface 越しに。ViewModel のテストを足す。<b>挙動は変えない</b>（WPF 版で動作を確かめられる最後の地点。WPF 側は配線だけ直す）</td><td>中</td><td>中</td></tr>
+<tr><td>29. Core・テストの mac 対応</td><td>Hook の名前・パスの表記・Finder／エクスプローラー。テストのパスを OS 別に。CI に macOS でのテストを足す</td><td>小〜中</td><td>低</td></tr>
+<tr><td>30. Avalonia でダッシュボード</td><td><b>最初に WPF のプロジェクトを消して Avalonia に置き換え</b>、FluentTheme と SukiUI の試作と見比べ（Q7）、日本語入力の試作。そのあと 3 ペイン・カード・詳細・タイムライン（仮想化・ジャンプ）・拡大モード・テーマ・mac の起動時のフォルダ選択（Q6）</td><td>大</td><td>中</td></tr>
+<tr><td>31. ドキュメント・メモタブ</td><td>NativeWebView・リンクの振り分け・md の一時 HTML・未保存の確認・設定ダイアログ。<b>最初に WKWebView の <code>file://</code> を試作で確かめる</b></td><td>中〜大</td><td>中〜高</td></tr>
+<tr><td>32. 配布</td><td><code>.app</code>（osx-arm64）、Hook の NativeAOT を macOS のランナーで、アドホック署名と解除の手順（7 章）、README・<code>docs/release.md</code></td><td>中</td><td>中</td></tr>
+<tr><td>33. 両 OS の通し確認</td><td>Windows と mac の実機で、Cursor と Claude Code の両方を通す</td><td>小〜中</td><td>低</td></tr>
+</table>
+<p>書き直すのは画面（XAML 約 1,400 行・画面まわりの C# 約 1,100 行）。ViewModel 約 2,100 行は移して一部を直す。Core 約 5,500 行・Docs・Hook・テスト 842 件はほぼそのまま。<b>全体でメモタブ（Phase 23〜26 の 4 フェーズ）の 2 倍弱</b>が目安。</p>
+<p>すべて 1 つの作業ブランチで進める（Q2-A）。main は切り替えまで WPF 版（v0.4.x）のままで、<b>main に入るのは Avalonia 版だけ</b>（WPF と Avalonia が main で混ざる時期を作らない）。</p>
+
+<h2>6. 決まったこと・残っている問い</h2>
+<table>
+<tr><th style="width:30%">問い</th><th>決定（2026-10-06）</th></tr>
+<tr><td>Q1. どの案で進めるか</td><td><b>A：Avalonia 12</b>（画面を作り直し、Windows と mac で 1 つにする）</td></tr>
+<tr><td>Q2. Windows 版の切り替え方</td><td><b>A：一気に切り替え</b>（別ブランチで作り、WPF と Avalonia を混ぜない。読みやすさと保守のため）</td></tr>
+<tr><td>Q3. mac 版の配り方</td><td><b>B：署名なし＋ README に解除の手順</b>（くわしくは 7 章）</td></tr>
+<tr><td>Q4. 対象の mac</td><td><b>A：Apple Silicon（osx-arm64）だけ</b></td></tr>
+<tr><td>Q5. mac で使うエージェント・確認の環境</td><td>Cursor を使える mac がある（プランは Hobby）。<b>Windows の Hobby では Hook が実際に動いている</b>ので、mac の Hobby でも動く見込み。Phase 27 で最初に確かめ、動かなければ会話ログ（<code>agent-transcripts</code>）の取り込みで出す（Issue #17 の Q2 と同じ道）</td></tr>
+<tr><td>Q6. mac での対象フォルダの指定</td><td><b>A：引数が無いとき（mac だけ）、起動時に OS 標準の「フォルダを選ぶ」画面を出す</b>。README にターミナルからの開き方（<code>open -n -a Miharikun --args "$PWD"</code>。<code>-n</code> でプロジェクトごとに別ウィンドウ）。Windows はいまのまま</td></tr>
+</table>
+<p style="font-size:13px;color:#666">メモ：Cursor の料金ページでは「MCPs, skills, and hooks」が Pro 以上の欄にある（2026-10-06 時点）が、Windows の Hobby では実際に動いている。将来 Hobby で止められる可能性はあるので、Hook が無くても出せる道（Issue #17）は持っておく。</p>
+
+<p><b>Q7 の決定（2026-10-06）：FluentTheme（A）と SukiUI（C）の 2 つで試作し、見比べて決める</b>（Phase 30-2。Semi は外した）。SukiUI（MIT。7.0 系は Avalonia 12 対応）は、①ふつうのウィンドウで崩れない ②340px の右ペインにチップ 5 つと検索が 1 行で収まる ③日本語が OS のフォントで出る ④OS のライト/ダークの変更に追従する、も確かめて判断の材料にする。SukiUI を選んだときは、ウィンドウの中に重ねるダイアログ・通知（WebView の下に隠れる）と、背景のアニメーションは使わない。下は検討したときの選択肢。</p>
+<div class="q"><b>Q7（決定済み：A と C で試作して見比べる）.</b> 見た目のテーマ（配置・項目は変えず、色・角丸・影・余白・ちょっとした動きだけ）。<br>
+A) Avalonia 標準の FluentTheme … 公式なので保守が確実／いまの WPF-UI とほぼ同じ雰囲気（「同じか、少し素朴」）<br>
+B) Semi.Avalonia（Semi Design） … 整った業務アプリ風で、部品と余白の作りがきれい／外部ライブラリに頼る<br>
+C) SukiUI … いちばん「モダン」寄り（フラット・カード・ガラス風・動き）／癖が強く、情報の多い 3 ペインに合うかは要確認<br>
+D) FluentAvalonia・Fluid.Avalonia … Windows 11（Fluent 2）らしさが一番／mac では Windows 風に見える<br>
+<span class="rec">推奨：Phase 30 の最初に、A と B（できれば C）で同じ 1 画面（カード一覧＋詳細のヘッダー、ライト/ダーク）を試作し、スクリーンショットで見比べて決める</span>（迷ったら A に、自前の色・角丸・影の調整。外部テーマの Avalonia 12 対応と保守の続き具合も、そのとき確かめる）</div>
+
+<h2>7. 署名なしで配る（Q3-B）のしくみと手順</h2>
+<h3>7.1 なぜ止まるのか、どう開くのか</h3>
+<svg viewBox="0 0 960 330" width="960" font-size="12" font-family="sans-serif">
+<!-- 1 段目：ブラウザで取ったとき -->
+<text x="10" y="20" font-size="12" font-weight="bold">ブラウザで取ったとき</text>
+<rect x="10" y="30" width="172" height="66" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="49" font-weight="bold">GitHub の Release</text><text x="18" y="67" font-size="11">Miharikun-v0.x-</text><text x="18" y="83" font-size="11">osx-arm64.zip</text>
+<rect x="202" y="30" width="172" height="66" fill="#eee" stroke="#888"/>
+<text x="210" y="49" font-weight="bold">ブラウザで保存</text><text x="210" y="67" font-size="11">macOS が「隔離」の印を付ける</text><text x="210" y="83" font-size="11">（com.apple.quarantine）</text>
+<rect x="394" y="30" width="172" height="66" fill="#eee" stroke="#888"/>
+<text x="402" y="49" font-weight="bold">ダブルクリックで展開</text><text x="402" y="67" font-size="11">中の .app と Hook にも</text><text x="402" y="83" font-size="11">印が引き継がれる</text>
+<rect x="586" y="30" width="172" height="66" fill="#eee" stroke="#888"/>
+<text x="594" y="49" font-weight="bold">Miharikun.app を開く</text><text x="594" y="67" font-size="11">印があるので Gatekeeper が</text><text x="594" y="83" font-size="11">署名と公証を調べる</text>
+<rect x="778" y="30" width="172" height="66" fill="#fde" stroke="#b33"/>
+<text x="786" y="49" font-weight="bold" fill="#b33">公証が無い → 止まる</text><text x="786" y="67" font-size="11">「“Miharikun”は</text><text x="786" y="83" font-size="11">開いていません」</text>
+<line x1="182" y1="63" x2="202" y2="63" stroke="#333" marker-end="url(#a)"/>
+<line x1="374" y1="63" x2="394" y2="63" stroke="#333" marker-end="url(#a)"/>
+<line x1="566" y1="63" x2="586" y2="63" stroke="#333" marker-end="url(#a)"/>
+<line x1="758" y1="63" x2="778" y2="63" stroke="#333" marker-end="url(#a)"/>
+<!-- 2 段目：解除の 2 つの道 -->
+<rect x="586" y="140" width="172" height="72" fill="#dfd" stroke="#383"/>
+<text x="594" y="159" font-weight="bold">やり方 1（おすすめ）</text><text x="594" y="176" font-size="11">ターミナルで xattr を 1 行</text><text x="594" y="192" font-size="11">→ 印を消す（Hook も</text><text x="594" y="208" font-size="11">まとめて）</text>
+<rect x="778" y="140" width="172" height="72" fill="#dfd" stroke="#383"/>
+<text x="786" y="159" font-weight="bold">やり方 2（画面から）</text><text x="786" y="176" font-size="11">システム設定 →</text><text x="786" y="192" font-size="11">プライバシーとセキュリティ</text><text x="786" y="208" font-size="11">→「このまま開く」</text>
+<line x1="830" y1="96" x2="690" y2="140" stroke="#333" marker-end="url(#a)"/>
+<line x1="880" y1="96" x2="880" y2="140" stroke="#333" marker-end="url(#a)"/>
+<!-- 2 段目左：ターミナルで取ったとき -->
+<text x="10" y="132" font-size="12" font-weight="bold">ターミナルで取ったとき</text>
+<rect x="10" y="140" width="172" height="72" fill="#e8f1fd" stroke="#0b63c5"/>
+<text x="18" y="159" font-weight="bold">ターミナルで取る</text><text x="18" y="177" font-size="11">gh release download</text><text x="18" y="193" font-size="11">または curl</text>
+<rect x="202" y="140" width="172" height="72" fill="#e8f1fd" stroke="#0b63c5"/>
+<text x="210" y="159" font-weight="bold">印が付かない</text><text x="210" y="177" font-size="11">印を付けるのは、ブラウザ</text><text x="210" y="193" font-size="11">やメールなどのアプリ</text>
+<rect x="394" y="140" width="172" height="72" fill="#e8f1fd" stroke="#0b63c5"/>
+<text x="402" y="159" font-weight="bold">ditto で展開</text><text x="402" y="177" font-size="11">止められずに</text><text x="402" y="193" font-size="11">そのまま開ける</text>
+<line x1="182" y1="176" x2="202" y2="176" stroke="#333" marker-end="url(#a)"/>
+<line x1="374" y1="176" x2="394" y2="176" stroke="#333" marker-end="url(#a)"/>
+<!-- 3 段目：開ける -->
+<rect x="586" y="250" width="364" height="66" fill="#dfd" stroke="#383" stroke-width="2"/>
+<text x="594" y="270" font-weight="bold">開ける。2 回目からは確認なし</text>
+<text x="594" y="288" font-size="11">新しい版に入れ替えたら、もう一度同じ手順</text>
+<text x="594" y="304" font-size="11">（新しい zip にも、また印が付くため）</text>
+<line x1="672" y1="212" x2="672" y2="250" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<line x1="864" y1="212" x2="864" y2="250" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<polyline points="480,212 480,283 586,283" fill="none" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+</svg>
+<ul>
+<li>「隔離」の印（<code>com.apple.quarantine</code>）は、<b>ブラウザなどがダウンロードしたファイルに付ける目印</b>。印の付いたアプリを初めて開くとき、macOS（Gatekeeper）が「Apple に登録した開発者の署名」と「Apple の公証（マルウェア検査）」を調べる。どちらも無いので止まる。</li>
+<li><b>アプリの中身が壊れているわけではない</b>。止まるのは「印がある＋公証が無い」ときだけで、印を消すか、利用者が「開いてよい」と許すと、ふつうに開ける。</li>
+<li>macOS 15（Sequoia）以降は、以前の「Control キーを押しながらクリック → 開く」では開けなくなった。いまは<b>システム設定から許す</b>か、<b>ターミナルで印を消す</b>かの 2 つ。</li>
+</ul>
+
+<h3>7.2 利用者の 2 つの開き方</h3>
+<table>
+<tr><th style="width:16%"></th><th style="width:42%">やり方 1：ターミナルで 1 行（おすすめ）</th><th>やり方 2：画面から</th></tr>
+<tr><td>手順</td><td>① zip を展開して <code>Miharikun.app</code> を「アプリケーション」に移す<br>② ターミナルで<br><code>xattr -dr com.apple.quarantine /Applications/Miharikun.app</code><br>③ ダブルクリックで開く</td><td>① <code>Miharikun.app</code> をダブルクリック →「開いていません」→「完了」<br>② システム設定 →「プライバシーとセキュリティ」→ 下の方の「“Miharikun”は開いていません…」の横の「<b>このまま開く</b>」<br>③ パスワード（または Touch ID）<br>④ もう一度開いて、確認に「このまま開く」</td></tr>
+<tr><td>利点</td><td>・1 回で .app の中身すべて（<b>Hook も</b>）の印が消える<br>・Cursor から呼ばれる Hook が止められる心配がない</td><td>・ターミナルを使わない</td></tr>
+<tr><td>欠点</td><td>・ターミナルを開く必要がある</td><td>・手順が長い。「このまま開く」のボタンは<b>約 1 時間で消える</b>（消えたら ① からやり直し）<br>・許したのは .app を開くことだけ。<b>アプリがコピーした Hook に印が残り、Cursor から呼ばれたときに止められるかもしれない</b>（要確認。対策は 7.3 の ⑤）</td></tr>
+</table>
+<p>ターミナルで取る場合（印が付かないので、上の手順は要らない）：</p>
+<pre>gh release download v0.x.0 --repo po-oq/Miharikun --pattern '*osx-arm64.zip'
+ditto -x -k Miharikun-v0.x.0-osx-arm64.zip /Applications</pre>
+
+<h3>7.3 配る側（CI）でやること</h3>
+<table>
+<tr><th>#</th><th>やること</th><th>なぜ</th></tr>
+<tr><td>①</td><td>GitHub Actions の macOS ランナー（<code>macos-latest</code>）で、App（自己完結）と Hook（NativeAOT）を <code>osx-arm64</code> で発行し、<code>Miharikun.app</code> にまとめる。Hook は <code>Miharikun.app/Contents/MacOS/Miharikun.Hook</code> に入れる</td><td>配る物を 1 つにして、やり方 1 の 1 行で Hook までまとめて許せるように</td></tr>
+<tr><td>②</td><td><code>codesign --force --deep --sign - Miharikun.app</code>（<b>アドホック署名</b>。証明書もお金も要らない）</td><td>Apple Silicon は、署名の無いプログラムをそもそも動かせない。署名が崩れた .app は「<b>壊れているため開けません</b>」と出て、7.2 の「このまま開く」の道も使えなくなる。アドホック署名は「中身が改ざんされていない」ことだけを示し、Apple の公証の代わりにはならない（だから印の解除は要る）</td></tr>
+<tr><td>③</td><td>zip は <code>ditto -c -k --keepParent Miharikun.app ….zip</code> で作る</td><td>実行の権限と署名を壊さずに固めるため（Windows の <code>Compress-Archive</code> で作ると、実行できない .app になる）</td></tr>
+<tr><td>④</td><td>zip の SHA-256 を Release に添える（<code>….zip.sha256</code>）</td><td>印を消す前に、ダウンロードした物が Release の物と同じか確かめられる</td></tr>
+<tr><td>⑤</td><td>アプリの「Hook の導入」で、コピーした Hook の印を消し、試しに 1 回起動して確かめる。だめなら、README のやり方 1 の 1 行を画面で案内する</td><td>やり方 2 で開いた人でも、Cursor から呼ばれた Hook が止められないように。止められると、Cursor の記録が黙って残らない（要確認：Phase 27 で、印つきの Hook を Cursor が呼ぶとどうなるかを見る）</td></tr>
+</table>
+
+<h3>7.4 README の下書き（mac の節）</h3>
+<pre>【macOS（Apple Silicon）】
+このアプリは Apple の署名・公証をしていません。初めて開くときだけ、次のどちらかで
+「開いてよい」と macOS に伝えてください（新しい版に入れ替えたときも同じ）。
+
+やり方 1（おすすめ。Cursor の Hook もまとめて許可されます）
+  1. zip をダブルクリックで展開し、Miharikun.app を「アプリケーション」に移す
+  2. ターミナルで次の 1 行を実行する
+       xattr -dr com.apple.quarantine /Applications/Miharikun.app
+  3. Miharikun.app をダブルクリックで開く
+
+やり方 2（ターミナルを使わない）
+  1. Miharikun.app をダブルクリック →「開いていません」と出たら「完了」
+  2. システム設定 →「プライバシーとセキュリティ」→ 下の方の
+     「“Miharikun”は開いていません」の横の「このまま開く」（約 1 時間で消えます）
+  3. パスワードを入れ、もう一度開いて「このまま開く」
+
+確かめ方（任意）：ターミナルで
+       shasum -a 256 Miharikun-v0.x.0-osx-arm64.zip
+  の結果が、Release の .sha256 と同じなら、ダウンロードした物は Release の物と同じです。
+
+対象フォルダの指定
+  ダブルクリックで開くと、最初に対象のフォルダを選ぶ画面が出ます。
+  ターミナルからは、プロジェクトのフォルダで
+       open -n -a Miharikun --args "$PWD"
+  （-n を付けると、プロジェクトごとに別のウィンドウで開けます）
+
+注意：Release 以外から手に入れたものには、この操作をしないでください。
+      Gatekeeper 全体を止める設定（spctl --master-disable など）は不要です。</pre>
+
+<h3>7.5 A（署名＋公証）との違い</h3>
+<table>
+<tr><th></th><th>B：署名なし（決定）</th><th>A：署名＋公証</th></tr>
+<tr><td>費用</td><td>0</td><td>Apple Developer Program 年 99 USD</td></tr>
+<tr><td>利用者の手間</td><td>初回と、版を入れ替えるたびに 7.2 の手順</td><td>なし（ダウンロードしてすぐ開ける）</td></tr>
+<tr><td>CI の準備</td><td>アドホック署名だけ（秘密の情報は要らない）</td><td>証明書と Apple のアカウント情報を GitHub の Secrets に置き、公証の待ち時間（数分）が増える</td></tr>
+<tr><td>あとから切り替え</td><td colspan="2">B → A は、CI に署名・公証の手順を足し、README の解除の手順を消すだけ（アプリのコードは変えない）</td></tr>
+</table>
+
+<h2>8. リスクと対策（案 A）</h2>
+<table>
+<tr><th>#</th><th>リスク</th><th>対策</th></tr>
+<tr><td>1</td><td>mac の WKWebView が、md の一時 HTML（<code>~/Library/Application Support/Miharikun/preview</code>）から、<code>&lt;base&gt;</code> 先のプロジェクトの画像・相対リンクを読めない（WKWebView はファイルの読み取り範囲を絞る作り。NativeWebView がその範囲を指定できるかは要確認）</td><td>Phase 31 の最初に試作。だめなら、一時 HTML をやめて <code>NavigateToString</code>＋独自スキームでプロジェクトのファイルを読み取り専用で返す</td></tr>
+<tr><td>2</td><td>Cursor の Hook が mac で同じ形か分からない（<code>workspace_roots</code> の形、空白入りのパスのコマンド、実行のされ方）</td><td>Phase 27 で先に確かめる。空白で起動できなければ、Hook を空白の無い場所（例：<code>~/.miharikun/bin</code>）に置く</td></tr>
+<tr><td>3</td><td>署名なしの <code>.app</code> と Hook を Gatekeeper が止める。止まると Cursor の記録が残らない</td><td>7 章：アドホック署名・README の解除の手順・Hook の導入で印を消して試しに起動</td></tr>
+<tr><td>4</td><td>Windows 版も作り直すので、Windows で今動いている所が壊れる</td><td>Phase 28 で ViewModel を切り出してテストを足す（WPF 版で挙動が同じことを確かめてから置き換える）。作業ブランチで作り、切り替え前に main の WPF 版（v0.4.x）と画面を見比べ、Windows で通し確認</td></tr>
+<tr><td>5</td><td>日本語入力（IME）の変換中の表示・確定が、mac の Avalonia でおかしい（メモ・検索・名前の変更）</td><td>Phase 30 の最初に、入力欄だけの試作で確かめる</td></tr>
+<tr><td>6</td><td><code>DataTrigger</code> などの書き換えで、状態の色・バッジの出し分けを取りこぼす</td><td>状態ごとの見た目を表にして、両 OS・ライト/ダークで見比べる</td></tr>
+<tr><td>7</td><td>mac の <code>FileSystemWatcher</code> の通知の違い（まとめられる・名前変更の出方）</td><td>3 秒のポーリングと「読み直し」で吸収。<code>DocumentWatchTests</code>・<code>SessionMonitorWatchTests</code> を mac の CI で回す</td></tr>
+<tr><td>8</td><td>Hook の NativeAOT は mac の上でしか作れない（開発は Windows）</td><td>mac 版の Hook は GitHub Actions の macOS ランナーで作る。手元の確認は Phase 27 の実機で</td></tr>
+<tr><td>9</td><td>Avalonia 12 はまだ新しい（12.0 系）</td><td>12.0 系の最新の修正版を使う。難しい所（WebView・仮想化した一覧のジャンプ・IME）を先に試作する</td></tr>
+<tr><td>10</td><td>mac の Cursor（Hobby）で Hook が呼ばれない（料金ページでは hooks は Pro 以上。Windows の Hobby では動いている）</td><td>Phase 27 で最初に確かめる。だめなら会話ログの取り込みで出す（Issue #17 の Q2 と合わせる）</td></tr>
+<tr><td>11</td><td>見た目を良くしようとして、作業が膨らむ</td><td>Q7 は「配置・項目は変えず、色・角丸・影・余白・動きだけ」に留める。テーマは試作の 1 画面で決め、決めたあとは迷わない</td></tr>
+</table>
+
+<div class="sync"><b>反映済み（2026-10-06）</b>：要件定義 3 章（対象 OS・パスの書き方）・4 章・5 章（ソリューション構成・UI ライブラリ・配布）・6 章（保存先）・7 章・8 章と 8.1（署名なしの配布）・9 章（mac の起動時のフォルダ選択）・9.1・11 章・12 章（見た目）・12.5（テーマの決め方）・12.7・12.10・<b>12.11（Windows と mac の違い）</b>・13 章・<b>14.3（mac の Step 0）</b>・<b>15 章（Phase 27〜33）</b>・16 章・17 章。<br>
+<code>CLAUDE.md</code>（作業の決まり・必読）も反映済み。実装計画：<code>macos-support-plan.md</code>（図解 <code>macos-support-plan.html</code>。レビュー待ち）。これから：<code>CLAUDE.md</code> の 1 行目（Phase 33）、<code>docs/release.md</code>（Phase 32）。</div>
+
+<h2>9. 調べた範囲</h2>
+<ul>
+<li>コード：<code>Miharikun.slnx</code>、各 <code>.csproj</code>、<code>src/Miharikun/</code>（<code>App.xaml.cs</code>・<code>MainWindow.xaml(.cs)</code>・<code>ThemeService.cs</code>・<code>ShellOpen.cs</code>・<code>ClipboardHelper.cs</code>・<code>WebViewEnvironment.cs</code>・<code>PreviewFiles.cs</code>・<code>HookSetup.cs</code>・<code>Views/MarkdownPreview.xaml.cs</code>・<code>Views/IPreviewHost.cs</code>・ViewModel の WPF 依存）、<code>Core/Storage/AppPaths.cs</code>・<code>AtomicFile.cs</code>、<code>Core/Projects/ProjectPath.cs</code>、<code>Core/Sessions/ClaudeFolderName.cs</code>、<code>Core/Install/HookInstaller.cs</code>、<code>Core/Documents/DocumentWatcher.cs</code>、<code>Core/Agents/CursorTranscriptImporter.cs</code>、<code>Hook/Program.cs</code>・<code>GitProbe.cs</code>・<code>PayloadRecovery.cs</code>、<code>scripts/publish.ps1</code>、<code>.github/workflows/release.yml</code>、テストの Windows パスの数</li>
+<li>文書：<code>docs/miharikun-requirements.md</code>（3・5・5.1・6〜9.1・12・13 章）、<code>CLAUDE.md</code></li>
+<li>Web（調査日 2026-10-06）：
+<a href="https://avaloniaui.net/blog/the-avalonia-webview-is-going-open-source">Avalonia WebView のオープンソース化</a>、
+<a href="https://docs.avaloniaui.net/controls/web/nativewebview">NativeWebView の文書</a>、
+<a href="https://docs.avaloniaui.net/api/avalonia/controls/webviewnavigationstartingeventargs">WebViewNavigationStartingEventArgs</a>、
+<a href="https://github.com/AvaloniaUI/Avalonia.Controls.WebView/releases">Avalonia.Controls.WebView のリリース（12.0.0 で MIT）</a>、
+<a href="https://avaloniaui.net/blog/avalonia-12">Avalonia 12 のリリース</a>、
+<a href="https://github.com/unoplatform/uno/discussions/17990">Uno：Skia デスクトップの WebView2</a>、
+<a href="https://platform.uno/docs/articles/features/using-skia-hosting-native-controls.html">Uno：Skia でのネイティブ部品</a>、
+<a href="https://avaloniaui.net/xpf/pricing/business">Avalonia XPF の価格</a>、
+<a href="https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/8.0/getfolderpath-unix">.NET 8：Unix の GetFolderPath の変更</a>、
+<a href="https://cursor.com/pricing">Cursor の料金（hooks は Pro 以上の欄）</a>、
+<a href="https://mjtsai.com/blog/2024/07/05/sequoia-removes-gatekeeper-contextual-menu-override/">Sequoia で Control クリックの回避が廃止</a>、
+<a href="https://www.idownloadblog.com/2024/08/07/apple-macos-sequoia-gatekeeper-change-install-unsigned-apps-mac/">Sequoia での署名なしアプリの開き方</a>、
+<a href="https://docs.avaloniaui.net/docs/styling/themes">Avalonia のテーマ</a>、
+<a href="https://github.com/AvaloniaCommunity/awesome-avalonia">awesome-avalonia（外部テーマの一覧）</a>、
+<a href="https://github.com/Alpaq92/Fluid.Avalonia">Fluid.Avalonia</a>、
+<a href="https://docs.avaloniaui.net/docs/platform-specific-guides/windows">Avalonia の Windows 向けの手引き（Mica など）</a>、
+<a href="https://github.com/AvaloniaUI/Avalonia/issues/21082">v12：タイトルバーの拡張で Mica が効かない不具合の報告</a></li>
+<li>未確認（推測を含む所）：mac の Cursor の Hook の入力の形と起動のされ方、Cursor の会話ログの mac の場所、WKWebView の <code>file://</code> の読み取り範囲、<code>UseShellExecute</code> の mac での挙動、XPF での WPF-UI・WebView2、Photino の保守状況。表の中では「要確認」と書いた</li>
+</ul>
+</body></html>

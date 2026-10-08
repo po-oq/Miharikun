@@ -1,15 +1,24 @@
 # リリース手順
 
-配布用の zip（`Miharikun.exe` + `Miharikun.Hook.exe` + `README.txt`）は、GitHub Actions
-（`.github/workflows/release.yml`）が作り、GitHub の Releases ページに載せる。
-利用者は Releases ページから zip をダウンロードして使う。
+配布用の zip は、GitHub Actions（`.github/workflows/release.yml`）が **Windows と macOS の 2 つ**作り、GitHub の Releases ページに載せる。
+利用者は Releases ページから自分の OS の zip をダウンロードして使う。
+
+| OS | zip | 中身 |
+|---|---|---|
+| Windows | `Miharikun-v<版>-win-x64.zip` | `Miharikun.exe` + `Miharikun.Hook.exe` + `README.txt` |
+| macOS（Apple Silicon） | `Miharikun-v<版>-osx-arm64.zip` | `Miharikun.app`（中に Hook）+ `README.txt` |
+
+どちらにも、SHA-256 のファイル（`<zip 名>.sha256`）が付く（Release に計 4 ファイル）。
+README の文は `scripts/dist/README-win.txt`・`scripts/dist/README-mac.txt`（`{VERSION}` を版に置き換えて zip に入れる）。
 
 ## 先に知っておくこと
 
 - **バージョンは `v` + 数字3つ**（例：`v0.1.5`）。タグ名がそのまま zip 名とバージョンになる。
 - **一度出したバージョンは使い回さない**。直すときは次の番号（`v0.1.6`）で出す。
 - Release は**公開される**（リポジトリが public なら誰でも見られる）。
-- ビルドは `windows-latest` で動く（テスト → AOT 発行 → zip）。約 2〜3 分。
+- ビルドは `windows-latest` と `macos-latest`（Apple Silicon）の 2 つが並んで動く（テスト → AOT 発行 → zip）。それぞれ約 2〜3 分。
+- macOS の zip は **Apple の署名・公証をしていない**（アドホック署名だけ）。利用者は初回に「隔離」の印を外す（zip の README に手順）。
+- 両方の zip が揃ってから、Release に載る（片方が失敗したら Release は作られない）。
 
 ## 方法 1：タグを push する（基本）
 
@@ -24,12 +33,12 @@ git push origin v0.1.5
 
 1. 上の 4 行を実行する（`v0.1.5` は出したいバージョンに変える）。
 2. <https://github.com/po-oq/Miharikun/actions> で「release」の実行が緑になるのを待つ（2〜3 分）。
-3. <https://github.com/po-oq/Miharikun/releases> に、zip 付きの Release ができている。
+3. <https://github.com/po-oq/Miharikun/releases> に、両 OS の zip と `.sha256` が付いた Release ができている。
 
 ## 方法 2：GitHub の画面から作る
 
 コマンドを使わずに、Release の説明文を画面で書きたいときに使う。
-**公開した直後は zip が付いておらず、2〜3 分後にワークフローが自動で追加する。**
+**公開した直後は zip が付いておらず、2〜3 分後にワークフローが自動で追加する（両 OS の zip と `.sha256`）。**
 
 1. <https://github.com/po-oq/Miharikun/releases/new> を開く。
 2. **Select tag** を押し、`v0.1.5` のように入力して **Create new tag: v0.1.5 on publish** を選ぶ。
@@ -45,7 +54,8 @@ git push origin v0.1.5
 
 1. <https://github.com/po-oq/Miharikun/actions> を開き、左の **release** を選ぶ。
 2. **Run workflow** を押し、バージョン（例：`0.1.5`）を入れて、緑の **Run workflow** を押す。
-3. 実行が緑になったら、その実行を開き、下の **Artifacts** から zip をダウンロードできる。
+3. 実行が緑になったら、その実行を開き、下の **Artifacts** から zip をダウンロードできる（`Miharikun-v<版>-win-x64` と `Miharikun-v<版>-osx-arm64` の 2 つ。
+   ダウンロードしたものは二重の zip になっている。外側を展開すると、中に本物の zip と `.sha256` が出る）。
 
 コマンドで行うなら次のとおり。
 
@@ -70,12 +80,21 @@ gh run list --workflow release.yml --limit 3
 
 - [ ] `main` に最新の変更が入っている（`git status` がきれい、`git push` 済み）
 - [ ] ローカルで `dotnet test tests/Miharikun.Tests` が通る
-- [ ] 試運転で zip を作り、中身を確認した（必要なときだけ）
+- [ ] 試運転で zip を作り、中身を確認した（必要なときだけ。Windows の zip に `README.txt` と 2 つの exe、mac の zip に `Miharikun.app` と `README.txt`）
 - [ ] 本物の Cursor で、導入 → 会話 → ダッシュボード表示 を確認した（大きな変更のとき）
-- [ ] Claude Code のセッションが、導入なしでダッシュボードに混ざって出る（`%USERPROFILE%\.claude\projects\` を読み取りだけ。バッジ・チップでの絞り込み・「停止」の表示・⚙ → 「設定…」で変えた時間がすぐ効く。大きな変更のとき）
+- [ ] Claude Code のセッションが、導入なしでダッシュボードに混ざって出る（Windows は `%USERPROFILE%\.claude\projects\`、mac は `~/.claude/projects/` を読み取りだけ。バッジ・チップでの絞り込み・「停止」の表示・⚙ → 「設定…」で変えた時間がすぐ効く。大きな変更のとき）
 - [ ] 試運転の zip の Miharikun.exe で、「ドキュメント」タブに md / html が表示される（WebView2 を使うので、単一ファイル発行で動くか。大きな変更のとき）
+- [ ] **mac（大きな変更のとき。試運転の mac の zip で）**：
+  - zip を展開 → README どおり `xattr -dr com.apple.quarantine <Miharikun.app の場所>` → 起動できる（Finder から開くとフォルダ選択の画面が出る。キャンセルで終了する）
+  - `open -n -a Miharikun --args "$(pwd -P)"` で、プロジェクトのフォルダを指定して起動できる（別のフォルダなら 2 つ目が開く）
+  - ⚙ →「Hook を導入 / 再導入」→ 印の解除と試しの起動が通り、`~/Library/Application Support/Miharikun/bin/` に Hook ができて、`~/.cursor/hooks.json` に登録される → 本物の Cursor で会話して、ダッシュボードに出る
+  - 版を上げた zip で入れ替えて再導入すると、Hook が更新される
+  - `.app` を「アプリケーション」以外（ダウンロードフォルダなど）に置いたときの Hook の案内が出る
+  - 書類フォルダなどの中のプロジェクトを初めて開くと、ファイルとフォルダの許可を聞かれ、「許可」で読める
+  - 「ドキュメント」「メモ」のプレビュー、⌘S、⌘Q・Dock の「終了」・閉じるボタンでの未保存の確認
+  - ライト/ダークの両方（ダークで、md の読み込み時に白く光らない）
 - [ ] 「メモ」タブで、書く → 保存（Ctrl+S）→ プレビューに出る → 再起動後も残る。キャンセル・未保存で閉じるときの確認が効く。メモ内の md リンクが「ドキュメント」タブで開く（大きな変更のとき）
-- [ ] Hook の置き場所（Issue #17。大きな変更のとき。`MIHARIKUN_DATA_DIR`・`MIHARIKUN_CURSOR_DIR` で一時フォルダに向けて確かめる）：
+- [ ] Hook の置き場所（Issue #17。大きな変更のとき。`MIHARIKUN_DATA_DIR`・`MIHARIKUN_CURSOR_DIR` で一時フォルダに向けて確かめる。Windows と mac の両方で。保存先は Windows が `%LOCALAPPDATA%\Miharikun\`、mac が `~/Library/Application Support/Miharikun/`）：
   - hooks.json の登録を別の場所（13 イベント全部）に書き換えて起動 → ダイアログが出ず、`settings.json` に `hookDir` が入り、`app.log` に 1 行出る（次の起動でも出ない）
   - ⚙ → 「設定…」で置き場所を変える（存在しないフォルダ・相対パスは保存できない）→ 導入し直す？ → はいで 13 件がその場所に変わり exe がコピーされる／いいえなら hooks.json は変わらない
-- [ ] 「Hook なし」の警告（Issue #17。大きな変更のとき）：Hook の登録あり・events なしで新しい transcript がある → 一覧の上に黄色の帯が出て、カードは「Hook なし」（件数には入らない）。Hook の記録ができる、または ⚙ →「Hook を削除」で帯が消える。ライト/ダークの両方。Hook が動いている本物の Cursor で、新しいチャットや古いチャットを開くだけでは帯が出ない
+- [ ] 「Hook なし」の警告（Issue #17。大きな変更のとき）：Hook の登録あり・events なしで新しい transcript がある → 一覧の上に黄色の帯が出て、カードは「Hook なし」（件数には入らない）。Hook の記録ができる、または ⚙ →「Hook を削除」で帯が消える。ライト/ダークの両方。Hook が動いている本物の Cursor で、新しいチャットや古いチャットを開くだけでは帯が出ない。mac でも同じ（帯の文は「この Mac で Hook の実行が止められている可能性があります」）

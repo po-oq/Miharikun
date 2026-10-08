@@ -6,7 +6,7 @@ namespace Miharikun.Tests.Core;
 
 public sealed class ProjectMemoStoreTests : IDisposable
 {
-    private const string Project = @"C:\work\proj";
+    private static readonly string Project = TestPaths.Abs("work", "proj");
 
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "miharikun-memo-" + Guid.NewGuid().ToString("N"));
     private readonly AppPaths _paths;
@@ -33,10 +33,17 @@ public sealed class ProjectMemoStoreTests : IDisposable
         var json = _paths.ProjectSettingsFile(Project);
         Assert.Equal(Path.GetDirectoryName(json), Path.GetDirectoryName(memo));
         Assert.Equal(Path.GetFileNameWithoutExtension(json) + ".memo.md", Path.GetFileName(memo));
-        Assert.Matches(@"^c-work-proj-[0-9a-f]{8}\.memo\.md$", Path.GetFileName(memo));
+        var slug = OperatingSystem.IsWindows() ? "c-work-proj" : "work-proj";
+        Assert.Matches($@"^{slug}-[0-9a-f]{{8}}\.memo\.md$", Path.GetFileName(memo));
     }
 
-    [Fact]
+    [MacFact]
+    public void Mac_case_and_trailing_separator_do_not_change_the_file()
+    {
+        Assert.Equal(FileOf(Project), FileOf("/WORK/Proj/"));
+    }
+
+    [WindowsFact]
     public void Case_and_trailing_separator_do_not_change_the_file()
     {
         Assert.Equal(FileOf(Project), FileOf(@"c:\WORK\Proj\"));
@@ -45,7 +52,7 @@ public sealed class ProjectMemoStoreTests : IDisposable
     [Fact]
     public void Different_projects_get_different_files()
     {
-        Assert.NotEqual(FileOf(@"C:\work\a"), FileOf(@"C:\work\b"));
+        Assert.NotEqual(FileOf(TestPaths.Abs("work", "a")), FileOf(TestPaths.Abs("work", "b")));
     }
 
     [Fact]
@@ -144,7 +151,8 @@ public sealed class ProjectMemoStoreTests : IDisposable
         Assert.Equal("メモ", _store.Load(Project).Text);
     }
 
-    [Fact]
+    /// <summary>開いているファイルへの上書きが失敗するのは Windows の挙動（mac は名前の付け替えで置き換わる）。</summary>
+    [WindowsFact]
     public void Save_failure_is_thrown_to_the_caller()
     {
         _store.Save(Project, "a");

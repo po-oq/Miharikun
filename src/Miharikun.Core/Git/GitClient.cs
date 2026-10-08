@@ -128,17 +128,33 @@ public sealed partial class GitClient
         return Projects.ProjectPath.Normalize(path);
     }
 
+    /// <summary>
+    /// リポジトリのルート（論理パス）。<c>--show-toplevel</c> は実パスを返す（mac は <c>/var</c> → <c>/private/var</c> など）ので、
+    /// 作業フォルダからの相対（<c>--show-cdup</c>）で、いま使っているパスのままのルートを作る（計画 7.14。
+    /// 未コミットの判定が、対象フォルダ（論理）で比べるため）。作業ツリーの中でなければ <c>--show-toplevel</c> が失敗して null。
+    /// </summary>
     private string? FindRepoRoot()
     {
-        var result = Run("rev-parse", "--show-toplevel");
-        return result is { ExitCode: 0 } r && r.Output.Trim() is { Length: > 0 } root ? root : null;
+        var result = Run("rev-parse", "--show-toplevel", "--show-cdup");
+        if (result is not { ExitCode: 0 } r)
+            return null;
+
+        var lines = r.Output.Split('\n');
+        if (lines.Length == 0 || lines[0].Trim().Length == 0)
+            return null;
+        var cdup = lines.Length > 1 ? lines[1].Trim() : "";
+        var full = Path.GetFullPath(cdup.Length == 0 ? _workDir : Path.Combine(_workDir, cdup));
+        return Path.TrimEndingDirectorySeparator(full);
     }
 
     private (int ExitCode, string Output)? Run(params string[] args)
     {
         try
         {
-            var psi = new ProcessStartInfo("git")
+            if (GitLocator.Find() is not { } git)
+                return null;   // git が無い（mac で Command Line Tools が無いときなど）。「不明」として扱う
+
+            var psi = new ProcessStartInfo(git)
             {
                 WorkingDirectory = _workDir,
                 RedirectStandardOutput = true,

@@ -7,7 +7,11 @@ public sealed class ClaudeLocationsTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "miharikun-claude-" + Guid.NewGuid().ToString("N"));
     private readonly List<string> _logs = [];
-    private const string Project = @"C:\work\proj";
+    private static readonly string Project = TestPaths.Abs("work", "proj");
+
+    /// <summary>Windows 式のフォルダ名（<c>C--work-proj</c>）を、この OS の形にする（mac は <c>-work-proj</c>）。</summary>
+    private static string Os(string windowsName) =>
+        OperatingSystem.IsWindows() ? windowsName : System.Text.RegularExpressions.Regex.Replace(windowsName, "^[A-Za-z]--", "-");
 
     public void Dispose()
     {
@@ -17,7 +21,7 @@ public sealed class ClaudeLocationsTests : IDisposable
     private string ClaudeDir => Path.Combine(_root, ".claude");
     private string ProjectsDir => Path.Combine(ClaudeDir, "projects");
 
-    private ClaudeLocations Locations(string project = Project) => new(ClaudeDir, project, _logs.Add);
+    private ClaudeLocations Locations(string? project = null) => new(ClaudeDir, project ?? Project, _logs.Add);
 
     private string MakeFolder(string name)
     {
@@ -33,7 +37,7 @@ public sealed class ClaudeLocationsTests : IDisposable
 
     // ---- フォルダ名の規則 ----
 
-    [Theory]
+    [WindowsTheory]
     [InlineData(@"C:\zDev\repo\Miharikun", "C--zDev-repo-Miharikun")]
     [InlineData(@"C:\zDev\repo\Miharikun\", "C--zDev-repo-Miharikun")]       // 末尾の区切りは落とす
     [InlineData("C:/zDev/repo/Miharikun", "C--zDev-repo-Miharikun")]         // / 区切りも同じ
@@ -46,12 +50,32 @@ public sealed class ClaudeLocationsTests : IDisposable
         Assert.Equal(expected, ClaudeFolderName.For(path));
     }
 
-    [Fact]
+    [MacTheory]
+    [InlineData("/Users/x/repo", "-Users-x-repo")]
+    [InlineData("/Users/x/repo/", "-Users-x-repo")]                          // 末尾の区切りは落とす
+    [InlineData("/Users/x/my proj", "-Users-x-my-proj")]
+    [InlineData("/Users/x/a.b/c_d", "-Users-x-a-b-c-d")]                     // . と _ も 1 文字ずつ -
+    [InlineData("/Users/x/repo/.claude/worktrees/w1", "-Users-x-repo--claude-worktrees-w1")]   // 27-1 で実機の形を確認
+    [InlineData("/Users/x/Documents/repo/github.com/po-oq/ebata", "-Users-x-Documents-repo-github-com-po-oq-ebata")]
+    public void Mac_folder_name_replaces_every_non_alphanumeric_character_with_a_dash(string path, string expected)
+    {
+        Assert.Equal(expected, ClaudeFolderName.For(path));
+    }
+
+    [WindowsFact]
     public void Folder_name_does_not_collapse_runs_and_counts_japanese_and_surrogates_per_character()
     {
         Assert.Equal("C--dev" + new string('-', 9), ClaudeFolderName.For(@"C:\dev\日本語 フォルダ"));   // \ + 3 + 空白 + 4
         Assert.Equal("C--x--y", ClaudeFolderName.For(@"C:\x\.y"));   // \ と . が連なっても、まとめずに 2 つの -
         Assert.Equal("C--u--", ClaudeFolderName.For("C:\\u\uD842\uDFB7"));   // 𠮷（サロゲートペア）は 2 文字 = 2 つの -
+    }
+
+    [MacFact]
+    public void Mac_folder_name_does_not_collapse_runs_and_counts_japanese_and_surrogates_per_character()
+    {
+        Assert.Equal("-dev" + new string('-', 9), ClaudeFolderName.For("/dev/日本語 フォルダ"));   // / + 3 + 空白 + 4
+        Assert.Equal("-x--y", ClaudeFolderName.For("/x/.y"));   // / と . が連なっても、まとめずに 2 つの -
+        Assert.Equal("-u--", ClaudeFolderName.For("/u\uD842\uDFB7"));   // 𠮷（サロゲートペア）は 2 文字 = 2 つの -
     }
 
     [Fact]
@@ -73,7 +97,7 @@ public sealed class ClaudeLocationsTests : IDisposable
     [InlineData("X--other", false)]
     public void Candidate_folders_are_the_same_name_or_the_worktree_form(string folder, bool expected)
     {
-        Assert.Equal(expected, ClaudeFolderName.IsCandidate(folder, Project));
+        Assert.Equal(expected, ClaudeFolderName.IsCandidate(Os(folder), Project));
     }
 
     // ---- 探索先 ----
@@ -81,15 +105,15 @@ public sealed class ClaudeLocationsTests : IDisposable
     [Fact]
     public void Candidate_dirs_are_the_existing_matching_folders_only()
     {
-        MakeFolder("C--work-proj");
-        MakeFolder("C--work-proj--claude-worktrees-w1");
-        MakeFolder("C--work-proj--claude-worktrees-w2");
-        MakeFolder("C--work-proj-extra");
-        MakeFolder("C--work-other");
+        MakeFolder(Os("C--work-proj"));
+        MakeFolder(Os("C--work-proj--claude-worktrees-w1"));
+        MakeFolder(Os("C--work-proj--claude-worktrees-w2"));
+        MakeFolder(Os("C--work-proj-extra"));
+        MakeFolder(Os("C--work-other"));
 
         var dirs = Locations().CandidateDirs().Select(Path.GetFileName).Order().ToList();
 
-        Assert.Equal(["C--work-proj", "C--work-proj--claude-worktrees-w1", "C--work-proj--claude-worktrees-w2"], dirs);
+        Assert.Equal([Os("C--work-proj"), Os("C--work-proj--claude-worktrees-w1"), Os("C--work-proj--claude-worktrees-w2")], dirs.Order().ToList());
     }
 
     [Fact]
@@ -106,12 +130,12 @@ public sealed class ClaudeLocationsTests : IDisposable
     [Fact]
     public void The_expected_folder_is_reported_even_when_it_does_not_exist_yet_for_watching()
     {
-        Assert.Equal(Path.Combine(ProjectsDir, "C--work-proj"), Locations().ExpectedDir);
+        Assert.Equal(Path.Combine(ProjectsDir, Os("C--work-proj")), Locations().ExpectedDir);
     }
 
     // ---- cwd の照合 ----
 
-    [Theory]
+    [WindowsTheory]
     [InlineData(@"C:\work\proj", true)]
     [InlineData(@"c:\WORK\Proj\", true)]                              // 大文字小文字・末尾区切りは無視
     [InlineData("C:/work/proj", true)]
@@ -127,6 +151,24 @@ public sealed class ClaudeLocationsTests : IDisposable
     [InlineData("", false)]
     [InlineData(null, false)]
     public void Cwd_matches_the_project_or_one_of_its_worktrees(string? cwd, bool expected)
+    {
+        Assert.Equal(expected, Locations().Matches(cwd));
+    }
+
+    [MacTheory]
+    [InlineData("/work/proj", true)]
+    [InlineData("/WORK/Proj/", true)]                                  // 大文字小文字・末尾区切りは無視（7.14）
+    [InlineData("/work/proj/.claude/worktrees/feature-a", true)]       // 作業ツリー
+    [InlineData("/work/proj/.claude/worktrees/feature-a/src", true)]
+    [InlineData("/work/PROJ/.CLAUDE/Worktrees/x", true)]
+    [InlineData("/work/proj/docs", false)]                             // 本体のサブフォルダは別（完全一致）
+    [InlineData("/work/proj/.claude", false)]
+    [InlineData("/work/proj/.claude/worktrees", false)]                // 作業ツリーそのものではない
+    [InlineData("/work/proj-extra", false)]
+    [InlineData("/work/other/.claude/worktrees/x", false)]             // 別プロジェクトの作業ツリー
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Mac_cwd_matches_the_project_or_one_of_its_worktrees(string? cwd, bool expected)
     {
         Assert.Equal(expected, Locations().Matches(cwd));
     }
@@ -172,11 +214,11 @@ public sealed class ClaudeLocationsTests : IDisposable
     public void Fallback_finds_folders_whose_files_have_a_matching_first_cwd_and_logs_it()
     {
         var odd = MakeFolder("some-odd-folder-name");
-        WriteLines(Path.Combine(odd, "s1.jsonl"), """{"type":"queue-operation"}""", CwdLine(@"C:\work\proj"));
+        WriteLines(Path.Combine(odd, "s1.jsonl"), """{"type":"queue-operation"}""", CwdLine(Project));
         var other = MakeFolder("another");
         WriteLines(Path.Combine(other, "s2.jsonl"), CwdLine(@"C:\work\elsewhere"));
         var worktree = MakeFolder("also-odd");
-        WriteLines(Path.Combine(worktree, "s3.jsonl"), CwdLine(@"C:\work\proj\.claude\worktrees\w1"));
+        WriteLines(Path.Combine(worktree, "s3.jsonl"), CwdLine(Path.Combine(Project, ".claude", "worktrees", "w1")));
 
         var dirs = Locations().FindDirsByCwd().Select(Path.GetFileName).Order().ToList();
 

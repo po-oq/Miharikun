@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:Miharikun.Views"
+             x:Class="Miharikun.Views.DashboardView">
+    <!-- ダッシュボードの 3 ペイン。DataContext は MainViewModel -->
+    <Grid x:Name="Root">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="360" MinWidth="260" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="320" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="340" MinWidth="240" />
+        </Grid.ColumnDefinitions>
+                    <!-- 左：セッション一覧 -->
+                    <Border x:Name="PaneLeft" Grid.Column="0" Classes="pane">
+                        <views:LeftPaneView />
+                    </Border>
+                    <GridSplitter x:Name="Split1" Grid.Column="1" Width="8" Background="Transparent" />
+                    <!-- 中央：詳細 -->
+                    <Border x:Name="PaneCenter" Grid.Column="2" Classes="pane"><Grid>
+                        <TextBlock Text="左の一覧からセッションを選んでください" Opacity="0.6" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNull}}" />
+                        <ScrollViewer DataContext="{Binding Detail}" VerticalScrollBarVisibility="Auto"
+                                      IsVisible="{Binding, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <views:DetailPaneView Margin="0,0,14,0" />
+                        </ScrollViewer>
+                    </Grid></Border>
+                    <GridSplitter x:Name="Split2" Grid.Column="3" Width="8" Background="Transparent" />
+                    <!-- 右：メモ・タイムライン・最近の入力 -->
+                    <Border x:Name="PaneRight" Grid.Column="4" Classes="pane">
+                        <views:RightPaneView />
+                    </Border>
+                </Grid>
+</UserControl>

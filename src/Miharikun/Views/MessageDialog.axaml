@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Miharikun.Views.MessageDialog"
+        Title="Miharikun"
+        SizeToContent="WidthAndHeight" MinWidth="360" MaxWidth="640"
+        CanResize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button x:Name="YesButton" Content="はい" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" Click="OnYes" />
+            <Button x:Name="NoButton" Content="いいえ" MinWidth="80" HorizontalContentAlignment="Center" IsCancel="True" Click="OnNo" />
+        </StackPanel>
+        <!-- 案内の 1 行（ターミナルで実行するコマンドなど）を、選んでコピーできるように -->
+        <SelectableTextBlock x:Name="MessageText" TextWrapping="Wrap" MaxWidth="600" />
+    </DockPanel>
+</Window>

@@ -14,6 +14,11 @@ public sealed class AppSettingsHookDirTests : IDisposable
         try { Directory.Delete(_dir, true); } catch { }
     }
 
+    private static readonly string Hook = TestPaths.Abs("dev", "hook");
+
+    /// <summary>JSON の文字列にする（Windows の \ をエスケープする）。</summary>
+    private static string Json(string text) => System.Text.Json.JsonSerializer.Serialize(text);
+
     private AppSettingsStore Store(Action<string>? log = null) => new(new AppPaths(_dir), log);
 
     private void WriteRaw(string json)
@@ -54,11 +59,11 @@ public sealed class AppSettingsHookDirTests : IDisposable
     [Fact]
     public void A_full_path_is_returned_normalised_without_a_trailing_separator()
     {
-        WriteRaw("""{"hookDir":"C:\\dev\\hook\\"}""");
+        WriteRaw($$"""{"hookDir":{{Json(Hook + Path.DirectorySeparatorChar)}}}""");
         var withSlash = Store().LoadHookDir();
-        WriteRaw("""{"hookDir":"C:\\dev\\hook"}""");
+        WriteRaw($$"""{"hookDir":{{Json(Hook)}}}""");
 
-        Assert.Equal(@"C:\dev\hook", Store().LoadHookDir());
+        Assert.Equal(Hook, Store().LoadHookDir());
         Assert.Equal(Store().LoadHookDir(), withSlash);
     }
 
@@ -67,9 +72,9 @@ public sealed class AppSettingsHookDirTests : IDisposable
     {
         WriteRaw("""{"theme":"dark","runningTimeoutMinutes":25,"unknown":{"a":1}}""");
 
-        Assert.True(Store().SaveHookDir(@"C:\dev\hook"));
+        Assert.True(Store().SaveHookDir(Hook));
 
-        Assert.Equal(@"C:\dev\hook", Store().LoadHookDir());
+        Assert.Equal(Hook, Store().LoadHookDir());
         Assert.Equal(AppTheme.Dark, Store().LoadTheme());
         Assert.Equal(25, Store().LoadRunningTimeoutMinutes());
         Assert.Contains("\"unknown\"", File.ReadAllText(SettingsPath));
@@ -78,7 +83,7 @@ public sealed class AppSettingsHookDirTests : IDisposable
     [Fact]
     public void Saving_null_removes_the_key_and_keeps_the_others()
     {
-        WriteRaw("""{"theme":"dark","hookDir":"C:\\dev\\hook"}""");
+        WriteRaw($$"""{"theme":"dark","hookDir":{{Json(Hook)}}}""");
 
         Assert.True(Store().SaveHookDir(null));
 
@@ -111,7 +116,7 @@ public sealed class AppSettingsHookDirTests : IDisposable
 
         using (new FileStream(SettingsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
-            Assert.False(Store(logs.Add).SaveHookDir(@"C:\dev\hook"));
+            Assert.False(Store(logs.Add).SaveHookDir(Hook));
             Assert.False(Store(logs.Add).SaveHookDir(null));
         }
 

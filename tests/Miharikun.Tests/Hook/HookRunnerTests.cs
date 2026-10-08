@@ -219,6 +219,19 @@ public sealed class HookRunnerTests : IDisposable
         Assert.True(File.Exists(_paths.HookErrorLog));
     }
 
+    [Theory]
+    [InlineData("--probe")]
+    [InlineData("--agent", "cursor", "--probe")]
+    [InlineData("--probe", "--agent", "cursor")]
+    public void Probe_prints_ok_and_exits_with_0_without_reading_or_writing_anything(params string[] args)
+    {
+        var (exit, output) = Run("{ not json at all", args);   // 標準入力は読まない（壊れた入力でも 0）
+
+        Assert.Equal(0, exit);
+        Assert.Equal("ok", output);
+        Assert.False(Directory.Exists(_dir));   // データのフォルダにも触らない
+    }
+
     [Fact]
     public void Concurrent_appends_keep_every_line_intact()
     {

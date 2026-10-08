@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Miharikun.Converters"
+             xmlns:b="clr-namespace:Miharikun.Behaviors"
+             xmlns:meta="clr-namespace:Miharikun.Core.Meta;assembly=Miharikun.Core"
+             x:Class="Miharikun.Views.DetailHeaderView">
+    <!-- 詳細のヘッダー（要件 12.3）。DataContext は SessionDetailViewModel -->
+    <Border Classes="section">
+        <StackPanel>
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Classes="agent" Margin="0,0,10,0" AutomationProperties.AutomationId="DetailAgentBadge"
+                            Classes.cursor="{Binding AgentId, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=cursor}"
+                            Classes.claude="{Binding AgentId, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=claude}">
+                        <TextBlock Text="{Binding AgentName}" />
+                    </Border>
+                    <Ellipse Classes="dot"
+                             Classes.running="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Running}"
+                             Classes.yourturn="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=YourTurn}"
+                             Classes.aborted="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Aborted}"
+                             Classes.error="{Binding State, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Error}" />
+                    <TextBlock Text="{Binding StateText}" Margin="4,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <Button DockPanel.Dock="Right" Classes="pencil" Command="{Binding Rename.BeginCommand}" ToolTip.Tip="名前を変える"
+                        IsVisible="{Binding !Rename.IsEditing}" />
+                <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                           IsVisible="{Binding !Rename.IsEditing}" />
+                <TextBox FontSize="16" Margin="0,0,12,0" Text="{Binding Rename.Text}" IsVisible="{Binding Rename.IsEditing}"
+                         AutomationProperties.AutomationId="DetailRenameBox"
+                         b:TextBoxBehaviors.FocusWhenVisible="True" b:TextBoxBehaviors.LostFocusCommand="{Binding Rename.CommitCommand}">
+                    <TextBox.KeyBindings>
+                        <KeyBinding Gesture="Enter" Command="{Binding Rename.CommitCommand}" />
+                        <KeyBinding Gesture="Escape" Command="{Binding Rename.CancelCommand}" />
+                    </TextBox.KeyBindings>
+                </TextBox>
+            </DockPanel>
+            <TextBlock Classes="dim" Text="{Binding HeaderMeta}" Margin="0,4,0,0" TextWrapping="Wrap" />
+            <!-- ステータス：自分で決める（自動では変わらない）。選択中をもう一度押すと未設定に戻る -->
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0" AutomationProperties.AutomationId="StatusButtons">
+                <TextBlock Text="ステータス" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.8" />
+                <Button Classes="statusbtn" Content="未設定" Command="{Binding ClearStatusCommand}"
+                        Classes.primary="{Binding Status, Converter={x:Static ObjectConverters.IsNull}}" />
+                <Button Classes="statusbtn" Content="作業中" Command="{Binding ToggleStatusCommand}" CommandParameter="{x:Static meta:SessionStatus.Working}"
+                        Classes.primary="{Binding Status, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Working}" />
+                <Button Classes="statusbtn" Content="中断" Command="{Binding ToggleStatusCommand}" CommandParameter="{x:Static meta:SessionStatus.Paused}"
+                        Classes.primary="{Binding Status, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Paused}" />
+                <Button Classes="statusbtn" Content="完了" Command="{Binding ToggleStatusCommand}" CommandParameter="{x:Static meta:SessionStatus.Done}"
+                        Classes.primary="{Binding Status, Converter={x:Static conv:EqualsConverter.To}, ConverterParameter=Done}" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -1,69 +1,60 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Input;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Threading;
 
 namespace Miharikun.Behaviors;
 
-/// <summary>インライン編集用の添付プロパティ。表示された瞬間にフォーカスして全選択し、フォーカスを失ったらコマンドを実行する。</summary>
+/// <summary>
+/// インライン編集用の添付プロパティ（WPF 版と同じ。計画 7.9）。表示された（その入力欄自身の IsVisible が true になった）瞬間にフォーカスして全選択し、
+/// フォーカスを失ったらコマンドを実行する（名前の編集：Enter・フォーカスアウトで確定、Esc で取り消し）。
+/// </summary>
 public static class TextBoxBehaviors
 {
-    public static readonly DependencyProperty FocusWhenVisibleProperty = DependencyProperty.RegisterAttached(
-        "FocusWhenVisible", typeof(bool), typeof(TextBoxBehaviors), new PropertyMetadata(false, OnFocusWhenVisibleChanged));
+    public static readonly AttachedProperty<bool> FocusWhenVisibleProperty =
+        AvaloniaProperty.RegisterAttached<TextBox, TextBox, bool>("FocusWhenVisible");
 
-    public static readonly DependencyProperty LostFocusCommandProperty = DependencyProperty.RegisterAttached(
-        "LostFocusCommand", typeof(ICommand), typeof(TextBoxBehaviors), new PropertyMetadata(null, OnLostFocusCommandChanged));
+    public static readonly AttachedProperty<ICommand?> LostFocusCommandProperty =
+        AvaloniaProperty.RegisterAttached<TextBox, TextBox, ICommand?>("LostFocusCommand");
 
-    public static bool GetFocusWhenVisible(DependencyObject o) => (bool)o.GetValue(FocusWhenVisibleProperty);
-    public static void SetFocusWhenVisible(DependencyObject o, bool v) => o.SetValue(FocusWhenVisibleProperty, v);
-
-    public static ICommand? GetLostFocusCommand(DependencyObject o) => (ICommand?)o.GetValue(LostFocusCommandProperty);
-    public static void SetLostFocusCommand(DependencyObject o, ICommand? v) => o.SetValue(LostFocusCommandProperty, v);
-
-    private static void OnFocusWhenVisibleChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    static TextBoxBehaviors()
     {
-        if (d is not UIElement element)
-            return;
-
-        element.IsVisibleChanged -= OnIsVisibleChanged;
-        if ((bool)e.NewValue)
-            element.IsVisibleChanged += OnIsVisibleChanged;
+        FocusWhenVisibleProperty.Changed.AddClassHandler<TextBox>((box, e) =>
+        {
+            box.PropertyChanged -= OnBoxPropertyChanged;
+            if (e.NewValue is true)
+                box.PropertyChanged += OnBoxPropertyChanged;
+        });
+        LostFocusCommandProperty.Changed.AddClassHandler<TextBox>((box, e) =>
+        {
+            box.LostFocus -= OnLostFocus;
+            if (e.NewValue is not null)
+                box.LostFocus += OnLostFocus;
+        });
     }
 
-    private static void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    public static bool GetFocusWhenVisible(TextBox box) => box.GetValue(FocusWhenVisibleProperty);
+    public static void SetFocusWhenVisible(TextBox box, bool value) => box.SetValue(FocusWhenVisibleProperty, value);
+
+    public static ICommand? GetLostFocusCommand(TextBox box) => box.GetValue(LostFocusCommandProperty);
+    public static void SetLostFocusCommand(TextBox box, ICommand? value) => box.SetValue(LostFocusCommandProperty, value);
+
+    private static void OnBoxPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (sender is TextBox box && (bool)e.NewValue)
+        if (sender is TextBox box && e.Property == Visual.IsVisibleProperty && e.NewValue is true)
         {
-            box.Dispatcher.BeginInvoke(() =>
+            // 表示された直後は、まだ画面に載っていないことがあるので、少し遅らせる
+            Dispatcher.UIThread.Post(() =>
             {
                 box.Focus();
                 box.SelectAll();
-            }, System.Windows.Threading.DispatcherPriority.Input);
+            }, DispatcherPriority.Input);
         }
     }
 
-    private static void OnLostFocusCommandChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    private static void OnLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (d is not UIElement element)
-            return;
-
-        element.LostFocus -= OnLostFocus;
-        if (e.NewValue is not null)
-            element.LostFocus += OnLostFocus;
-    }
-
-    private static void OnLostFocus(object sender, RoutedEventArgs e)
-    {
-        if (sender is DependencyObject d && GetLostFocusCommand(d) is { } command && command.CanExecute(null))
+        if (sender is TextBox box && GetLostFocusCommand(box) is { } command && command.CanExecute(null))
             command.Execute(null);
     }
-}
-
-public sealed class InverseBooleanToVisibilityConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
-        value is true ? Visibility.Collapsed : Visibility.Visible;
-
-    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
-        throw new NotSupportedException();
 }

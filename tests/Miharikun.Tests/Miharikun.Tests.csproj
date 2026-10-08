@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\Miharikun.Core\Miharikun.Core.csproj" />
     <ProjectReference Include="..\..\src\Miharikun.Docs\Miharikun.Docs.csproj" />
     <ProjectReference Include="..\..\src\Miharikun.Hook\Miharikun.Hook.csproj" />
+    <ProjectReference Include="..\..\src\Miharikun.Presentation\Miharikun.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

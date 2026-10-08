@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Miharikun.Views.MarkdownPreview">
+    <!-- WebView は OS の部品なので、Avalonia の要素を上に重ねると隠れる。
+         案内・状態の表示は、WebHost と入れ替えて（IsVisible）出す。WebView は作り直さない（隠すだけ。実装計画 7.11・7.17） -->
+    <Grid>
+        <Grid x:Name="WebHost" IsVisible="False" />
+        <TextBlock x:Name="MessageText" Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="480"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   AutomationProperties.AutomationId="PreviewMessage" />
+    </Grid>
+</UserControl>

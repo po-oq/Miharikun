@@ -6,7 +6,7 @@ namespace Miharikun.Core.Documents;
 /// </summary>
 public sealed class DocumentIndex
 {
-    private readonly Dictionary<string, DocumentEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DocumentEntry> _entries = new(NfcPathComparer.Instance);
 
     public int Generation { get; private set; }
 
@@ -20,9 +20,9 @@ public sealed class DocumentIndex
     /// <summary>そのフォルダの下に、索引のファイルが 1 つでもあるか（消えたのがフォルダかの判定に使う）。</summary>
     public bool HasEntriesUnder(string folder)
     {
-        var prefix = folder.TrimEnd('/') + "/";
+        var prefix = Projects.ProjectPath.ToNfc(folder.TrimEnd('/')) + "/";
         foreach (var path in _entries.Keys)
-            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            if (Projects.ProjectPath.ToNfc(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 return true;
         return false;
     }

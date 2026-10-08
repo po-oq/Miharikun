@@ -18,6 +18,24 @@ public sealed class DocumentIndexTests
     }
 
     [Fact]
+    public void NFC_and_NFD_spellings_of_a_japanese_name_are_the_same_key()
+    {
+        var nfc = "資料/がっこう.md";
+        var nfd = nfc.Normalize(System.Text.NormalizationForm.FormD);   // Finder が作る名前（濁点が分かれた形）
+        Assert.NotEqual(nfc, nfd);
+
+        var index = new DocumentIndex();
+        index.AddOrUpdate(E(nfd, size: 1));
+
+        Assert.Equal(1, index.TryGet(nfc)!.Size);   // md に打ったリンク（NFC）で引ける
+        index.AddOrUpdate(E(nfc, size: 2));
+        Assert.Equal(1, index.Count);
+        Assert.True(index.HasEntriesUnder("資料"));
+        Assert.True(index.HasEntriesUnder("資料".Normalize(System.Text.NormalizationForm.FormD)));
+        Assert.True(index.Remove(nfd));
+    }
+
+    [Fact]
     public void Remove_returns_whether_it_existed()
     {
         var index = new DocumentIndex();

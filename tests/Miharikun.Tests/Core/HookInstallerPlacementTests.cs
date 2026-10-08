@@ -33,7 +33,8 @@ public sealed class HookInstallerPlacementTests : IDisposable
 
     private HookInstaller Installer() => new(_hooksJson, _installed, _bundled);
 
-    private static string Win(string path) => path.Replace('/', '\\');
+    /// <summary>Windows の「\ 区切りの書き方」にする。mac には無い書き方なので、そのまま返す（\ はふつうのファイル名の文字）。</summary>
+    private static string Win(string path) => OperatingSystem.IsWindows() ? path.Replace('/', '\\') : path;
 
     private JsonObject ReadJson() => JsonNode.Parse(File.ReadAllText(_hooksJson))!.AsObject();
 
@@ -60,7 +61,20 @@ public sealed class HookInstallerPlacementTests : IDisposable
 
     // ---------------------------------------------------------------- TryParseExePath
 
-    [Theory]
+    [MacTheory]
+    [InlineData("/Users/x/dev/Miharikun.Hook --agent cursor", "/Users/x/dev/Miharikun.Hook")]
+    [InlineData("\"/Users/x/my dev/Miharikun.Hook\" --agent cursor", "/Users/x/my dev/Miharikun.Hook")]
+    [InlineData("/Users/x/my dev/Miharikun.Hook --agent cursor", "/Users/x/my dev/Miharikun.Hook")]       // 引用符なしの手書き
+    [InlineData("/Users/x/dev/Miharikun.Hook", "/Users/x/dev/Miharikun.Hook")]                            // 引数なし
+    [InlineData("  /Users/x/dev/Miharikun.Hook  --agent  cursor", "/Users/x/dev/Miharikun.Hook")]
+    [InlineData("/Users/x/dev/miharikun.hook --agent cursor", "/Users/x/dev/miharikun.hook")]
+    [InlineData("/Users/x/dev/Miharikun.Hook.exe --agent cursor", "/Users/x/dev/Miharikun.Hook.exe")]    // 拡張子つき（Windows から持ってきた）も自分のもの
+    [InlineData("/Users/x/Library/Application Support/Miharikun/bin/Miharikun.Hook --agent cursor",
+        "/Users/x/Library/Application Support/Miharikun/bin/Miharikun.Hook")]
+    public void Mac_TryParseExePath_reads_every_way_the_command_can_be_written(string command, string expected) =>
+        Assert.Equal(expected, HookInstaller.TryParseExePath(command));
+
+    [WindowsTheory]
     [InlineData("C:/dev/Miharikun.Hook.exe --agent cursor", @"C:\dev\Miharikun.Hook.exe")]
     [InlineData(@"C:\dev\Miharikun.Hook.exe --agent cursor", @"C:\dev\Miharikun.Hook.exe")]
     [InlineData("\"C:/my dev/Miharikun.Hook.exe\" --agent cursor", @"C:\my dev\Miharikun.Hook.exe")]
@@ -72,6 +86,7 @@ public sealed class HookInstallerPlacementTests : IDisposable
         Assert.Equal(expected, HookInstaller.TryParseExePath(command));
 
     [Theory]
+    [InlineData("/Users/x/dev/other --agent cursor")]             // Miharikun 以外
     [InlineData("C:/dev/other.exe --agent cursor")]               // Miharikun 以外
     [InlineData("dev/Miharikun.Hook.exe --agent cursor")]         // 相対パス
     [InlineData("Miharikun.Hook.exe --agent cursor")]
@@ -84,7 +99,24 @@ public sealed class HookInstallerPlacementTests : IDisposable
 
     // ---------------------------------------------------------------- SameRegistration
 
-    [Theory]
+    [MacTheory]
+    [InlineData("/Users/x/dev/Miharikun.Hook --agent cursor")]
+    [InlineData("\"/Users/x/dev/Miharikun.Hook\" --agent cursor")]      // 空白なしの引用符
+    [InlineData("/USERS/x/DEV/miharikun.hook --agent cursor")]          // 大文字小文字は問わない
+    [InlineData("/Users/x/dev/Miharikun.Hook   --agent   cursor")]
+    public void Mac_SameRegistration_accepts_writing_differences(string command) =>
+        Assert.True(HookInstaller.SameRegistration(command, "/Users/x/dev/Miharikun.Hook"));
+
+    [MacTheory]
+    [InlineData("/Users/x/dev/Miharikun.Hook")]                         // 引数なし
+    [InlineData("/Users/x/dev/Miharikun.Hook --agent claude")]
+    [InlineData("/Users/x/dev/Miharikun.Hook cursor --agent")]
+    [InlineData("/Users/x/else/Miharikun.Hook --agent cursor")]         // 別の場所
+    [InlineData(null)]
+    public void Mac_SameRegistration_rejects_a_missing_agent_argument_and_other_places(string? command) =>
+        Assert.False(HookInstaller.SameRegistration(command, "/Users/x/dev/Miharikun.Hook"));
+
+    [WindowsTheory]
     [InlineData("C:/dev/Miharikun.Hook.exe --agent cursor")]
     [InlineData(@"C:\dev\Miharikun.Hook.exe --agent cursor")]
     [InlineData("\"C:/dev/Miharikun.Hook.exe\" --agent cursor")]      // 空白なしの引用符
@@ -93,7 +125,7 @@ public sealed class HookInstallerPlacementTests : IDisposable
     public void SameRegistration_accepts_writing_differences(string command) =>
         Assert.True(HookInstaller.SameRegistration(command, @"C:\dev\Miharikun.Hook.exe"));
 
-    [Theory]
+    [WindowsTheory]
     [InlineData("C:/dev/Miharikun.Hook.exe")]                   // 引数なし
     [InlineData("C:/dev/Miharikun.Hook.exe --agent")]
     [InlineData("C:/dev/Miharikun.Hook.exe --agent claude")]
@@ -273,9 +305,9 @@ public sealed class HookInstallerPlacementTests : IDisposable
         var bin = HookInstaller.DefaultHookDir(Paths);
 
         Assert.Null(HookInstaller.ToSettingValue(bin, Paths));
-        Assert.Null(HookInstaller.ToSettingValue(bin + @"\", Paths));
+        Assert.Null(HookInstaller.ToSettingValue(bin + Path.DirectorySeparatorChar, Paths));
         Assert.Null(HookInstaller.ToSettingValue(bin.ToUpperInvariant(), Paths));
-        Assert.Equal(Path.Combine(_dir, "dev"), HookInstaller.ToSettingValue(Path.Combine(_dir, "dev") + @"\", Paths));
+        Assert.Equal(Path.Combine(_dir, "dev"), HookInstaller.ToSettingValue(Path.Combine(_dir, "dev") + Path.DirectorySeparatorChar, Paths));
     }
 
     [Fact]

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>Miharikun</string>
+    <key>CFBundleIdentifier</key><string>io.github.po-oq.miharikun</string>
+    <key>CFBundleName</key><string>Miharikun</string>
+    <key>CFBundleDisplayName</key><string>Miharikun</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>{VERSION}</string>
+    <key>CFBundleVersion</key><string>{VERSION}</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <!-- NSSupportsSuddenTermination は入れない（入れると、未保存の確認なしに終わることがある。計画 7.6） -->
+</dict>
+</plist>
