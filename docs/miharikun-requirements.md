@@ -968,6 +968,8 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - 未確認：手動実行で、両 OS の zip と `.sha256` が artifact にできること。`macos-latest` で NativeAOT の Hook と署名が通ること。Windows の単一ファイルの App が Avalonia で動くこと（32-1）。
 - 状況（32-1、2026-10-08）：手動実行（`workflow_dispatch`。run 37697351300）で、両 OS の zip（Windows・mac とも約 47MB）が artifact にできた。**利用者が Windows で zip を展開し、単一ファイルの `Miharikun.exe` でドキュメント・メモのプレビューが出ることを確認した**（NativeWebView（WebView2）が単一ファイルで動く）。配布 zip の README を `scripts/dist/README-win.txt`（`{VERSION}` を置き換える）に切り出した（文は変えていない。元の here-string と同一であることを確認）。`publish.ps1` は、その README を読んで `{VERSION}` を置き換える形にした。
   - 未確認：README の切り出し後の `publish.ps1`（PowerShell。mac では動かせない）が、CI で zip と `README.txt` を作れること。mac の zip の展開 → `xattr` → 起動 → Hook の導入（32-2 の未確認と同じ）。32-4（`docs/release.md`）は未着手。
+- 状況（32-1 の確認の続き・32-4、2026-10-08）：README の切り出し後の `publish.ps1` で、手動実行の Windows の zip に `README.txt`（版が入った形）ができることを、利用者が確認した。`docs/release.md` を両 OS の形に更新した（zip の表・ジョブが 2 つ並んで動くこと・mac は署名なし（隔離の印）・両方の zip が揃ってから Release に載ること・`.sha256`・試運転の artifact が二重の zip であること・出す前のチェックに mac の項目と、Cursor の Hook の置き場所・「Hook なし」・Claude Code の保存先の mac の書き方）。
+  - 未確認：mac の zip の展開 → `xattr` → 起動 → Hook の導入 → Cursor で会話 → 表示、版を上げた再導入、`.app` を「アプリケーション」以外に置いたときの案内（32-2 の未確認と同じ。`docs/release.md` のチェックに入れた）。タグを push した本番のリリースは未実施。
 
 ## [ ] Phase 33: 両 OS の通し確認・仕上げ
 - Windows：Cursor・Claude Code。mac：Cursor（Hobby）・Claude Code。リリースの zip で通す。`CLAUDE.md`・本書（状況）の更新
