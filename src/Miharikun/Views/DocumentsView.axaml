@@ -3,6 +3,7 @@
              xmlns:app="clr-namespace:Miharikun;assembly=Miharikun.Presentation"
              xmlns:vm="clr-namespace:Miharikun.ViewModels;assembly=Miharikun.Presentation"
              xmlns:views="clr-namespace:Miharikun.Views"
+             xmlns:conv="clr-namespace:Miharikun.Converters"
              x:Class="Miharikun.Views.DocumentsView">
     <!-- ドキュメントタブ（要件 12.7）。DataContext は DocumentsViewModel。ツリーの展開・選択は VM と双方向 -->
     <UserControl.Styles>
@@ -14,7 +15,7 @@
 
     <Grid Margin="0,8,0,0" RowDefinitions="Auto,*">
         <!-- 上段：読み直し・パスで絞り込み・件数 -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+        <DockPanel Grid.Row="0" Margin="0,0,0,8" IsVisible="{Binding !IsExpanded}">
             <Button DockPanel.Dock="Left" Content="読み直し" Command="{Binding RescanCommand}" Margin="0,0,8,0"
                     ToolTip.Tip="全部を調べ直す（自動で反映されないときの保険）" AutomationProperties.AutomationId="RescanButton" />
             <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Opacity="0.7" VerticalAlignment="Center" Margin="12,0,4,0"
@@ -23,7 +24,7 @@
                      Text="{Binding FilterText}" AutomationProperties.AutomationId="DocFilter" />
         </DockPanel>
 
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="1" x:Name="Body">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="200" MinWidth="120" />
                 <ColumnDefinition Width="Auto" />
@@ -33,7 +34,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- ツリー -->
-            <TreeView Grid.Column="0" ItemsSource="{Binding TreeRoots}" AutomationProperties.AutomationId="DocTree">
+            <TreeView x:Name="TreePane" Grid.Column="0" ItemsSource="{Binding TreeRoots}" AutomationProperties.AutomationId="DocTree">
                 <TreeView.ItemTemplate>
                     <TreeDataTemplate DataType="vm:FolderNodeViewModel" ItemsSource="{Binding Children}">
                         <StackPanel Orientation="Horizontal">
@@ -44,10 +45,10 @@
                 </TreeView.ItemTemplate>
             </TreeView>
 
-            <GridSplitter Grid.Column="1" Width="8" Background="Transparent" />
+            <GridSplitter x:Name="Split1" Grid.Column="1" Width="8" Background="Transparent" />
 
             <!-- 一覧 -->
-            <Grid Grid.Column="2" RowDefinitions="Auto,*">
+            <Grid x:Name="ListPane" Grid.Column="2" RowDefinitions="Auto,*">
                 <TextBlock Grid.Row="0" Text="{Binding ListHeader}" Classes="dim" FontSize="12" Margin="4,0,0,6" />
                 <ListBox Grid.Row="1" Classes="cards" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
                          Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -70,11 +71,11 @@
                            AutomationProperties.AutomationId="DocEmpty" />
             </Grid>
 
-            <GridSplitter Grid.Column="3" Width="8" Background="Transparent" />
+            <GridSplitter x:Name="Split2" Grid.Column="3" Width="8" Background="Transparent" />
 
             <!-- 右：概要カードと内容 -->
             <Grid Grid.Column="4" RowDefinitions="Auto,*">
-                <Border Grid.Row="0" Classes="section">
+                <Border Grid.Row="0" Classes="section" IsVisible="{Binding !IsExpanded}">
                     <StackPanel>
                         <TextBlock Text="ドキュメント概要" Classes="dim" FontSize="12" Margin="0,0,0,4" />
                         <TextBlock Text="ファイルを選ぶと概要を表示します" Opacity="0.6"
@@ -94,8 +95,9 @@
                 </Border>
 
                 <Border Grid.Row="1" Classes="section" Margin="0">
-                    <Grid RowDefinitions="Auto,*">
-                        <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                    <!-- 列：0 目次・1 区切り・2 プレビュー。プレビューは最初から列 2 に置き、動かさない（動かすと WebView が作り直される）。 -->
+                    <Grid x:Name="ContentGrid" RowDefinitions="Auto,*" ColumnDefinitions="260,8,*">
+                        <DockPanel Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,6">
                             <Button DockPanel.Dock="Right" Content="既定のアプリで開く" Command="{Binding OpenExternalCommand}"
                                     IsEnabled="{Binding HasSelection}" Margin="6,0,0,0" Padding="8,2" FontSize="12"
                                     AutomationProperties.AutomationId="OpenExternalButton" />
@@ -105,9 +107,43 @@
                             <Button DockPanel.Dock="Right" Content="再読み込み" Command="{Binding ReloadPreviewCommand}"
                                     IsEnabled="{Binding HasSelection}" Margin="6,0,0,0" Padding="8,2" FontSize="12"
                                     AutomationProperties.AutomationId="ReloadPreviewButton" />
-                            <TextBlock Text="内容" Classes="dim" FontSize="12" VerticalAlignment="Center" />
+                            <Button DockPanel.Dock="Right" Content="{Binding IsExpanded, Converter={x:Static conv:BoolTextConverter.Instance}, ConverterParameter='⤢ 拡大|⤡ 戻す'}"
+                                    Command="{Binding ToggleExpandedCommand}" Margin="6,0,0,0" Padding="8,2" FontSize="12"
+                                    ToolTip.Tip="目次とプレビューを画面いっぱいに広げる／戻す（Esc でも戻る）"
+                                    AutomationProperties.AutomationId="DocExpandButton" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="内容" Classes="dim" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Overview.Title, StringFormat='— {0}'}" FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0"
+                                           IsVisible="{Binding IsExpanded}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Overview.RelativePath}" FontSize="11" Opacity="0.7" Margin="8,0,0,0"
+                                           IsVisible="{Binding IsExpanded}" VerticalAlignment="Center" />
+                            </StackPanel>
                         </DockPanel>
-                        <views:MarkdownPreview Grid.Row="1" />
+
+                        <!-- 目次（拡大中の md だけ） -->
+                        <Grid x:Name="OutlinePane" Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*" IsVisible="{Binding IsOutlineVisible}">
+                            <TextBlock Grid.Row="0" Text="{Binding ProgressText}" IsVisible="{Binding HasProgress}" FontSize="12" Margin="4,0,0,6"
+                                       AutomationProperties.AutomationId="DocProgress" />
+                            <ListBox Grid.Row="1" x:Name="OutlineList" ItemsSource="{Binding Outline}" Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     Tapped="OnOutlineTapped" DoubleTapped="OnOutlineTapped" KeyDown="OnOutlineKeyDown"
+                                     AutomationProperties.AutomationId="DocOutline">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="vm:OutlineItemViewModel">
+                                        <Grid ColumnDefinitions="*,Auto" Margin="{Binding Depth, Converter={x:Static conv:DepthIndentConverter.Instance}}"
+                                              ToolTip.Tip="{Binding DisplayText}">
+                                            <TextBlock Grid.Column="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="{Binding TaskText}" Opacity="0.65" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <TextBlock Grid.Row="1" Text="見出しがありません" Opacity="0.6" Margin="8,4" VerticalAlignment="Top"
+                                       IsVisible="{Binding IsOutlineEmpty}" AutomationProperties.AutomationId="DocOutlineEmpty" />
+                        </Grid>
+                        <GridSplitter x:Name="OutlineSplit" Grid.Row="1" Grid.Column="1" Width="8" Background="Transparent" IsVisible="{Binding IsOutlineVisible}" />
+
+                        <views:MarkdownPreview Grid.Row="1" Grid.Column="2" />
                     </Grid>
                 </Border>
             </Grid>

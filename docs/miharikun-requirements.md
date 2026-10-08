@@ -1048,13 +1048,17 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 状況（2026-10-09 完了）：実装済み（39-1・39-2。テスト先行）。`IPreviewHost` に `OnOutline`・`OnPageEscape`・`HeadingScrollRequested`、`OutlineHeading`、`OutlineItemViewModel`（`Update` で中身だけ合わせる）、`DocumentsViewModel.Expand.cs`（`IsExpanded`・`ToggleExpandedCommand`・`Collapse()`＝戻したら true・`IsOutlineVisible`・`Outline`〈入れ物は 1 つを使い回す〉・`ProgressText`・`HasProgress`・`IsOutlineEmpty`・`JumpToHeadingCommand`）、`PreviewScripts`（`ScrollToHeading`＝`JsonEncodedText` で id を逃がす・`IsEscapeMessage`）。別のファイルに替わると目次をすぐ空にし、再読み込みでは保つ。古い `source` の結果は捨てる。選択が無くなったら拡大を戻す。`MemoViewModel` の新しい口は何もしない。`IsOutlineEmpty` は、結果が来て 0 件のときだけ true（来る前の一瞬に「見出しがありません」を出さないため。計画 7.7 の補足）。画面は未着手（Phase 40）。
   - テスト：Tests 1152 → 1197（`DocumentsExpandViewModelTests` 27・`PreviewScriptsTests` 18。スキップ 29 のまま）、UiTests 52 合格・スキップ 3（`FakeHost` に新しい口の空実装を足しただけ）。
 
-## [ ] Phase 40: 拡大モードの画面
+## [x] Phase 40: 拡大モードの画面
 - `DocumentsView`（拡大ボタン・目次の列・上段とツリー・一覧・概要を隠す・幅の保存と復元・Esc はタブが見えているときだけ）、`MarkdownPreview`（目次を VM へ渡す・`WebMessageReceived` で `key:Escape`・html への受け口・見出しへ移る・読み込み中なら後で）、`DashboardView` の Esc（見えているときだけ。12.4.1）
 - 完了条件：UiTests（ヘッドレス）で、隠れ方・目次の列は md の拡大中だけ・戻すと元の幅・Esc がタブをまたがない（ダッシュボードとドキュメントの両方）・拡大⇄戻すでプレビューの部品が同じもののまま、が確かめられる。mac の実機で、Esc（プレビューの中・目次）・目次で移る・位置がずれない
+- 状況（2026-10-09 完了。mac の実機で利用者が確認 OK）：40-1〜40-3。`MarkdownPreview`（`RenderWithOutline` の見出しを `OutlineHeading` に写して `OnOutline`。html・案内・無し・読めない・WebView なしは空で渡す。古い結果は目次も渡さない。`WebMessageReceived` で `key:Escape` だけ `OnPageEscape`。html は読み込み後に `EscapeListenerScript`。`HeadingScrollRequested` で見出しへ移る〈読み込み中なら後で。再読み込みの位置の復元より優先〉）、`DocumentsView`（内容カードを「目次｜区切り｜プレビュー」の 3 列に。プレビューは最初から列 2。拡大で上段・ツリー・一覧・概要を隠し、幅を覚えて戻す。目次の列は md の拡大中だけ、隠すときは幅 0。目次の項目は `Tapped`・`DoubleTapped`〈素早い 2 回目はダブルクリックになるため〉と Enter で移る。Esc はウィンドウの KeyDown で、見えていて拡大中のときだけ戻し `Handled`）、`DashboardView`（Esc は `IsEffectivelyVisible` のときだけ。12.4.1）、`DepthIndentConverter`（1 段 14px）。
+  - テスト：Tests 1197（変わらず）、UiTests 52 → 65（`DocumentsViewTests` 拡大 8・`DocumentsEscapeTests` 5。スキップ 3 のまま）。
+  - 確認（隔離環境の手書きの md・html。mac で利用者が目視 OK）：拡大⇄戻す、目次で移る、Esc（ページの中・目次・ボタンの後）、位置、保存で目次が替わる、リンクで別の md／html、ダッシュボードとの Esc。Windows は Phase 41。
 
 ## [ ] Phase 41: 両 OS の実機確認・仕上げ
 - Windows（WebView2）で、試作の Q1〜Q7 にあたる確認（ページからの知らせ・Esc・目次で移る・位置の補正が Chromium の働きと二重にならない）、両 OS のライト/ダークの目視、本書の状況・`docs/release.md` のチェックの更新
 - 完了条件：両 OS で全体の完了条件を満たす。Windows で `invokeCSharpAction` が使えなければ、代わりの形（独自の URL への移動を取り消して受ける）にして確かめる
+- 状況（2026-10-09）：41-2 の文書分だけ実施。`docs/release.md` の「出す前のチェック」に拡大モードの項目を追加。**41-1（Windows の実機確認）は未実施のため `[ ]` のまま**。mac は Phase 40 の確認で OK（利用者が目視）。
 
 ## 16. テスト方針
 
