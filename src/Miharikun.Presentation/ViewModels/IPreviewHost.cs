@@ -15,6 +15,9 @@ public abstract record PreviewSource
     public sealed record Message(string Text) : PreviewSource;
 }
 
+/// <summary>目次の 1 項目（Docs の見出しを写したもの。Presentation は Docs を参照しない）。<c>Done</c>：true＝[x]、false＝[ ]、null＝印なし。</summary>
+public sealed record OutlineHeading(int Level, string Text, string? Id, bool? Done, int TasksDone, int TasksTotal);
+
 /// <summary>md プレビューの部品（画面の MarkdownPreview）を使う側（ドキュメントタブ・メモタブ）。</summary>
 public interface IPreviewHost
 {
@@ -36,4 +39,13 @@ public interface IPreviewHost
 
     /// <summary>プレビュー内のリンク（ローカルのファイル・フォルダ）を開く。</summary>
     void OpenLocalLink(string fullPath);
+
+    /// <summary>描いたページの見出しの一覧を受け取る。<c>source</c> が今のものと違えば捨てる。見出しが無い・html・メモのときは空が来る。UI スレッドで呼ばれる。</summary>
+    void OnOutline(PreviewSource? source, IReadOnlyList<OutlineHeading> headings);
+
+    /// <summary>ページの中で Esc が押された。UI スレッドで呼ばれる。</summary>
+    void OnPageEscape();
+
+    /// <summary>見出し（id）へ移る頼み。プレビューが受ける。</summary>
+    event Action<string>? HeadingScrollRequested;
 }

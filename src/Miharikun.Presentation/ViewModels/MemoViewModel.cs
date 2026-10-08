@@ -69,6 +69,17 @@ public sealed partial class MemoViewModel : ObservableObject, IPreviewHost, IDis
 
     public void Log(string message) => _log?.Invoke(message);
 
+    // メモには目次も拡大も無い（ドキュメントタブだけ）。
+    public event Action<string>? HeadingScrollRequested
+    {
+        add { }
+        remove { }
+    }
+
+    public void OnOutline(PreviewSource? source, IReadOnlyList<OutlineHeading> headings) { }
+
+    public void OnPageEscape() { }
+
     /// <summary>プレビュー内のリンク：対象フォルダ内の md/html はドキュメントタブで開き、それ以外は既定のアプリ／エクスプローラー。</summary>
     public void OpenLocalLink(string fullPath)
     {

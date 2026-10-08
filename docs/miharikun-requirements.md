@@ -1042,9 +1042,11 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 状況（2026-10-09 完了）：実装済み（38-1・38-2。テスト先行）。`MarkdownRenderer.RenderWithOutline`（`Markdown.Parse` → `ToHtml` の 1 回の解析で HTML と `MarkdownHeading` の一覧を返す。`Render` はその `Html`）、`MarkdownOutline.Extract`（id は Markdig の値のまま・印・文字・節のタスク数）。md のページの最後に Esc の受け口（`EscapeListenerScript`。`<script>` なしで公開）と位置の補正を追加（本文は不変）。
   - テスト：Tests 1126 → 1152（`MarkdownOutlineTests` 23・`MarkdownRendererTests` 3。スキップ 29 のまま）、UiTests 52 合格・スキップ 3。ページの 3 つの `<script>` は `node --check` で構文を確認。実ブラウザでの動き（Esc・位置の補正）は Phase 40・41。
 
-## [ ] Phase 39: 拡大モードの ViewModel
+## [x] Phase 39: 拡大モードの ViewModel
 - `IPreviewHost` の口（目次を受け取る・Esc を受け取る・見出しへ移る知らせ）、`DocumentsViewModel`（拡大の状態・目次・進み具合・Esc は戻すだけ・ファイルが無くなったら戻す・リンクで移ったら目次を替える・html では目次なし）、`MemoViewModel`（新しい口は何もしない）。テスト先行
 - 完了条件：VM のテストで、拡大⇄戻す、Esc（拡大していないときは何もしない・2 回でも戻すだけ）、選択が無いと拡大できない、ファイルが消えたら戻る、保存で目次が替わる、目次を押すと移る知らせが出る（同じ項目でも）、進み具合の数、が確かめられる
+- 状況（2026-10-09 完了）：実装済み（39-1・39-2。テスト先行）。`IPreviewHost` に `OnOutline`・`OnPageEscape`・`HeadingScrollRequested`、`OutlineHeading`、`OutlineItemViewModel`（`Update` で中身だけ合わせる）、`DocumentsViewModel.Expand.cs`（`IsExpanded`・`ToggleExpandedCommand`・`Collapse()`＝戻したら true・`IsOutlineVisible`・`Outline`〈入れ物は 1 つを使い回す〉・`ProgressText`・`HasProgress`・`IsOutlineEmpty`・`JumpToHeadingCommand`）、`PreviewScripts`（`ScrollToHeading`＝`JsonEncodedText` で id を逃がす・`IsEscapeMessage`）。別のファイルに替わると目次をすぐ空にし、再読み込みでは保つ。古い `source` の結果は捨てる。選択が無くなったら拡大を戻す。`MemoViewModel` の新しい口は何もしない。`IsOutlineEmpty` は、結果が来て 0 件のときだけ true（来る前の一瞬に「見出しがありません」を出さないため。計画 7.7 の補足）。画面は未着手（Phase 40）。
+  - テスト：Tests 1152 → 1197（`DocumentsExpandViewModelTests` 27・`PreviewScriptsTests` 18。スキップ 29 のまま）、UiTests 52 合格・スキップ 3（`FakeHost` に新しい口の空実装を足しただけ）。
 
 ## [ ] Phase 40: 拡大モードの画面
 - `DocumentsView`（拡大ボタン・目次の列・上段とツリー・一覧・概要を隠す・幅の保存と復元・Esc はタブが見えているときだけ）、`MarkdownPreview`（目次を VM へ渡す・`WebMessageReceived` で `key:Escape`・html への受け口・見出しへ移る・読み込み中なら後で）、`DashboardView` の Esc（見えているときだけ。12.4.1）
