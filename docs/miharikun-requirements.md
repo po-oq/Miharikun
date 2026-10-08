@@ -966,6 +966,8 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
   - 未確認：利用者が mac で zip を展開 → `xattr` の 1 行 → 起動 → Hook の導入（印の解除と `--probe`）→ Cursor で会話 → 表示、版を上げて再導入（Hook の更新）、`.app` を「アプリケーション」以外に置いたときの案内。`LSMinimumSystemVersion=14.0` と実行ファイルの `minos 12.0` の食い違い（要確認）。32-1（Windows の発行）・32-3・32-4 は未着手。
 - 状況（32-3、2026-10-08、mac で書いた。CI での実行は未確認）：`.github/workflows/release.yml` を、`version`（バージョンの決定。ubuntu）・`windows`（今のもの。テスト → `publish.ps1` → zip の SHA-256 を `.zip.sha256` に）・`macos`（`macos-latest`＝Apple Silicon。テスト → `publish-mac.sh <版> <一時> --zip`）・`release`（タグのときだけ。両 OS の zip と `.sha256` の 4 つを Release に載せる。Release が先にあれば追加）の 4 ジョブにした。手動実行（`workflow_dispatch`）では、両 OS の zip を artifact に残すだけ。YAML の構文（Ruby で読み込み）・バージョンの正規表現・ファイル名の展開はローカルで確かめた。
   - 未確認：手動実行で、両 OS の zip と `.sha256` が artifact にできること。`macos-latest` で NativeAOT の Hook と署名が通ること。Windows の単一ファイルの App が Avalonia で動くこと（32-1）。
+- 状況（32-1、2026-10-08）：手動実行（`workflow_dispatch`。run 37697351300）で、両 OS の zip（Windows・mac とも約 47MB）が artifact にできた。**利用者が Windows で zip を展開し、単一ファイルの `Miharikun.exe` でドキュメント・メモのプレビューが出ることを確認した**（NativeWebView（WebView2）が単一ファイルで動く）。配布 zip の README を `scripts/dist/README-win.txt`（`{VERSION}` を置き換える）に切り出した（文は変えていない。元の here-string と同一であることを確認）。`publish.ps1` は、その README を読んで `{VERSION}` を置き換える形にした。
+  - 未確認：README の切り出し後の `publish.ps1`（PowerShell。mac では動かせない）が、CI で zip と `README.txt` を作れること。mac の zip の展開 → `xattr` → 起動 → Hook の導入（32-2 の未確認と同じ）。32-4（`docs/release.md`）は未着手。
 
 ## [ ] Phase 33: 両 OS の通し確認・仕上げ
 - Windows：Cursor・Claude Code。mac：Cursor（Hobby）・Claude Code。リリースの zip で通す。`CLAUDE.md`・本書（状況）の更新
