@@ -80,15 +80,80 @@ public sealed class DocumentsViewModelTests : IDisposable
     }
 
     [Fact]
-    public void A_link_to_an_existing_file_outside_the_documents_is_opened_with_the_default_app_and_a_missing_one_is_ignored()
+    public void A_link_to_an_openable_file_outside_the_documents_is_opened_a_folder_is_revealed_and_a_missing_one_is_ignored()
     {
         var other = Path.Combine(_dir, "other.txt");
         File.WriteAllText(other, "x");
+        var folder = Path.Combine(_dir, "folder");
+        Directory.CreateDirectory(folder);
 
         _vm.OpenLocalLink(other);
+        _vm.OpenLocalLink(folder);
         _vm.OpenLocalLink(Path.Combine(_dir, "ない.txt"));
 
         Assert.Equal([other], _ui.Opened);
+        Assert.Equal([folder], _ui.Revealed);
+    }
+
+    [Fact]
+    public void Files_that_could_start_a_program_are_only_revealed_never_opened()
+    {
+        // 中身はただの文字（拡張子だけの試験用）
+        foreach (var name in new[] { "run.bat", "run.command", "run.exe" })
+            File.WriteAllText(Path.Combine(_dir, name), "echo hi");
+
+        foreach (var name in new[] { "run.bat", "run.command", "run.exe" })
+            _vm.OpenLocalLink(Path.Combine(_dir, name));
+
+        Assert.Empty(_ui.Opened);
+        Assert.Equal(3, _ui.Revealed.Count);
+    }
+
+    [Theory]
+    [InlineData(@"\\server\share\x.txt")]
+    [InlineData("//server/share/x.txt")]
+    public void A_network_form_of_path_is_dropped_before_anything_is_looked_at(string path)
+    {
+        _vm.OpenLocalLink(path);
+
+        Assert.Empty(_ui.Opened);
+        Assert.Empty(_ui.Revealed);
+    }
+
+    [MacFact]
+    public void An_md_outside_the_index_that_is_a_link_to_a_command_file_is_revealed_when_asked_from_the_memo()
+    {
+        // 索引は、リンクのフォルダの中に入らない。<対象>/linkdir/x.md → run.command が、索引に無いまま開かれてはならない
+        var real = Path.Combine(_dir, "real");
+        Directory.CreateDirectory(real);
+        var command = Path.Combine(real, "run.command");
+        File.WriteAllText(command, "echo hi");
+        File.CreateSymbolicLink(Path.Combine(real, "x.md"), command);                       // 名前は .md、中身は実行形式へのリンク
+        Directory.CreateSymbolicLink(Path.Combine(_project, "linkdir"), real);              // リンクのフォルダ（索引は中に入らない）
+        _vm.Start();
+        Assert.True(SpinWait.SpinUntil(() => !_vm.IsScanning, 10000), "走査が終わらない");
+
+        _vm.OpenFromOutside("linkdir/x.md");
+
+        Assert.Empty(_ui.Opened);
+        Assert.Equal([Path.Combine(_project, "linkdir", "x.md")], _ui.Revealed);
+    }
+
+    [MacFact]
+    public void The_open_external_button_reveals_instead_of_opening_when_the_selected_md_links_to_a_command_file()
+    {
+        var command = Path.Combine(_dir, "run.command");
+        File.WriteAllText(command, "echo hi");
+        File.CreateSymbolicLink(Path.Combine(_project, "docs", "evil.md"), command);
+        _vm.Start();
+        Assert.True(SpinWait.SpinUntil(() => !_vm.IsScanning, 10000), "走査が終わらない");
+        _vm.OpenFromOutside("docs/evil.md");
+        Assert.NotNull(_vm.CurrentTarget);
+
+        _vm.OpenExternalCommand.Execute(null);
+
+        Assert.Empty(_ui.Opened);
+        Assert.Equal([Path.Combine(_project, "docs", "evil.md")], _ui.Revealed);
     }
 
     [Fact]

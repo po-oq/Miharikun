@@ -9,6 +9,8 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     private static readonly string Project = TestPaths.Abs("work", "proj");
     private static readonly string Main = ClaudeFolderName.For(Project)!;
     private static readonly string Worktree1 = Main + "--claude-worktrees-w1";
+    // 名前の規則だけ違うフォルダ（記号の数が違う。英数字の並び＝骨組みは同じ）。保険の探索が拾う形（計画 9.10）
+    private static readonly string Odd = Main.Replace("-", "--");
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "miharikun-claudesrc-" + Guid.NewGuid().ToString("N"));
     private readonly List<string> _logs = [];
@@ -366,18 +368,18 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     [Fact]
     public void When_there_are_no_candidates_the_folders_are_searched_by_cwd_once()
     {
-        Append("odd-name", "s", B("s").User("名前の規則が違うフォルダ"));
+        Append(Odd, "s", B("s").User("名前の規則が違うフォルダ"));
 
         var delta = Only(_source.ReadNew());
 
         Assert.Equal(Key("s"), delta.Key);
         Assert.Contains(_logs, l => l.Contains("フォルダ名の規則"));
-        Assert.Contains(_source.WatchTargets, t => Path.GetFileName(t.Directory) == "odd-name");   // 見つけたフォルダは監視する
+        Assert.Contains(_source.WatchTargets, t => Path.GetFileName(t.Directory) == Odd);   // 見つけたフォルダは監視する
 
-        Append("odd-name", "s", B("s").User("追記も読まれる"));
+        Append(Odd, "s", B("s").User("追記も読まれる"));
         Assert.Contains(Only(_source.ReadNew()).Events, e => e.Text == "追記も読まれる");
 
-        Append("odd-name-2", "t", B("t").User("2 回目の探索はしない"));
+        Append(Odd + "-2", "t", B("t").User("2 回目の探索はしない"));
         Assert.Empty(_source.ReadNew());
     }
 
@@ -385,20 +387,20 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     public void Asking_for_watch_targets_does_not_run_the_search_by_cwd()
     {
         // 監視先の取り直しは UI スレッドからも呼ばれる。ファイルを読む探索は、ReadNew だけで行う。
-        Append("odd-name", "s", B("s").User("a"));
+        Append(Odd, "s", B("s").User("a"));
 
-        Assert.DoesNotContain(_source.WatchTargets, t => Path.GetFileName(t.Directory) == "odd-name");
+        Assert.DoesNotContain(_source.WatchTargets, t => Path.GetFileName(t.Directory) == Odd);
         Assert.Empty(_logs);
 
         _source.ReadNew();
-        Assert.Contains(_source.WatchTargets, t => Path.GetFileName(t.Directory) == "odd-name");
+        Assert.Contains(_source.WatchTargets, t => Path.GetFileName(t.Directory) == Odd);
     }
 
     [Fact]
     public void The_search_by_cwd_does_not_run_when_there_is_a_candidate_folder()
     {
         Folder(Main);
-        Append("odd-name", "s", B("s").User("a"));
+        Append(Odd, "s", B("s").User("a"));
 
         Assert.Empty(_source.ReadNew());
         Assert.Empty(_logs);
@@ -409,7 +411,7 @@ public sealed class ClaudeSessionSourceTests : IDisposable
     {
         Assert.Empty(_source.ReadNew());   // .claude\projects が無い（Claude Code を使っていない）
 
-        Append("odd-name", "s", B("s").User("あとからできた"));
+        Append(Odd, "s", B("s").User("あとからできた"));
 
         Assert.Equal(Key("s"), Only(_source.ReadNew()).Key);
     }

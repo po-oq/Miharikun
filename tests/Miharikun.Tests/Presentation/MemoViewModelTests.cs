@@ -135,7 +135,7 @@ public sealed class MemoViewModelTests : IDisposable
     }
 
     [Fact]
-    public void Any_other_existing_file_or_folder_is_opened_with_the_default_app_and_a_missing_one_is_ignored()
+    public void A_file_is_opened_with_the_default_app_a_folder_is_only_revealed_and_a_missing_one_is_ignored()
     {
         var other = Path.Combine(_dir, "other.txt");
         File.WriteAllText(other, "x");
@@ -144,8 +144,38 @@ public sealed class MemoViewModelTests : IDisposable
         _vm.OpenLocalLink(_dir);
         _vm.OpenLocalLink(Path.Combine(_dir, "ない.txt"));
 
-        Assert.Equal([other, _dir], _ui.Opened);
+        Assert.Equal([other], _ui.Opened);
+        Assert.Equal([_dir], _ui.Revealed);
         Assert.Empty(_openedInDocuments);
+    }
+
+    [Fact]
+    public void Files_that_could_start_a_program_are_only_revealed_never_opened()
+    {
+        foreach (var name in new[] { "run.bat", "run.command", "run.exe" })   // 中身はただの文字
+        {
+            var f = Path.Combine(_dir, name);
+            File.WriteAllText(f, "echo hi");
+            _vm.OpenLocalLink(f);
+        }
+
+        Assert.Empty(_ui.Opened);
+        Assert.Equal(3, _ui.Revealed.Count);
+    }
+
+    [Theory]
+    [InlineData(@"\\server\share\x.txt")]
+    [InlineData("//server/share/x.txt")]
+    public void A_network_form_of_path_is_dropped_before_anything_is_looked_at(string path)
+    {
+        var asked = new List<string>();
+        _resolve = p => { asked.Add(p); return null; };
+
+        _vm.OpenLocalLink(path);
+
+        Assert.Empty(_ui.Opened);
+        Assert.Empty(_ui.Revealed);
+        Assert.Empty(asked);
     }
 
     // ---------------------------------------------------------------- タイマー

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>セキュリティ診断の対応 実装計画のレビュー</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>セキュリティ診断の対応 実装計画（Issue #31）のレビュー</h1>
+<p><b>結論：<span class="ng">直してから進める</span></b>。計画の骨組み（Phase の分け方・テスト先行・品質ゲート）はよい。ただし、計画のとおりに作ると<b>今の md の見た目が 1 つ壊れる</b>（#1。Markdig の実際の出力で確かめた）。ほかに、<b>リンクの規則と CSP の抜け道</b>（#2〜#6）と、<b>今まで見つかっていたものが見つからなくなる 2 か所</b>（#7 Claude のセッション、#8 Windows の git）がある。#7・#8 は要件定義の書き換えが要るので、<b>要相談</b>（5 章 Q1・Q2）。</p>
+<p class="sync"><b>反映済み（2026-10-09）</b>：Q1＝A・Q2＝A の回答とともに、#1〜#18 を計画（<code>security-plan.md</code>・<code>.html</code> の 13 章に反映先の表）と要件定義（9.1・12.7・13 章・15 章・16 章）に反映した。</p>
+<p>対象：<code>docs/security/security-plan.md</code>（図解 <code>security-plan.html</code>。md と html で要点の食い違いは見つからなかった）。コードは変えていない。</p>
+
+<h2>1. 確認した範囲</h2>
+<ul>
+<li>仕様：<code>docs/miharikun-requirements.md</code> の 9.1（369 行）・12.7（578・586・587 行）・13 章（707・709 行）・15 章 Phase 42〜47（1076〜1108 行）、6 章の <code>preview\lib</code>（239 行）。設計の資料：<code>docs/security/security-review.html</code></li>
+<li>実コード：<code>src/Miharikun.Core/Git/GitLocator.cs</code>・<code>GitClient.cs</code>、<code>src/Miharikun.Hook/GitProbe.cs</code>、<code>src/Miharikun.Core/Sessions/ClaudeLocations.cs</code>・<code>ClaudeSessionSource.cs</code>・<code>ClaudeFolderName.cs</code>、<code>src/Miharikun.Presentation/ShellOpen.cs</code>・<code>PreviewNavigationPolicy.cs</code>・<code>PreviewScripts.cs</code>・<code>ViewModels/DocumentsViewModel.cs</code>・<code>MemoViewModel.cs</code>、<code>src/Miharikun.Core/Documents/DocumentIndexer.cs</code>・<code>DocumentLinkRule.cs</code>、<code>src/Miharikun/Views/MarkdownPreview.axaml.cs</code>・<code>PreviewFiles.cs</code>、<code>src/Miharikun.Docs/MarkdownRenderer.cs</code>、<code>src/Miharikun.Core/Storage/AtomicFile.cs</code></li>
+<li>テスト：<code>GitLocatorTests</code>・<code>ShellOpenTests</code>・<code>ClaudeLocationsTests</code>・<code>ClaudeSessionSourceTests</code>（保険の経路）・<code>MemoViewModelTests</code>・<code>DocumentsViewModelTests</code>・<code>MarkdownRendererTests</code>・<code>MarkdownOutlineTests</code></li>
+<li>実際に動かして確かめたこと：スクラッチのフォルダで Markdig 1.4.0（本体と同じ版・同じパイプライン）に、①空行を挟んだタスクリスト ②閉じていない <code>&lt;script</code> ③<code>//server/…</code> の画像とリンク、を通して出力を見た（リポジトリには何も足していない）</li>
+</ul>
+
+<h2>2. 概念図：リンク・ページの読み込みの流れと、問題の箇所</h2>
+<svg viewBox="0 0 960 400" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<!-- md -->
+<rect x="10" y="20" width="170" height="70" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="42" font-weight="bold">md（他人・AI が書く）</text>
+<text x="18" y="60" font-size="12">リンク・生の HTML・</text>
+<text x="18" y="76" font-size="12">meta refresh・画像</text>
+<!-- renderer -->
+<rect x="220" y="20" width="230" height="90" fill="#fde" stroke="#b33"/>
+<text x="228" y="42" font-weight="bold">MarkdownRenderer</text>
+<text x="228" y="60" font-size="12">本文の後ろに nonce の script</text>
+<text x="228" y="76" font-size="12">チェックボックスの取り消し</text>
+<text x="228" y="92" font-size="12">（CSP は 45-1 で足す）</text>
+<text x="300" y="128" fill="#b33">← #1 #6</text>
+<line x1="180" y1="55" x2="220" y2="55" stroke="#333" marker-end="url(#a)"/>
+<!-- webview -->
+<rect x="490" y="20" width="200" height="90" fill="#eee" stroke="#888"/>
+<text x="498" y="42" font-weight="bold">WebView</text>
+<text x="498" y="60" font-size="12">WebView2 ／ WKWebView</text>
+<text x="498" y="76" font-size="12">画像 //server/… を読む?</text>
+<text x="590" y="128" fill="#b33">← #12（要確認）</text>
+<line x1="450" y1="55" x2="490" y2="55" stroke="#333" marker-end="url(#a)"/>
+<!-- policy -->
+<rect x="490" y="160" width="200" height="80" fill="#fde" stroke="#b33"/>
+<text x="498" y="182" font-weight="bold">PreviewNavigationPolicy</text>
+<text x="498" y="200" font-size="12">読み込み中は全部 Allow</text>
+<text x="498" y="216" font-size="12">（meta refresh も通る）</text>
+<text x="700" y="200" fill="#b33">← #5</text>
+<line x1="590" y1="110" x2="590" y2="160" stroke="#333" marker-end="url(#a)"/>
+<text x="596" y="140" font-size="11" fill="#555">移動</text>
+<!-- route -->
+<rect x="220" y="160" width="230" height="80" fill="#dff" stroke="#08a"/>
+<text x="228" y="182" font-weight="bold">Route（MarkdownPreview）</text>
+<text x="228" y="200" font-size="12">http → ブラウザ／IsUnc → 何もしない</text>
+<text x="228" y="216" font-size="12">file → OpenLocalLink</text>
+<line x1="490" y1="200" x2="450" y2="200" stroke="#333" marker-end="url(#a)"/>
+<!-- VM -->
+<rect x="10" y="280" width="250" height="100" fill="#dfd" stroke="#383"/>
+<text x="18" y="302" font-weight="bold">Documents／Memo VM</text>
+<text x="18" y="320" font-size="12">① IsNetworkPath（\\ と // だけ）</text>
+<text x="18" y="336" font-size="12">② アプリ内</text>
+<text x="18" y="352" font-size="12">③ LocalLinkRule.Decide</text>
+<text x="18" y="372" fill="#b33" font-size="12">#3（\/ ・ \??\ が抜ける）</text>
+<line x1="300" y1="240" x2="200" y2="280" stroke="#333" marker-end="url(#a)"/>
+<!-- rule -->
+<rect x="300" y="280" width="250" height="100" fill="#fde" stroke="#b33"/>
+<text x="308" y="302" font-weight="bold">LocalLinkRule（新規）</text>
+<text x="308" y="320" font-size="12">リンクのたどった先を最後まで取る</text>
+<text x="308" y="336" font-size="12">→ その時点で UNC に触れる</text>
+<text x="308" y="372" fill="#b33" font-size="12">#2</text>
+<line x1="260" y1="330" x2="300" y2="330" stroke="#333" marker-end="url(#a)"/>
+<!-- missing path -->
+<rect x="600" y="280" width="350" height="100" fill="#fde" stroke="#b33"/>
+<text x="608" y="302" font-weight="bold">メモ → ドキュメントタブ → 索引に無い</text>
+<text x="608" y="320" font-size="12">OpenExternallyBecauseMissing が</text>
+<text x="608" y="336" font-size="12">規則を通らず、既定のアプリで開く</text>
+<text x="608" y="352" font-size="12">（.md の名前のシンボリックリンク → .command）</text>
+<text x="608" y="372" fill="#b33" font-size="12">#4</text>
+<line x1="200" y1="380" x2="200" y2="392" stroke="#b33"/>
+<line x1="200" y1="392" x2="770" y2="392" stroke="#b33" stroke-dasharray="5,3"/>
+<line x1="770" y1="392" x2="770" y2="382" stroke="#b33" marker-end="url(#a)"/>
+<text x="20" y="140" font-size="12" fill="#c05000">※ 赤い箱が、計画のままだと抜けが残る所。番号は 3 章の表と対応</text>
+</svg>
+
+<h2>3. 問題一覧</h2>
+<p>重大度：<b>高</b>＝計画のとおりに作ると今の動きが壊れる／<b>中</b>＝抜け道・取りこぼしが残る／<b>低</b>＝直しておくと安全・分かりやすい。「要確認」は実機で確かめるまで断定できないもの。</p>
+<table>
+<tr><th style="width:3%">#</th><th style="width:6%">重大度</th><th style="width:47%">何が問題か（根拠）</th><th>どう解決するか</th></tr>
+
+<tr><td colspan="4"><b>② CSP（9.6・9.7）</b></td></tr>
+<tr><td>1</td><td class="ng">高</td><td>チェックボックスを取り消すセレクタ <code>li.task-list-item &gt; input[type="checkbox"]</code>（計画 md:196）は、<b>空行を挟んだタスクリスト</b>に当たらない。Markdig 1.4.0 の出力を実際に見ると、空行を挟んだリストは <code>&lt;li class="task-list-item"&gt;&lt;p&gt;&lt;input …&gt;</code> と <code>&lt;p&gt;</code> の中に入る（詰めたリストは <code>&lt;li …&gt;&lt;input</code>）。今は <code>onclick="return false"</code> が input 自体に付く（<code>MarkdownRenderer.cs:134-135</code>）ので両方とも止まっているが、計画どおりだと<b>空行ありのリストのチェックボックスが押すと変わる</b>。品質ゲート 2「押しても変わらない」が崩れる。既存テスト（<code>MarkdownRendererTests.cs:25-77</code>）は詰めたリストしか試していないので気づけない</td><td>セレクタを子孫にする：<code>li.task-list-item input[type="checkbox"]</code>（または、md のページの checkbox を全部取り消す <code>input[type="checkbox"]</code>。生の HTML の checkbox も取り消してよい）。テストを 1 つ足す：<code>- [ ] a\n\n- [x] b</code> で、<code>&lt;p&gt;&lt;input type="checkbox" tabindex="-1"</code> が出て <code>onclick</code> が無いこと。9.8 の試験用の md にも空行ありのリストを入れる</td></tr>
+
+<tr><td>6</td><td>中<br>要確認</td><td><b>nonce の横取り（dangling markup）</b>。Markdig は閉じていない生の HTML をそのまま通す（実際の出力で確認：<code>&lt;script src="x" a="</code> がそのまま出る）。Miharikun の nonce 付きの <code>&lt;script&gt;</code> は<b>本文の後ろ</b>に並ぶ（<code>MarkdownRenderer.cs:90-125</code>、計画 9.6 も同じ位置）。md の最後に <code>&lt;script src="data:…" </code>（<code>&gt;</code> なし）を書くと、後ろの <code>&lt;script nonce="N"&gt;</code> の <code>nonce="N"</code> が md 側の script の属性として読まれる。Chromium（WebView2）はこの形の nonce を無効にする対策を持つが、<b>WKWebView に同じ対策があるかは未確認</b></td><td>Miharikun の nonce 付きの script を<b>全部 <code>&lt;head&gt;</code> に移す</b>（md の本文より前。下の図）。本文を待つものは、外部ファイルは <code>defer</code>、初期化は <code>DOMContentLoaded</code> の中で（<code>defer</code> の script は DOMContentLoaded より先に動くので、<code>window.hljs</code>・<code>window.mermaid</code> はある）。位置の補正の最後の <code>remember()</code> も DOMContentLoaded の中へ。テスト：<code>&lt;body</code> より後ろに <code>nonce=</code> が 1 つも無い。<code>Body_is_not_changed_by_the_added_scripts</code> は本文の後ろに script が無くなるので、そのまま強い形で残せる</td></tr>
+
+<tr><td>5</td><td>中</td><td><b>読み込み中は、どの移動も通す</b>（<code>PreviewNavigationPolicy.cs:30-32</code>。<code>_loadingPage</code> は <code>MarkdownPreview.axaml.cs:155・162</code> で立ち、<code>:294</code> の NavigationCompleted で下りる）。md に <code>&lt;meta http-equiv="refresh" content="0;url=…"&gt;</code> を書くと、CSP では止まらない。読み込み完了との前後しだいで、①WebView が https のページや <code>file:///…/x.exe</code> にそのまま移る（Allow。WebView2 はダウンロードの扱いになる）か、②振り分けに来て、<b>押していないのに</b>ブラウザ・既定のアプリ・エクスプローラーが開く。計画 9.6（md:197）の「移動はリンクの振り分けに来る」は、①の場合に成り立たない</td><td>md のページでは、読み込み中の「自分のページ以外の移動」を <b>Allow でなく取り消す（振り分けもしない）</b>。<code>Decide</code> に「md のページか」を渡すか、新しい結果 <code>Cancel</code> を足す（html は今のまま。iframe を通すための例外は html のためのもの。md は CSP の <code>frame-src 'none'</code> で iframe が無い）。あわせて、本文の <code>http-equiv</code> を無害な属性名に置き換える（md で meta refresh を使う正当な理由は無い）。テスト：<code>PreviewNavigationPolicyTests</code> に md・読み込み中・別の URL → 取り消し。9.8 の試験用の md と確認表に meta refresh（https と <code>.bat</code>）を足す</td></tr>
+
+<tr><td>17</td><td>低</td><td>mermaid の <code>initialize</code> に <code>securityLevel</code> を書いていない（計画 9.5。既定は <code>strict</code>）。版を上げたときに既定が変わっても気づけない</td><td><code>securityLevel: 'strict'</code> を明記し、テストで文字を確かめる</td></tr>
+
+<tr><td colspan="4"><b>① リンクの規則（9.3・9.4）</b></td></tr>
+<tr><td>2</td><td>中</td><td><b>シンボリックリンクの先がネットワークのパスのとき、判定の前に触ってしまう</b>。計画は「たどった先を最後まで取る」（<code>ResolveLinkTarget(returnFinalTarget: true)</code>、md:153・173）→「先がネットワークなら Ignore」の順。.NET の Windows の実装は、最後までたどるときに先のファイルを開いて名前を取る（<code>GetFinalPathNameByHandle</code>）ので、<code>a.txt → \\server\x.txt</code> で<b>判定の前に SMB の接続が起き、資格情報（NTLM）が相手に渡りうる</b>。mac でも <code>File.Exists</code> は先をたどる（<code>/net/&lt;ホスト&gt;/…</code> は自動マウント）</td><td>たどり方を「1 段ずつ」にする：<code>ResolveLinkTarget(returnFinalTarget: false)</code>（リンク自体の中身を読むだけで、先は開かない）で 1 段進むごとに、<b>先の文字列がネットワークのパスなら Ignore</b>、リンクでなくなったら終わり、8 段を超えたら <code>Reveal</code>。<code>Exists</code> を呼ぶのは、ネットワークでないと分かった後だけにする。<code>LinkProbe</code> の <code>ResolveFinalTarget</code> を <code>ReadLinkOnce</code>（1 段）に替え、テストで「2 段目が UNC → Ignore（<code>FileExists</code> が呼ばれない）」を確かめる。mac の <code>/net/</code> で始まるパスもネットワーク扱いにするかは、計画に一言書く</td></tr>
+
+<tr><td>3</td><td>中</td><td><b>ネットワークのパスの判定が <code>\\</code> と <code>//</code> の 2 つだけ</b>（計画 md:149）。Windows は区切りの混ざった <code>\/server\share</code>・<code>/\server\share</code> も UNC として扱う。.NET は <code>\??\</code> で始まる形（<code>\??\UNC\server\share\…</code>）もデバイスのパスとして通す。Route の <code>uri.IsUnc</code> は URL の形でしか見ないので、<code>LocalPath</code> がこの形になると VM の ① だけが頼り</td><td>Windows は<b>許す形を決める</b>：<code>^[A-Za-z]:[\\/]</code> で始まるものだけを先に進め、それ以外（<code>\\</code>・<code>\/</code>・<code>/\</code>・<code>\??\</code>・ルートだけの <code>\x</code>）は全部 Ignore。mac は <code>/</code> で始まり <code>//</code> でないものだけ。<code>IsNetworkPath</code> でなく <code>IsUsableLocalPath(path, isWindows)</code> の形にすると、9.4 の ① もそのまま使える。テストに上の 4 つの形を足す</td></tr>
+
+<tr><td>4</td><td>中</td><td><b>メモのリンクが、規則を通らずに既定のアプリで開く経路が残る</b>。メモの <code>OpenLocalLink</code> は、対象フォルダ内の md/html なら（<code>MemoViewModel.cs:86-89</code>）ドキュメントタブに渡す。走査済みで索引に無いと <code>OpenExternallyBecauseMissing</code> が <code>OpenWithDefaultApp</code> を呼ぶ（<code>DocumentsViewModel.cs:186-192</code>）。計画 9.4（md:180）は「開いてよい種類なので今のまま」とするが、名前が <code>.md</code> でも<b>中身がシンボリックリンク</b>なら違う。索引はシンボリックリンクのフォルダの中に入らない（<code>DocumentIndexer.cs:30-33</code>）ので、<code>&lt;対象&gt;/linkdir/x.md</code>（<code>linkdir</code> がリンク）は索引に無い。<code>x.md</code> が <code>run.command</code> を指すと、mac の <code>open</code> はリンクをたどって Terminal で実行する</td><td><code>OpenExternallyBecauseMissing</code> も <code>LocalLinkRule.Decide</code> を通し、結果で開く・Finder で見せる・何もしない に分ける（9.4 に 1 行足す）。テスト：<code>DocumentsViewModelTests</code> に「索引に無い md が <code>.command</code> へのリンク → <code>Revealed</code>」（<code>[MacFact]</code>。本物のシンボリックリンク）。<br>同じ理由で、「既定のアプリで開く」ボタン（<code>DocumentsViewModel.cs:128-133</code>）も、選んでいる md/html がリンクで先が開いてよい種類でないときは Finder で見せる、にするかを決める（利用者の操作なので低。計画に判断を書いておく）</td></tr>
+
+<tr><td>10</td><td>低<br>要確認</td><td>Windows の「フォルダで開く」は <code>/select,&lt;file&gt;</code> を 1 つの引数で渡す（<code>ShellOpen.cs:27-28</code>）。エクスプローラーはこの引数を <code>,</code> で区切って読むので、<b>名前に <code>,</code> を含むファイル</b>で、選ぶ対象がずれたり、後ろの部分が別の指定として読まれたりしうる。今までは「フォルダで開く」ボタンだけだったが、計画では<b>実行形式へのリンクの受け皿</b>になる（攻撃する側が名前を決められる）</td><td>47-1 の確認表に「<code>a,b.bat</code>・<code>x,C:\Windows\System32\calc.exe.bat</code> のような名前へのリンク」を足す。直し方の候補：<code>Arguments</code> の文字列で <code>/select,"&lt;file&gt;"</code> と引用符で囲む（<code>ArgumentList</code> は <code>,</code> だけでは囲まない）か、名前に <code>,</code> を含むときはファイルでなく親フォルダを開く</td></tr>
+
+<tr><td>11</td><td>低<br>要確認</td><td>mac の残るリスク：拡張子では見えない「開くアプリ」の指定がある。Finder のエイリアス（シンボリックリンクではないので <code>ResolveLinkTarget</code> で分からない）と、ファイルごとの「このアプリで開く」（リソースフォーク）。どちらも拡張属性に入るので、git の clone では来ないが、zip（アーカイブユーティリティ）・dmg では来うる</td><td>12.7 に「残るリスク」として書く。対策するなら、mac で <code>com.apple.ResourceFork</code> がある、または <code>com.apple.FinderInfo</code> のエイリアスの印があるファイルは <code>Reveal</code>（<code>getxattr</code> の P/Invoke。Presentation なので AOT の縛りは無い）</td></tr>
+
+<tr><td>12</td><td>中<br>要確認</td><td><b>ネットワークのパスの画像</b>。Markdig は <code>![](//server/share/a.png)</code> をそのまま <code>src="//server/share/a.png"</code> にする（実際の出力で確認）。<code>&lt;base href="file:///C:/…/"&gt;</code> があるので、これは <code>file://server/share/a.png</code> になり、WebView2 が読みに行けば<b>開いただけで</b> SMB の接続（NTLM）が起きる。リンクの規則（9.3）の外で、CSP の <code>img-src</code> も付けない計画なので止まらない</td><td>47-1 の確認表に「<code>![](//&lt;届かない名前&gt;/x.png)</code> を開いて、接続が起きないか」を足す（Windows のログやパケットで）。起きるなら、<code>MarkdownRenderer</code> で本文の <code>src</code>・<code>href</code> が <code>//</code>・<code>\\</code>・<code>file://&lt;ホスト&gt;</code> で始まるものを無効にする（Markdig の AST の <code>LinkInline.Url</code> を書き換える。生の HTML は文字列の置き換え）。直すなら要件定義 12.7 の ⑤ に「画像も」と足す</td></tr>
+
+<tr><td colspan="4"><b>③ Windows の git の探し方（9.1）</b></td></tr>
+<tr><td>8</td><td>中</td><td><b>PATH の UNC の項目を使わなくなる</b>（計画 md:131）。今は名前 <code>git</code> で起動しているので、Windows の CreateProcess が PATH の項目を順に探し、<code>\\server\tools\Git\cmd</code> のような項目でも見つかる（<code>GitClient.cs:154-158</code>、<code>GitProbe.cs:27-30</code>）。計画では、会社の PC でネットワークの共有に git を置き PATH に入れている環境で、<b>今まで見つかっていた git が見つからなくなる</b>（決まった場所の探索でも拾えない）。要件 13 章（709 行）は「PATH の絶対パスの項目」としか言っておらず、UNC も絶対パス</td><td>5 章 Q2。<span class="rec">推奨：PATH の UNC の項目は使う</span>（PATH は利用者・管理者の設定で、攻撃の入口はカレントフォルダのほう。<code>\\?\</code>・<code>\\.\</code> の形は使わない）。使わないことにするなら、見つからなかったとき <code>app.log</code> に「PATH の UNC の項目は使わない」を出し、要件 13 章に書く</td></tr>
+
+<tr><td>9</td><td>低</td><td>起動時に git のパスを <code>app.log</code> に出すため <code>GitLocator.Find()</code> を呼ぶ（計画 42-1。<code>AppComposition</code>）。PATH に切れたネットワークドライブ（<code>Z:\…</code>）があると <code>File.Exists</code> が数秒待つことがあり、画面のスレッドで呼ぶと起動が止まる</td><td>ログの 1 行は <code>Task.Run</code> の中で出す（<code>PreviewFiles.CleanOld</code> と同じ形。<code>AppComposition.cs:62</code>）。<code>Lazy</code> なので 1 回で済む</td></tr>
+
+<tr><td colspan="4"><b>④ 同梱のファイルの書き出し（9.5）</b></td></tr>
+<tr><td>14</td><td>低</td><td>版（フォルダ名）を手で変える決まり（md:184「ファイルを替えたら必ず変える」）。忘れると、<code>Ensure</code> は長さしか見ないので、長さが同じ差し替えは書き直されない。長さが違えば、新旧の Miharikun を同時に起動したとき、互いに描くたびに書き直し合う</td><td>版を<b>埋め込みの中身から作る</b>（全ファイルの SHA-256 の先頭 12 文字。起動中に 1 回計算）。手で決めるなら、<code>MarkdownAssetsTests</code> に「版に、中身のハッシュが入っている」テストを置いて、忘れたら落ちるようにする</td></tr>
+<tr><td>15</td><td>低</td><td>要件 12.7（587 行）は「書き出し（無いときだけ）」、計画 9.5 は「無い、または長さが違う」。食い違い</td><td>要件のほうを「無い、または長さが違うとき」に合わせる（#14 で版を中身から作るなら、「無いときだけ」でも足りる）</td></tr>
+<tr><td>16</td><td>低</td><td>埋め込みのリソース名は、フォルダ名に <code>-</code>・数字で始まる部分があると MSBuild が名前を変える（<code>vendor/mermaid-11.4/…</code> → <code>mermaid_11._4</code>）。計画は <code>vendor/</code> 直下なので今は当たらないが、版でフォルダを分けると壊れる</td><td>csproj で <code>LogicalName</code> を明記する（<code>Miharikun.Docs.vendor.%(Filename)%(Extension)</code>）。<code>MarkdownAssetsTests</code> の「全ファイルが空でない」で守られる</td></tr>
+
+<tr><td colspan="4"><b>⑤ Claude の保険の探索の打ち切り（9.10）</b></td></tr>
+<tr><td>7</td><td>中</td><td><b>「1 つのフォルダには同じパスのセッションしか入らない」（計画 md:244、要件 9.1）は成り立たない</b>。フォルダ名は英数字以外を全部 <code>-</code> にする（<code>ClaudeFolderName.cs:16-27</code>）ので、<code>my-app</code>・<code>my_app</code>・<code>my/app</code>、日本語の文字数が同じパスは同じフォルダになる。今のコードは<b>同じフォルダに別のプロジェクトのセッションが混ざる前提で作られている</b>（ファイルごとに cwd を照らし、合わないものは <code>Ignored</code>。<code>ClaudeSessionSource.cs:201</code>）。保険が働くのは「名前の規則が合わない」とき、つまり <b>mac の NFD の日本語名</b>が主。日本語はどの文字も <code>-</code> 1 つなので、同じ構造のパス（<code>~/デスクトップ/仕様/x</code> と <code>~/デスクトップ/設計/x</code> など）は同じフォルダになる。計画では、そのフォルダの<b>いちばん新しいファイルが別のプロジェクト</b>だと、対象のプロジェクトの Claude のセッションが<b>全部、黙って一覧から消える</b>。計画の「受け入れる」場合は、保険がいちばん守りたい場合と重なる</td><td>5 章 Q1。<span class="rec">推奨：A</span>（フォルダの名前で先に絞り、絞ったフォルダの中は今のまま全ファイルを見る。読む量はさらに減る）。要件 9.1 の理由の文（「1 つのフォルダには同じパスのセッションしか入らないため」）は、どの案でも直す</td></tr>
+
+<tr><td colspan="4"><b>⑥ テストの差し替え</b></td></tr>
+<tr><td>13</td><td>中</td><td><b>版の例の名前が、既存のテストとぶつかる</b>。計画の例 <code>mermaid-11.x.y_hljs-11.x.y</code>（md:184）がフォルダ名に入ると、コードだけの md のページの highlight.js の URL に <code>mermaid</code> の文字が入る。既存の <code>Mermaid_is_not_loaded_when_there_is_no_diagram</code>（<code>MarkdownRendererTests.cs:162-167</code>）は <code>DoesNotContain("mermaid", html)</code> なので、本物の版のフォルダで描くと落ちる。テストで別の <code>libFolder</code>（<code>mermaid</code> を含まない一時の名前）を渡せば通るが、それは<b>本物の形を試していない（確認を弱めた）</b>ことになる。直すときに <code>DoesNotContain("mermaid.min.js")</code> などへ緩めたくなる所</td><td>版の名前に <code>mermaid</code>・<code>highlight</code> の文字を入れない（#14 のハッシュの形 <code>v-&lt;12 文字&gt;</code> など）。テストの <code>libFolder</code> は <code>Path.Combine(&lt;一時&gt;, "preview", "lib", MarkdownAssets.Version)</code> と本物の形にして、既存の <code>DoesNotContain("mermaid")</code>・<code>DoesNotContain("highlight")</code> はそのまま残す（計画 44-2 のテストの欄に明記）</td></tr>
+<tr><td>18</td><td>低</td><td>メモの既存テスト <code>Any_other_existing_file_or_folder_is_opened_with_the_default_app_and_a_missing_one_is_ignored</code>（<code>MemoViewModelTests.cs:136-148</code>）は、フォルダを <code>Revealed</code> に直すと名前と中身が合わなくなる。<code>MarkdownOutlineTests.cs:140</code> は <code>Render(md, Folder, true, "t")</code> の位置の引数で呼んでいる</td><td>テスト名を「ファイルは既定のアプリ、フォルダは Finder、無いものは何もしない」に直し、3 つとも確かめる（件数は同じ）。<code>MarkdownOutlineTests</code> も名前付き引数で <code>libFolder</code> を渡す。追加のテスト：#1・#2・#3・#4・#5・#6 の各行</td></tr>
+</table>
+
+<h3>修正後の md のページの形（#6）</h3>
+<svg viewBox="0 0 960 230" width="960" font-size="13" font-family="sans-serif">
+<text x="10" y="20" font-weight="bold">いま・計画</text>
+<rect x="10" y="30" width="430" height="34" fill="#eee" stroke="#888"/><text x="18" y="52">&lt;head&gt; meta charset・CSP・base・style</text>
+<rect x="10" y="68" width="430" height="34" fill="#ffe9c8" stroke="#a70"/><text x="18" y="90">&lt;body&gt; md の本文（閉じていないタグが残りうる）</text>
+<rect x="10" y="106" width="430" height="34" fill="#fde" stroke="#b33"/><text x="18" y="128">&lt;script nonce&gt; × 7（本文の後ろ）</text>
+<text x="18" y="160" fill="#b33" font-size="12">← 本文の閉じていない &lt;script の属性として nonce を読まれうる</text>
+<text x="500" y="20" font-weight="bold">修正後</text>
+<rect x="500" y="30" width="440" height="70" fill="#dfd" stroke="#383"/><text x="508" y="52">&lt;head&gt; meta charset・CSP・base・style</text>
+<text x="508" y="70">&lt;script nonce&gt;（#・Esc・チェックボックス・位置の補正）</text>
+<text x="508" y="88">&lt;script nonce defer src&gt; ＋ DOMContentLoaded で初期化</text>
+<rect x="500" y="106" width="440" height="34" fill="#ffe9c8" stroke="#a70"/><text x="508" y="128">&lt;body&gt; md の本文（後ろに nonce の付いたタグは無い）</text>
+<text x="10" y="200" font-size="12" fill="#c05000">※ 位置の補正の remember() と、hljs・mermaid の初期化は DOMContentLoaded の中へ。見た目・動きは変わらない（品質ゲート 2 で確かめる）</text>
+</svg>
+
+<h2>4. 問題なしと判断した観点</h2>
+<ul>
+<li><span class="ok">OK</span> ① 拡張子の判定：大文字小文字を区別しない、末尾の <code>.</code>・空白（<code>a.bat.</code>・<code>a.bat </code>）は一覧に無い拡張子になって <code>Reveal</code>、<code>:</code> を含むパス（代替データストリーム）は Ignore、右から左の制御文字（U+202E）で <code>.txt</code> に見せた名前も本当の名前の拡張子 <code>.exe</code> で判定される。Windows の短い名前（<code>X~1.HTM</code>）は、一覧の拡張子の先頭 3 文字で始まる危ない拡張子が無いので、今の一覧では抜け道にならない（一覧を足すときは注意）</li>
+<li><span class="ok">OK</span> ① <code>//server/x.txt</code> のリンク：<code>&lt;base&gt;</code> で <code>file://server/x.txt</code> になり <code>uri.IsUnc</code> が true → Route で捨てる（計画 9.4）。フォルダ・<code>.app</code> は <code>Directory.Exists</code> で <code>Reveal</code>。ドキュメントタブの <code>OpenLocalLink</code> は、索引に無いものを全部規則に通す（9.4 の ③）</li>
+<li><span class="ok">OK</span> ② 9.7 の要確認の 3 点は妥当。<code>InvokeScript</code>（WebView2 の <code>ExecuteScriptAsync</code>、WKWebView の <code>evaluateJavaScript</code>）はページの CSP の外で動くので、目次・位置の復元は止まらない見込み。Esc の <code>invokeCSharpAction</code> は、Avalonia が受け口を「ページに script の要素を足す」形で入れていると CSP で止まりうるので、確かめる価値がある。mermaid の <code>'unsafe-eval'</code> の代わりの形も、nonce の無い script は動かないままなので守りは保たれる</li>
+<li><span class="ok">OK</span> ② <code>#</code> リンク・Esc・位置の補正は Miharikun の script なので nonce で動く。html のプレビューは CSP を付けないので今のまま。<code>style-src</code>・<code>img-src</code> を付けないので、md の生の HTML の見た目・mermaid の <code>&lt;style&gt;</code> は変わらない。mermaid を ES module から普通の script にするのは正しい（file:// のページは origin が null で、module の読み込みは CORS で止まる）</li>
+<li><span class="ok">OK</span> ③ 今まで見つかっていた形で、計画でも見つかるもの：PATH のドライブ文字の項目（<code>/</code> 区切り・引用符・末尾 <code>\</code> も計画で扱う）、Program Files・ユーザー単位のインストール、scoop・Chocolatey の <code>git.exe</code>。PATH の相対の項目・カレントフォルダは見つからなくなるが、それが目的。<code>git.cmd</code> だけの古い git、展開されていない <code>%VAR%</code> の項目は、今も見つかっていない（.NET は <code>.exe</code> しか足さない。CreateProcess も展開しない）ので変わらない。mac の分岐は変えない</li>
+<li><span class="ok">OK</span> ④ <code>CleanOld</code> は直下のファイルだけ（<code>PreviewFiles.cs:33</code> の <code>EnumerateFiles</code>）なので <code>lib/</code> は消えない。<code>&lt;base&gt;</code> が md のフォルダを指すので絶対の file URL が要る（<code>MarkdownRenderer.cs:80</code>）。複数起動の同時書き込みは <code>AtomicFile</code> の置き換えと再試行（<code>AtomicFile.cs:23-37</code>）で後勝ち。古い版のページを開いている別の起動は、版のフォルダが別なので影響しない。書き出しの失敗を捨てて描画を続ける、も妥当</li>
+<li><span class="ok">OK</span> ⑤ 動く条件（候補 0 件・起動ごとに 1 回・<code>projects</code> が無ければ使い切らない）は変えない。既存のテスト（<code>ClaudeLocationsTests.cs:213-237</code>、<code>ClaudeSessionSourceTests.cs:366-415</code>）はどれも 1 フォルダ 1 ファイルなので、打ち切りでもそのまま通る。ただし、それは #7 の取りこぼしを試していないということでもある</li>
+<li><span class="ok">OK</span> ⑥ <code>GitLocatorTests</code> の Windows のテストは 1 つを複数に差し替え、mac のテストは補助の関数の引数だけ。<code>ShellOpenTests</code> は期待をフルパスにするだけで、引数の確認は残る。件数は減らない</li>
+</ul>
+
+<h2>5. 決めたいこと</h2>
+<div class="q"><b>Q1.</b> Claude の保険の探索で、別のプロジェクトのログを読む量を減らす方法（#7）<br>
+A) <b>フォルダの名前で先に絞る</b>：フォルダ名の英数字だけを取り出した並びが、対象のパス（そのまま・NFC・NFD・実パス）の英数字の並びと同じか、その先頭部分（Claude Code が長いパスを切り詰める版に備える）のフォルダだけを見る。見るフォルダの中は今のまま全ファイルの先頭の cwd を照らす … 利点：日本語・記号の違いで同じ名前になったフォルダでも取りこぼさない。開くのは関係しそうなフォルダだけになり、計画より読む量が減る。欠点：英数字の部分まで違う規則の変化（将来の版）には効かない。小さな関数とテストが増える<br>
+B) 計画のまま（新しい順で、cwd が取れた最初の 1 ファイルで打ち切る）… 利点：簡単。欠点：同じ名前のフォルダを共有すると、新しいほうでないプロジェクトの Claude のセッションが全部消える（mac の日本語名で起こりうる）。要件 9.1 の理由の文を「共有するときは取りこぼす」に直して受け入れる<br>
+C) 一致したときだけ打ち切る（今と同じ）で、1 フォルダで見るファイルを新しい順に N 個までにする … 利点：取りこぼしが減る。欠点：N の決め方に根拠が無く、全プロジェクトのフォルダを開くのは変わらない<br>
+<span class="rec">推奨：A</span>（保険がいちばん守りたい「日本語名で規則がずれた」場合を守りつつ、ほかのプロジェクトのログを開く数がいちばん少ない）。A のテスト：英数字の並びが違うフォルダは開かない（<code>ReadFirstCwd</code> を呼ばない）、同じ並びのフォルダに対象と別のプロジェクトが混ざっていて、新しいほうが別でも見つかる、NFD の名前のフォルダが見つかる</div>
+
+<div class="q"><b>Q2.</b> Windows で PATH の UNC の項目（<code>\\server\share\Git\cmd</code>）の git を使うか（#8）<br>
+A) 使う（<code>\\?\</code>・<code>\\.\</code> の形だけ除く。PATH の順は守る）… 利点：今まで見つかっていた git が見つからなくなる環境が無い。PATH は利用者・管理者の設定で、診断 #2 の入口（カレントフォルダ）とは別。欠点：共有に届かないとき <code>File.Exists</code> が待つ（今の CreateProcess も同じく待つ）<br>
+B) 使わない（計画のまま）… 利点：ネットワークに触れない。欠点：会社の PC などで git が「不明」になる。<code>app.log</code> の 1 行と要件 13 章への記載が要る<br>
+<span class="rec">推奨：A</span>（要件 13 章の「PATH の絶対パスの項目」にもそのまま合う。テストに UNC の項目を足し、相対・<code>.</code>・空は今の計画どおり使わない）</div>
+
+<h2>6. 計画への反映（直す所のまとめ）</h2>
+<table>
+<tr><th>計画の場所</th><th>直すこと</th></tr>
+<tr><td>9.3・43-1</td><td>許す形の判定（#3）、1 段ずつたどる・ネットワークを先に判定（#2）、mac の残るリスクの記載（#11）。<code>LinkProbe</code> の形を変える</td></tr>
+<tr><td>9.4・43-2</td><td><code>OpenExternallyBecauseMissing</code> も規則を通す（#4）。「既定のアプリで開く」ボタンの扱いを書く</td></tr>
+<tr><td>9.5・44-1・44-2</td><td>版を中身のハッシュから（#14）、版の名前に <code>mermaid</code>・<code>highlight</code> を入れない・テストの <code>libFolder</code> を本物の形に（#13）、<code>LogicalName</code>（#16）、<code>securityLevel</code>（#17）</td></tr>
+<tr><td>9.6・45-1</td><td>セレクタを子孫に（#1）、script を全部 head に（#6）、md の読み込み中の移動は取り消す・<code>http-equiv</code> を無害に（#5。<code>PreviewNavigationPolicy</code> と <code>MarkdownPreview</code> も変更するファイルに足す）</td></tr>
+<tr><td>9.8・47-1</td><td>試験用の md と確認表に：空行ありのタスクリスト、meta refresh（https・<code>.bat</code>）、名前に <code>,</code> を含む <code>.bat</code>、<code>//&lt;届かない名前&gt;/x.png</code> の画像（#1・#5・#10・#12）</td></tr>
+<tr><td>9.1・42-1</td><td>Q2 の回答を反映（#8）。起動時のログは背景で（#9）</td></tr>
+<tr><td>9.10・46-1・10 章</td><td>Q1 の回答を反映（#7）。リスクの表の「1 つのフォルダには同じパスのセッションしか入らない」を直す</td></tr>
+<tr><td>要件定義</td><td>9.1 の理由の文（#7）、12.7 の書き出しの条件（#15）、12.7 の ⑤ に画像（#12 で直すなら）、13 章の git（#8 で B なら）</td></tr>
+</table>
+</body></html>

@@ -14,6 +14,10 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\*.css" />
+    <!-- 同梱の mermaid・highlight.js（版は MarkdownAssets のコメント）。LogicalName を明記する（フォルダ名・ハイフンを MSBuild が書き換えないように）。
+         LICENSE-*.txt は配布物の THIRD-PARTY-NOTICES.txt に載せるので、埋め込まない。 -->
+    <EmbeddedResource Include="Assets\vendor\mermaid.min.js;Assets\vendor\highlight.min.js;Assets\vendor\hljs-github.min.css;Assets\vendor\hljs-github-dark.min.css"
+                      LogicalName="Miharikun.Docs.vendor.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

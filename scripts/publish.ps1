@@ -70,6 +70,8 @@ Copy-Item (Join-Path $hookOut 'Miharikun.Hook.exe') $stage
 # 配布 zip の README（文は scripts/dist/README-win.txt。{VERSION} を置き換える）
 (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dist/README-win.txt') -Raw -Encoding UTF8).Replace('{VERSION}', $Version) |
     Set-Content (Join-Path $stage 'README.txt') -Encoding UTF8
+# 同梱の mermaid・highlight.js のライセンス
+Copy-Item (Join-Path $PSScriptRoot 'dist/THIRD-PARTY-NOTICES.txt') $stage
 
 $zip = Join-Path $dist "$name.zip"
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip

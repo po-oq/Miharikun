@@ -129,15 +129,34 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
     private void OpenExternal()
     {
         if (CurrentTarget is { } t)
-            _services.OpenWithDefaultApp(t.FullPath);
+            OpenByRule(t.FullPath);   // 選んでいる md が実行形式へのリンクのとき、ボタンで実行されないように
+    }
+
+    /// <summary>ローカルのリンクの規則（<see cref="LocalLinkRule"/>）で決めて、既定のアプリで開く／ファイラーで見せる／何もしない。</summary>
+    private LocalLinkAction OpenByRule(string fullPath)
+    {
+        var action = LocalLinkRule.Decide(fullPath, OperatingSystem.IsWindows(), LinkProbe.Real);
+        switch (action)
+        {
+            case LocalLinkAction.OpenWithDefaultApp:
+                _services.OpenWithDefaultApp(fullPath);
+                break;
+            case LocalLinkAction.Reveal:
+                _services.RevealInFileManager(fullPath);
+                break;
+        }
+        return action;
     }
 
     /// <summary>
     /// プレビュー内のリンク（ローカルのファイル）を開く（要件 12.7）：対象フォルダ内の md/html（除外されていないもの）は
-    /// アプリ内で選ぶ（ツリー・一覧・最後のファイルも追従）。それ以外（対象外・除外・その他のファイル・フォルダ）は、既定のアプリ／エクスプローラー。
+    /// アプリ内で選ぶ（ツリー・一覧・最後のファイルも追従）。それ以外（対象外・除外・その他のファイル・フォルダ）は、規則（計画 9.3）で
+    /// 開いてよい種類だけ既定のアプリで開き、ほかは起動せずファイラーで見せる。使えない形のパス（ネットワークなど）は最初に捨てる。
     /// </summary>
     public void OpenLocalLink(string fullPath)
     {
+        if (!LocalLinkRule.IsUsableLocalPath(fullPath, OperatingSystem.IsWindows()))
+            return;
         var rel = Path.GetRelativePath(_root, fullPath).Replace('\\', '/');
         var inside = !rel.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(rel);
         if (inside && _index.TryGet(rel) is { } entry)
@@ -145,8 +164,7 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
             SelectPath(entry.RelativePath);
             return;
         }
-        if (File.Exists(fullPath) || Directory.Exists(fullPath))
-            _services.OpenWithDefaultApp(fullPath);
+        OpenByRule(fullPath);
     }
 
     /// <summary>メモのリンク先が、ドキュメントタブで開けるか（対象フォルダ内の md/html で、除外されていない）。</summary>
@@ -186,9 +204,14 @@ public sealed partial class DocumentsViewModel : ObservableObject, IPreviewHost,
     private void OpenExternallyBecauseMissing(string relativePath)
     {
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        _log?.Invoke($"{relativePath} は索引に無いので、既定のアプリで開く");
-        if (File.Exists(full))
-            _services.OpenWithDefaultApp(full);
+        // 名前が .md でも中身がリンクのことがある（索引はリンクのフォルダの中に入らない）ので、規則を通す
+        var action = OpenByRule(full);
+        _log?.Invoke(action switch
+        {
+            LocalLinkAction.OpenWithDefaultApp => $"{relativePath} は索引に無いので、既定のアプリで開く",
+            LocalLinkAction.Reveal => $"{relativePath} は索引に無いので、開かずにファイラーで見せる",
+            _ => $"{relativePath} は索引に無く、開けない",
+        });
     }
 
     private void SelectPath(string relativePath)

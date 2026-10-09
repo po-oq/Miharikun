@@ -1,19 +1,22 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Reflection;
 using Markdig;
 using Markdig.Extensions.AutoIdentifiers;
+using Markdig.Helpers;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
 
 namespace Miharikun.Docs;
 
 /// <summary>
 /// md → 完全な HTML 文書（要件 12.7）。相対パスの画像・リンクは <c>&lt;base&gt;</c> で元のフォルダ基準にする。
-/// タスクリスト（- [ ] / - [x]）は Markdig 標準でチェックボックスになる。mermaid と色付けは CDN（繋がらないときはコードのまま）。
+/// タスクリスト（- [ ] / - [x]）は Markdig 標準でチェックボックスになる。mermaid と色付けは同梱のファイル（<see cref="MarkdownAssets"/>。
+/// ネットが無くても出る）を <c>libFolder</c> から読む。
 /// </summary>
 public static class MarkdownRenderer
 {
-    private const string MermaidModule = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-    private const string HighlightBase = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0";
-
     // 見出し id は日本語を残す GitHub 方式。UseAdvancedExtensions() の既定は ASCII だけで、日本語見出しが id="section" になり
     // #リンクが一致しない。UseAutoIdentifiers は UseAdvancedExtensions() より前に呼ぶ（後だと既定のまま）。
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
@@ -58,25 +61,33 @@ public static class MarkdownRenderer
             window.scrollBy(0, anchor.getBoundingClientRect().top - anchorTop);
             requestAnimationFrame(function () { adjusting = false; });
           });
-          remember();
+          document.addEventListener('DOMContentLoaded', remember);
         })();
         """;
 
     /// <param name="baseFolder">md のあるフォルダ（相対パスの基準）。</param>
+    /// <param name="libFolder">同梱の mermaid・highlight.js を書き出したフォルダ（<see cref="MarkdownAssets.Ensure"/> が返すもの）。<c>&lt;base&gt;</c> があるので、絶対の file URL で読む。</param>
     /// <param name="isDark">ライト/ダーク。mermaid・コードの色付けにも渡す。</param>
-    public static string Render(string markdown, string baseFolder, bool isDark, string? title = null) =>
-        RenderWithOutline(markdown, baseFolder, isDark, title).Html;
+    public static string Render(string markdown, string baseFolder, string libFolder, bool isDark, string? title = null) =>
+        RenderWithOutline(markdown, baseFolder, libFolder, isDark, title).Html;
 
     /// <summary>md を 1 回だけ解析して、HTML と見出しの一覧を返す（目次の id と本文の id を食い違わせないため）。</summary>
-    public static MarkdownRendering RenderWithOutline(string markdown, string baseFolder, bool isDark, string? title = null)
+    public static MarkdownRendering RenderWithOutline(string markdown, string baseFolder, string libFolder, bool isDark, string? title = null)
     {
+        var lib = WebUtility.HtmlEncode(FolderUri(libFolder));
         var doc = Markdown.Parse(markdown, Pipeline);
+        NeutralizeHttpEquiv(doc);
         var body = ReadOnlyCheckboxes(doc.ToHtml(Pipeline));
         var hasMermaid = body.Contains(@"<pre class=""mermaid"">", StringComparison.Ordinal);
         var hasCode = body.Contains(@"<code class=""language-", StringComparison.Ordinal);
 
+        // ページ（1 回の描画）ごとの nonce。Miharikun が入れる script にだけ付ける。md に書かれた script・属性の script には付かないので、CSP が止める。
+        var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+
         var head = new System.Text.StringBuilder();
         head.Append("<!doctype html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"utf-8\">\n");
+        // <base> より前（md の本文が属性を横取りできない位置）。style-src・img-src は付けない（md の画像・css・mermaid の <style> を許す）。
+        head.Append($"<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'nonce-{nonce}'; object-src 'none'; frame-src 'none'; form-action 'none'\">\n");
         head.Append($"<base href=\"{WebUtility.HtmlEncode(FolderUri(baseFolder))}\">\n");
         head.Append($"<title>{WebUtility.HtmlEncode(title ?? "")}</title>\n");
         head.Append("<style>\n").Append(BaseCss.Value).Append(isDark ? DarkCss.Value : LightCss.Value);
@@ -84,13 +95,14 @@ public static class MarkdownRenderer
             head.Append("pre.mermaid { background: transparent; text-align: center; }\n");
         head.Append("</style>\n");
         if (hasCode)
-            head.Append($"<link rel=\"stylesheet\" href=\"{HighlightBase}/styles/{(isDark ? "github-dark" : "github")}.min.css\">\n");
-        head.Append("</head>\n<body>\n");
+            head.Append($"<link rel=\"stylesheet\" href=\"{lib}{(isDark ? MarkdownAssets.HighlightDarkCss : MarkdownAssets.HighlightLightCss)}\">\n");
 
-        var foot = new System.Text.StringBuilder();
+        // Miharikun の script は全部 <head> に置き、本文の後ろには何も置かない。Markdig は閉じていない生の HTML をそのまま通すので、
+        // 本文の後ろに <script nonce="…"> があると、md の最後の <script src="…（> なし）がその nonce を属性として読んでしまう。
+        // 本文を待つものは DOMContentLoaded の中で動かす（# リンク・チェックボックスは document へのクリックの受け口なので head のままで動く）。
+        head.Append($"<script nonce=\"{nonce}\">\n");
         // base があるので「#見出し」は元フォルダの URL になってしまう。ページ内のスクロールに置き換える。
-        foot.Append("""
-            <script>
+        head.Append("""
             document.addEventListener('click', function (e) {
               var a = e.target.closest('a[href^="#"]');
               if (!a) return;
@@ -98,33 +110,43 @@ public static class MarkdownRenderer
               var el = document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
               if (el) el.scrollIntoView();
             });
-            </script>
+            // チェックボックスは押しても変わらない（md は書き換えない）。属性に書くハンドラは CSP で使えないので、クリックを取り消す。
+            // 空行を挟んだリストは <li><p><input> になるので、子ではなく子孫のセレクタで当てる。Space キーの押下も click になるので同じく取り消される。
+            document.addEventListener('click', function (e) {
+              var t = e.target;
+              if (t && t.matches && t.matches('li.task-list-item input[type="checkbox"]')) e.preventDefault();
+            }, true);
 
             """);
-        foot.Append("<script>\n").Append(EscapeListenerScript).Append("\n</script>\n");
-        foot.Append("<script>\n").Append(ScrollKeeperScript).Append("\n</script>\n\n");
+        head.Append(EscapeListenerScript).Append('\n').Append(ScrollKeeperScript).Append("\n</script>\n");
         if (hasCode)
-            foot.Append($$"""
-                <script src="{{HighlightBase}}/highlight.min.js"></script>
-                <script>
-                if (window.hljs) document.querySelectorAll('pre code[class^="language-"]').forEach(function (el) { hljs.highlightElement(el); });
+            head.Append($$"""
+                <script nonce="{{nonce}}" defer src="{{lib}}{{MarkdownAssets.HighlightFile}}"></script>
+                <script nonce="{{nonce}}">
+                document.addEventListener('DOMContentLoaded', function () {
+                  if (window.hljs) document.querySelectorAll('pre code[class^="language-"]').forEach(function (el) { hljs.highlightElement(el); });
+                });
                 </script>
 
                 """);
         if (hasMermaid)
-            foot.Append($$"""
-                <script type="module">
-                try {
-                  const { default: mermaid } = await import('{{MermaidModule}}');
-                  mermaid.initialize({ startOnLoad: false, theme: '{{(isDark ? "dark" : "default")}}' });
-                  await mermaid.run({ querySelector: 'pre.mermaid' });
-                } catch (e) { }
+            head.Append($$"""
+                <script nonce="{{nonce}}" defer src="{{lib}}{{MarkdownAssets.MermaidFile}}"></script>
+                <script nonce="{{nonce}}">
+                document.addEventListener('DOMContentLoaded', function () {
+                  try {
+                    if (window.mermaid) {
+                      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: '{{(isDark ? "dark" : "default")}}' });
+                      mermaid.run({ querySelector: 'pre.mermaid' }).catch(function () { });
+                    }
+                  } catch (e) { }
+                });
                 </script>
 
                 """);
-        foot.Append("</body>\n</html>\n");
+        head.Append("</head>\n<body>\n");
 
-        return new MarkdownRendering(head + body + foot, MarkdownOutline.Extract(doc));
+        return new MarkdownRendering(head + body + "</body>\n</html>\n", MarkdownOutline.Extract(doc));
     }
 
     /// <summary>
@@ -132,7 +154,33 @@ public static class MarkdownRenderer
     /// 代わりに、押しても状態が変わらないようにして（md は書き換えない）、通常の色で表示する。
     /// </summary>
     private static string ReadOnlyCheckboxes(string html) =>
-        html.Replace(@"<input disabled=""disabled"" type=""checkbox""", @"<input type=""checkbox"" onclick=""return false"" tabindex=""-1""", StringComparison.Ordinal);
+        html.Replace(@"<input disabled=""disabled"" type=""checkbox""", @"<input type=""checkbox"" tabindex=""-1""", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 生の HTML（<see cref="HtmlBlock"/>・<see cref="HtmlInline"/>）の <c>http-equiv</c> を <c>data-http-equiv</c> にする（大文字小文字は区別しない）。
+    /// md に書かれた <c>&lt;meta http-equiv="refresh" content="0;url=…"&gt;</c> は CSP では止まらず、読み込みの後にブラウザ・既定のアプリ・エクスプローラーが
+    /// 勝手に開くので、効かなくする（md で使う正当な理由は無い）。コードブロック・本文の文字は変えない。
+    /// </summary>
+    private static void NeutralizeHttpEquiv(MarkdownDocument doc)
+    {
+        foreach (var block in doc.Descendants<HtmlBlock>())
+        {
+            var lines = block.Lines.Lines;
+            for (var i = 0; i < block.Lines.Count; i++)
+            {
+                var text = lines[i].ToString();
+                if (HttpEquiv.IsMatch(text))
+                    lines[i].Slice = new StringSlice(HttpEquiv.Replace(text, "data-http-equiv"));
+            }
+        }
+        foreach (var inline in doc.Descendants<HtmlInline>())
+        {
+            if (HttpEquiv.IsMatch(inline.Tag))
+                inline.Tag = HttpEquiv.Replace(inline.Tag, "data-http-equiv");
+        }
+    }
+
+    private static readonly Regex HttpEquiv = new("http-equiv", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>フォルダの URL（末尾 / つき。日本語・空白・# ・% は %エンコードされる）。&lt;base&gt; に使う。</summary>
     public static string FolderUri(string folder)

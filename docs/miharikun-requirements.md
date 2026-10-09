@@ -236,7 +236,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 | `projects\{slug}-{hash8}.memo.md` | プロジェクトメモ（12.10）。中身はただの Markdown（UTF-8・BOM なし）。名前の `{slug}-{hash8}` はプロジェクト設定と同じ。無ければ「メモなし」 | App |
 | `webview2\` | WebView2 の作業フォルダ（キャッシュ・Cookie 等。消してよい。自動掃除しない）。Windows だけ（mac の WKWebView はこのフォルダを使わない） | WebView2 |
 | `bin\` | 導入した Hook（`Miharikun.Hook.exe`。mac は `Miharikun.Hook`）の既定の置き場所。`settings.json` の `hookDir` で別のフォルダにできる（8.2） | App |
-| `preview\` | md を HTML にした一時ファイル（1 md＝1 ファイル。起動時に 1 日より古いものを削除） | App |
+| `preview\` | md を HTML にした一時ファイル（1 md＝1 ファイル。起動時に 1 日より古いものを削除）。`preview\lib\<版>\` に、同梱の mermaid・highlight.js を書き出して md のページから読む（12.7。古い版のフォルダは消さない。消してよい） | App |
 | `settings.json` | アプリ全体の設定（テーマ、実行中の停止判定の時間、Cursor の Hook exe の置き場所。将来はテストコマンドのパターン等） | App |
 | `logs\hook-error.log` | Hook の例外ログ | Hook |
 
@@ -304,6 +304,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 2. `sessionStart` / `stop` のときだけ git 情報を取得
    - 対象は `workspace_roots[0]`。`git -C <root> rev-parse --abbrev-ref HEAD` と `rev-parse HEAD`
    - 各コマンドのタイムアウト 1.5 秒。git リポジトリでない／失敗時は `git` を省略
+   - git は、App と同じく `GitLocator` で探した**フルパス**で起動する（名前だけで起動しない。13 章）
 3. `events\cursor\{conversation_id}.jsonl` に1行追記（`FileShare.Read` で開き、IOException は 20ms 間隔で最大10回リトライ）
 4. 出力ルール（`CursorAgent.RespondToHook` に実装）：
 
@@ -347,6 +348,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 - **置き場所を設定にする**：⚙ →「設定…」に「Cursor の Hook exe の置き場所」（フォルダ）。既定は `%LOCALAPPDATA%\Miharikun\bin`。導入（コピーと hooks.json への登録）も、起動時の確認も、この場所を使う。変えて保存したら、その場所に導入し直すかを聞く（「はい」で導入。古い場所の exe は消さない）
 - **既存の登録を受け入れる**：起動時の確認で、hooks.json の Miharikun の登録が、**登録する全イベントで同じ 1 つの別の場所**を指し、その exe が実在するときは、ダイアログを出さずにその場所を置き場所の設定として採用する（`app.log` に 1 行）。そのうえで中身が同梱と違えば、従来どおり「更新」を提案し、更新は**その場所に**コピーする。場所がばらばら・exe が無いときは、従来どおり「登録し直します」を提案する
 - 導入ダイアログの「今後表示しない」は付けない（Issue #17 の Q5）
+- **置き場所の注意（README）**：C ドライブの直下に作ったフォルダ（`C:\dev` など）は、既定のアクセス権で、同じ PC のほかの利用者も中のファイルを書き換えられる。共用の PC では、ほかの利用者が Hook exe を差し替えられるおそれがある。README には、自分だけが書き込めるフォルダ（`%USERPROFILE%` の下）を先に勧め、C 直下に作るなら、ほかの利用者の書き込みを外すよう書く（セキュリティ診断 #4。`docs/security/security-review.html`）
 - **mac（Phase 29・30。Issue #22）**：既定の置き場所は `~/Library/Application Support/Miharikun/bin`（Phase 27 で空白を含むパスから起動できなければ `~/.miharikun/bin`。8 章）。設定画面の欄の名前・入力の誤りの文は OS で言い方を替える（12.12。例：mac は「Cursor の Hook の置き場所」「/ から始まるフォルダを指定してください」。`~` は展開しない）。「参照…」は OS 標準のフォルダ選択。置き場所を変えて導入し直すときも、8.1 の印の解除と試しの起動を行う（導入はいつも同じ処理）。起動時の受け入れでは、ダイアログを出さないのと同じく、印の解除・試しの起動もしない
 
 ## 9. App：起動とプロジェクト判定
@@ -364,7 +366,7 @@ Claude Code の Capabilities：`ToolEvents | AssistantText | Thinking | Subagent
 - 初回起動時は全ファイルを読み、`workspace_roots` が一致するものだけをメモリに保持
 
 ### 9.1 Claude Code の探索と照合（Issue #11）
-- 探索先：`%USERPROFILE%\.claude\projects\`（`MIHARIKUN_CLAUDE_DIR` で `.claude` の場所を上書きできる。検証用）。フォルダ名が「対象フォルダの Claude 式の名前」と同じ、または、それに `--claude-worktrees-` が続くものだけを開く。Claude 式の名前は、`C:\zDev\repo\Miharikun` → `C--zDev-repo-Miharikun`（`:` と `\` と `.` など英数字以外が、それぞれ `-`。Cursor の slug と違い、連なりを 1 つにまとめない。mac の `/Users/x/repo` は同じ規則で `-Users-x-repo` になる見込み。Phase 27 で確認）。名前の比較は大文字小文字を無視。**候補が 0 件のときだけ**、起動ごとに 1 回、全フォルダの各ファイルの先頭の `cwd` だけを読んで探す（日本語・記号を含むパスで規則が違った場合の保険。見つかったらログに残す）
+- 探索先：`%USERPROFILE%\.claude\projects\`（`MIHARIKUN_CLAUDE_DIR` で `.claude` の場所を上書きできる。検証用）。フォルダ名が「対象フォルダの Claude 式の名前」と同じ、または、それに `--claude-worktrees-` が続くものだけを開く。Claude 式の名前は、`C:\zDev\repo\Miharikun` → `C--zDev-repo-Miharikun`（`:` と `\` と `.` など英数字以外が、それぞれ `-`。Cursor の slug と違い、連なりを 1 つにまとめない。mac の `/Users/x/repo` は同じ規則で `-Users-x-repo` になる見込み。Phase 27 で確認）。名前の比較は大文字小文字を無視。**候補が 0 件のときだけ**、起動ごとに 1 回、全フォルダの先頭の `cwd` だけを読んで探す（日本語・記号を含むパスで規則が違った場合の保険。見つかったらログに残す）。**ほかのプロジェクトの会話ログを読む量は最小にする**：フォルダ名の英数字だけを取り出した並び（骨組み。小文字）が、対象のパス（そのまま・実パス）の骨組みと前方一致するフォルダだけを開き、ほかのフォルダの中のファイルは開かない。開いたフォルダの中は、各ファイルの先頭の `cwd` を照らし、1 つでも合えば候補（合わないファイルがあっても打ち切らない。フォルダ名は英数字以外を区別しないので、`my-app` と `my_app`、日本語の文字数が同じパスなどは同じフォルダになり、別のプロジェクトのセッションが混ざりうるため）。名前の規則がずれる原因（NFD の日本語名・記号の扱い）は英数字の並びを変えないので、保険が拾いたいフォルダは残る。Claude Code を、Miharikun に渡したパスとも実パスとも英数字が違うパスで起動した場合は拾えない（受け入れる）。Phase 46。2026-10-09 決定（計画のレビューの Q1＝A）。保険そのものは残す（外すと、名前の規則がずれたとき〈mac の NFD の日本語名・シンボリックリンク経由・Claude Code の版の違い〉に、Claude のセッションが黙って一覧から消えるため）
 - 照合：各ファイルの最初の `cwd` を `ProjectPath`（上の一致判定）で比べる。フォルダ名の規則の違いに頼らない。**作業ツリー**は、`cwd` が「対象フォルダ\.claude\worktrees\<名前>」のものを同じプロジェクトとして扱う
 - 監視：`FileSystemWatcher`（300ms デバウンス）と 3 秒ごとのポーリング。ファイルごとに読み取り済みオフセットを保持し、追記分だけ読む（末尾の不完全な行は次回に回す。`JsonlTail`）。監視先は**ポーリングのたびに取り直す**（作業ツリーのフォルダはあとからできる）。フォルダの直下だけを見る（`subagents\` は見ない）
 - **`.claude` には何も書かない**（フォルダも作らない。監視先が無ければ、次のポーリングでまた試す）
@@ -573,10 +575,19 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - Windows は WebView2（Edge の Runtime）、mac は WKWebView（OS に入っている）を使う。Phase 31 から NativeWebView で両方を同じ書き方で扱う（`NavigationStarted` の取り消し・`NewWindowRequested` で下のリンクの振り分けを行う）。Windows で Runtime が未導入のときは「WebView2 Runtime が必要です」と案内を出し、ツリー・一覧・概要カードは使える。起動時に Runtime の有無を確認する（mac は案内しない）。NativeWebView は Runtime が無いと古い WebView1（EdgeHTML）に切り替えようとするので、使う部品が WebView2 でなければ案内を出す（作れたかどうかでは見分けない）
 - **WKWebView の試作の結果**（Phase 30-1、2026-10-07、mac。Avalonia 12.1.3・Avalonia.Controls.WebView 12.1.0。捨てる小さな画面で確認）：`AdapterInfo.Type` は `WkWebView`。①`Navigate(file:///…)` で、一時フォルダの HTML に `<base>` を別フォルダ（書類フォルダの中を含む）に向けても、画像・css・js を読めた（`/var/folders` の HTML から `~/Documents/…` の css を読めた）。②html を直接開いたときの相対（`../`）・絶対パスの画像・css・js も読めた。③書類フォルダの中の html も開けた（許可の画面は出なかったが、起動したプロセスに許可が既にあった可能性があり、TCC の出方は 30-1 の `.app` で別に確認する）。**代わりの形（`loadFileURL:allowingReadAccessToURL:`）は要らない**。④iframe を含む html では、iframe の読み込みにも `NavigationStarted` が来る（2 件）→ 31-1 で、自分で開いたページに属する iframe は取り消さない。⑤`Refresh()` で**スクロール位置は保たれない**（500ms 後に 0）→ 31-1 で、再読み込みの前に `window.scrollY` を取り、読み込み後に `InvokeScript` で戻す。⑥`NativeWebView.Background` は既定で未設定（null）→ ダークで白く光るかは 31-4 で確かめる。
 - html：元のファイルをそのまま開く（`file:///`）。相対・絶対のローカルパスの css・js・画像・リンクはそのまま効く。JavaScript は実行する。外部 http のリンクは既定ブラウザで開く
-- **リンクの振り分け**（html・md 共通。`NavigationStarting` と `NewWindowRequested` の両方）：①http/https → 既定ブラウザ ②対象フォルダ内の .md/.html/.htm → アプリ内で選択（ツリー・一覧・最後のファイルも追従。html→html も同じ）③対象フォルダ外・除外フォルダ内の .md/.html → 既定のアプリ ④その他のローカルファイル・フォルダ → 既定のアプリ／エクスプローラー ⑤`#見出し` だけ → ページ内で移動。振り分けるのはページそのものの移動だけで、ページの中の iframe の読み込みは振り分けない（そのまま読む。mac の WKWebView は iframe にも `NavigationStarted` を出すので、試作で確かめる）
+- **リンクの振り分け**（html・md 共通。`NavigationStarting` と `NewWindowRequested` の両方）：①http/https/mailto → 既定ブラウザ・メール ②対象フォルダ内の .md/.html/.htm → アプリ内で選択（ツリー・一覧・最後のファイルも追従。html→html も同じ）③対象フォルダ外・除外フォルダ内の .md/.html/.htm と、**開いてよい種類**（画像 `.png` `.jpg` `.jpeg` `.gif` `.webp` `.bmp` `.svg`、`.pdf`、`.txt`）のファイル → 既定のアプリ ④それ以外のローカルファイルとフォルダ → **起動しない**。エクスプローラー／Finder で、それを選んだ状態で見せる（「フォルダで開く」と同じ）⑤ネットワークのパス（`\\server\share\…`。UNC）→ 何もしない（あるかどうかも確かめない）⑥`#見出し` だけ → ページ内で移動。振り分けるのはページそのものの移動だけで、ページの中の iframe の読み込みは振り分けない（そのまま読む。mac の WKWebView は iframe にも `NavigationStarted` を出すので、試作で確かめる）
+  - **理由（セキュリティ診断 #1。`docs/security/security-review.html`）**：ページの中のスクリプトが起こした移動も、クリックと区別できずにここへ来る。プロジェクトには他人や AI が書いた文書も入るので、「見るだけ」で実行形式やスクリプト（.bat・.exe・.command など）が起動しないようにする。種類は拡張子で決め、大文字小文字は区別しない
+  - シンボリックリンクは、たどった先も見る：リンクの名前とたどった先の**両方**が「開いてよい種類」のときだけ ③。たどった先がフォルダなら ④。たどるのは 1 段ずつで、先がネットワークのパスなら、その先に触らずに ⑤（何もしない）
+  - ⑤ のネットワークのパスは、形を数え上げるのでなく、使ってよい形だけを通す：Windows はドライブ文字で始まるもの（`C:\…`）だけ（`\\`・`//`・`\/`・`/\`・`\??\`・`\\?\` などはすべて ⑤）、mac は `/` で始まり `//`・`/net/` で始まらないものだけ
+  - メモのリンクから頼まれた、対象フォルダ内の md/html で索引に無いもの（シンボリックリンクのフォルダの中など）と、「既定のアプリで開く」ボタンも、③〜⑤ と同じ規則を通す（名前が `.md` でも、中身が実行形式を指すシンボリックリンクのことがあるため）
+  - Windows で、ドライブの `:` のほかに `:` を含むパス（代替データストリーム）は、⑤ と同じく何もしない
+  - 対象フォルダの外・除外フォルダ内の .md/.html/.htm も ③ の「開いてよい種類」として扱う（既定のアプリはブラウザやエディタ）
+  - http/https はこれまでどおり既定のブラウザで開く（ページのスクリプトからの移動でも開く。起動するのはブラウザだけなので受け入れる）
+  - **残るリスク**：mac の Finder のエイリアス（シンボリックリンクではない）と、ファイルごとの「このアプリで開く」の指定は、拡張子では見えない。拡張属性に入るので git の clone では来ないが、zip・dmg では来うる。今は対策しない（要るなら別 Issue）
 - md：Markdig（`UseAdvancedExtensions`）で HTML にし、`<base>` を元のフォルダにした一時 HTML を開く（見出しの id は日本語を残す GitHub 方式。`#見出し` のリンクはページ内スクロールにする）。相対パスの画像・リンクが効く。他の .md へのリンクはアプリ内で開き、ツリー・一覧も追従する。**mac の WKWebView で、一時 HTML（データの `preview/`）から `<base>` 先のプロジェクトのファイル（`../`・絶対パスも）を読めるかは、Phase 30 の最初に試作で確かめる**（WKWebView はファイルの読み取り範囲を絞ることがあるため）。NativeWebView の mac は `loadRequest` で開き、WebKit はファイルのとき、まずファイル全体を読める許可を作る（Miharikun はサンドボックスに入らないので、読める見込み）。読めなければ、WKWebView を直接呼び、読める範囲（一時 HTML とプロジェクトの共通の親）を指定して開く（`loadFileURL:allowingReadAccessToURL:`）。見え方・リンクの振り分けは変えない。独自のスキームで返す形は、今の NativeWebView（12.1.0）では作れない（中身を返す口が無い）ので使わない（レビュー 2026-10-06 の Q4）
 - md の**タスクリスト**（`- [ ]` `- [x]` `- [X]`、入れ子、番号付きリスト内）は、チェックボックスとして表示する。読み取り専用（クリックしても md は変わらない）。黒丸は消す。コードブロック内と見出し内の `[x]` は変換しない
-- md の mermaid（`mermaid` 言語のコードブロック）は、CDN の mermaid.js で図にする（ネット接続が前提。繋がらないときはコードのまま表示）。コードブロックは highlight.js（CDN。繋がらないときは色なし）で色付けする
+- md の**生の HTML**（`<details>`・`<br>`・幅を指定した `<img>` など）はこれまでどおり表示するが、**スクリプトは動かさない**（セキュリティ診断 #1・Q2）。md のページに CSP（`Content-Security-Policy` の `<meta>`）を入れ、スクリプトは Miharikun が入れたもの（ページごとの nonce 付き）だけを許す。md に書かれた `<script>`・`onclick` などの属性・`javascript:` のリンクは動かない。Miharikun のスクリプトはページの `<head>` に置き、md の本文の後ろには置かない（閉じていない生の HTML に nonce を横取りされないため）。md のページの読み込み中に起きた、自分のページ以外への移動は取り消す（振り分けもしない）。生の HTML の `<meta http-equiv>` は効かないようにする（`http-equiv` を別の名前に置き換える。`refresh` で勝手にブラウザなどが開かないように。CSP では止まらないため）。`<iframe>`・`<object>`・`<embed>` の中身も読み込まない（GitHub の md の表示でも出ないため）。html のプレビューは今のまま（JavaScript を実行する。リンクの振り分けで守る）。タスクリストのチェックボックスを押しても変わらない仕組みは、属性の `onclick` でなく、Miharikun のスクリプトで行う（見た目は今のまま）
+- md の mermaid（`mermaid` 言語のコードブロック）は mermaid.js で図にし、コードブロックは highlight.js で色付けする。**どちらもアプリに同梱する**（版を固定。ネット接続は要らない。セキュリティ診断 #3・Q3）。起動中に初めて md を描くとき、`preview\lib\<版>\` に書き出し（無い、または長さが違うときだけ。版は同梱のファイルの中身から決める）、md のページはそこから読む。ライセンスの表示は配布物に入れる（`THIRD-PARTY-NOTICES.txt`）
 - md のプレビューはライト/ダークのテーマに追従する（html はファイルの見た目を尊重）
 - ファイルが保存されたら自動で再読み込みする
 - タブを切り替えて戻っても、プレビューの表示とスクロール位置はそのまま（WebView を作り直さない。Avalonia ではタブの中身を画面に載せたまま、見える・見えないで切り替える。レビュー 2026-10-06 の Q3）
@@ -642,7 +653,8 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - タブを開いたとき・起動時はプレビュー。バーの右に「✎ 編集」
 - 表示は 12.7 の md のプレビューと同じ（Markdig・タスクリストは読み取り専用・mermaid・コードの色付け・ライト/ダークに追従）。**相対パスの基準は対象フォルダ**（`docs/xxx.md` や画像がそのまま効く）
 - 空（ファイルが無い・空白だけ）のときは「メモはまだありません。右上の『編集』で書けます」と出す
-- リンク：①http/https → 既定ブラウザ ②対象フォルダ内の .md/.html/.htm（除外フォルダ内を除く）→ **ドキュメントタブに切り替えて、そのファイルを選ぶ** ③それ以外のローカルファイル・フォルダ → 既定のアプリ／エクスプローラー ④`#見出し` → ページ内で移動
+- リンク：①http/https/mailto → 既定ブラウザ・メール ②対象フォルダ内の .md/.html/.htm（除外フォルダ内を除く）→ **ドキュメントタブに切り替えて、そのファイルを選ぶ** ③それ以外のローカルファイル・フォルダ → 12.7 の ③〜⑤ と同じ（開いてよい種類だけ既定のアプリ、ほかは起動せずエクスプローラー／Finder で見せる、ネットワークのパスは何もしない）④`#見出し` → ページ内で移動
+- 生の HTML・スクリプト・mermaid・色付けの扱いも 12.7 と同じ（CSP でスクリプトは動かさない。mermaid・highlight.js は同梱）
 - メモのファイルが外で書き換わったら（別の起動のアプリなど）、プレビュー中なら自動で読み直す
 - WebView2 Runtime が無いとき（Windows）は、プレビューの場所に 12.7 と同じ案内を出す。編集・保存は使える
 
@@ -695,6 +707,9 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 例外で落ちないこと：壊れた行はスキップしてログに残す。読み込み元（`ISessionSource`）ごとに例外を捕まえ、スタックつきでログに残して、他の読み込み元は動き続ける（Claude Code の読み込みが壊れても Cursor の表示は止めない）
 - それでも捕まえられなかった例外（UI スレッド・背景スレッド・Task）は、`app.log` にスタックつきで残す（落ちた原因を調べられるように）
 - イベントファイルの自動削除は MVP ではしない
+- **プロジェクトの中のファイルを見るだけで、プログラムが起動しないこと**（他人のリポジトリ・AI が書いた文書も入るため。セキュリティ診断 `docs/security/security-review.html`）：プレビューのリンクの振り分け（12.7 の ③〜⑤）、md の CSP（12.7）
+- **責務外のファイルに触らない**：書き込み・削除は Miharikun のデータフォルダの中だけ（例外は、利用者が「はい」と答えたときの `~/.cursor/hooks.json` の登録とそのバックアップ、Hook の置き場所へのコピー）。`~/.claude`・`~/.cursor/projects`・プロジェクトのフォルダには書かない。読むのは対象プロジェクトの分だけ（例外は 9.1 の保険の探索で、フォルダ名の英数字が対象と合うフォルダの、各ファイルの先頭の `cwd` だけ）
+- **外部のプログラムはフルパスで起動する**：git（`GitLocator`。Windows も PATH の絶対パスの項目〈ドライブ文字で始まるものと UNC。`\\?\`・`\\.\` の形は除く。PATH の順〉と決まった場所から `git.exe` を探し、カレントフォルダ・相対の項目は見ない）、エクスプローラー（`%WINDIR%\explorer.exe`）、mac の `open`（`/usr/bin/open`）。名前だけで起動すると、Windows はカレントフォルダ（README の手順ではプロジェクトのフォルダ）の同じ名前の exe を先に選ぶため
 
 ## 14. Step 0：実機検証
 
@@ -1060,12 +1075,46 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：両 OS で全体の完了条件を満たす。Windows で `invokeCSharpAction` が使えなければ、代わりの形（独自の URL への移動を取り消して受ける）にして確かめる
 - 状況（2026-10-09 完了）：41-1 Windows（WebView2）の実機で利用者が確認 OK（ページの中の Esc・目次で移る・位置の補正など、`docs/release.md` の拡大モードの項目）。`invokeCSharpAction` はそのまま使えたので代わりの形は入れず、`overflow-anchor: none` も足していない。41-2 `docs/release.md` の「出す前のチェック」に拡大モードの項目を追加。mac は Phase 40 の確認で OK。**Issue #28 の実装は、これで 38〜41 がすべて完了**。
 
+## Phase 42〜47: セキュリティ診断の対応（Issue #31）
+13 章・12.7・12.10・8.2・9.1。診断：`docs/security/security-review.html`（#1〜#4。回答 Q1＝C 開いてよい種類だけ既定のアプリ、Q2＝A CSP の nonce、Q3＝A 同梱）。Phase 46（保険の探索を絞る）は診断の後の相談で決めたもの（2026-10-09）。計画のレビュー：`docs/security/security-plan-review.html`（2026-10-09。Q1＝A 保険の探索はフォルダ名の英数字で絞る、Q2＝A Windows の git は PATH の UNC の項目も使う）。実装の分け方・ファイル構成・決めごとは実装計画 `docs/security/security-plan.md`（図解 HTML と対）。全体の完了条件：プロジェクトの中のファイルを見るだけで、プログラムが起動しない（両 OS の実機で、実行形式へのリンク・ページのスクリプトからの移動・md のスクリプトを確かめる）。git・エクスプローラー・`open` をフルパスで起動する。mermaid・色付けがネットなしで出る。これまでの md の見た目・リンク・Esc・目次が変わらない。
+
+## [x] Phase 42: 外部のプログラムをフルパスで起動（#2）
+- `GitLocator` の Windows（PATH の絶対パスの項目〈ドライブ・UNC〉と決まった場所から `git.exe` を探す。カレントフォルダは見ない）、`ShellOpen` の「フォルダで開く」（Windows は `%WINDIR%\explorer.exe`、mac は `/usr/bin/open`）。テスト先行
+- 完了条件：Windows の git の探し方（相対・`.`・引用符つきの項目・UNC の項目・見つからないときの決まった場所・どこにも無ければ null）と、「フォルダで開く」のコマンドのテストが通る。App と Hook が同じ `GitLocator` を使う
+- 状況（2026-10-09 完了）：実装済み（42-1・42-2。テスト先行）。`GitLocator.Find` の Windows を、名前 `git` でなくフルパスにした（PATH の使える形の項目〈ドライブ・UNC。相対・`.`・空・ドライブなし・`\\?\`・`\\.\` は使わない〉を PATH の順に、無ければ ProgramFiles・ProgramW6432・ProgramFiles(x86)・LOCALAPPDATA の決まった場所。引数に `getEnv` を足した）。起動時に `app.log` へ「git: <パス>」を 1 行（背景で）。`ShellOpen.BuildRevealCommand` は Windows が `<windowsDir>\explorer.exe` と `/select,"<file>"`（引用符で囲んだ 1 つの文字列）、mac が `/usr/bin/open`。Tests 1208（スキップ 30）、UiTests 65（スキップ 3）。mac の隔離環境で起動し、`app.log` に git のフルパスが出ることを確認。できなかった確認：Windows の実機（git のフルパス・エクスプローラーで `,` を含む名前を選ぶ）は Phase 47、「Finder で表示」の画面操作は未実施（コマンドの組み立てはテストで確認、`/usr/bin/open` の存在は確認）
+
+## [x] Phase 43: プレビューのリンクの振り分け（#1）
+- ローカルのリンクの規則（開いてよい種類・フォルダ・使ってよい形のパス・`:` を含むパス・1 段ずつたどるシンボリックリンク。テスト先行）、ドキュメントタブとメモタブの `OpenLocalLink`・索引に無いときの外部・「既定のアプリで開く」ボタンをそれに置き換え、プレビューの振り分けでネットワークのパスを捨てる
+- 完了条件：規則の表のテストが通る。開いてよい種類だけ既定のアプリで開き、ほかは起動せずエクスプローラー／Finder で見せる。ネットワークのパスは、あるかどうかも確かめない
+- 状況（2026-10-09 完了）：実装済み（43-1・43-2。テスト先行）。`LocalLinkRule`（`Decide`・`IsUsableLocalPath`・`LinkProbe`）：使える形のパスだけ通す → Windows の `:` → シンボリックリンクを 1 段ずつ（8 段超は見せるだけ）→ フォルダは見せる → 無ければ何もしない → 名前と先の両方が開いてよい種類なら既定のアプリ、ほかは見せる。`DocumentsViewModel.OpenLocalLink`・`OpenExternallyBecauseMissing`・`OpenExternal`（「既定のアプリで開く」ボタン）と `MemoViewModel.OpenLocalLink` を規則に置き換え、`MarkdownPreview.Route` は `uri.IsUnc` を捨てる。Tests 1270（スキップ 30）、UiTests 65（スキップ 3）。mac の本物のシンボリックリンクでの判定・索引に無い md がリンクのとき・ボタンのテストは通った。できなかった確認：隔離環境の画面で実際にリンクを押す操作（試験用の md は用意済み）、Windows の実機は Phase 47
+
+## [x] Phase 44: mermaid・highlight.js の同梱（#3）
+- 版を固定したファイルを `Miharikun.Docs` に埋め込み、`preview\lib\<版>\` に書き出して md のページから読む（CDN をやめる）。ライセンスの表示
+- 完了条件：md の HTML に CDN の URL が無い。ネットを切っても mermaid と色付けが出る（両 OS）。ライト/ダーク
+- 状況（2026-10-09 完了）：実装済み（44-1・44-2。テスト先行）。同梱：mermaid 11.17.2（MIT。`mermaid.min.js`）、highlight.js 11.12.0（BSD-3-Clause。`highlight.min.js`・github／github-dark の css）。取得元は npm のレジストリ（利用者の了承後。tarball の sha512 が `dist.integrity` と一致）。`MarkdownAssets`（版＝埋め込みの中身のハッシュ `v-` ＋ 12 文字・`Ensure`）、`AtomicFile.WriteAllBytes`、`MarkdownRenderer` の `libFolder`（絶対の file URL。mermaid は普通の `<script>` ＋ `securityLevel: 'strict'`。CDN の URL なし）、`MarkdownPreview` が描画の前に `preview/lib/<版>/` を用意、`scripts/dist/THIRD-PARTY-NOTICES.txt` を両 OS の zip に同梱。Tests 1285（スキップ 30）、UiTests 65（スキップ 3）。確認：本物の `MarkdownRenderer` の出力（ライト／ダーク）を、同梱ファイルだけを読む形で Chromium に表示し、図・色付け・チェックボックスが出て、外部への通信が無いことを確認。できなかった確認：mac の WKWebView（アプリ内のプレビュー）での目視、ネットを切った状態、メモのプレビュー、品質ゲート 2 の全項目、Windows の実機（Phase 47）
+
+## [x] Phase 45: md の CSP（#1）
+- ページごとの nonce の CSP、Miharikun のスクリプトに nonce（すべて `<head>` に）、チェックボックスを押しても変わらない仕組みをスクリプトに、md のページの読み込み中の移動の取り消し、生の HTML の `http-equiv` を効かなくする。テスト先行
+- 完了条件：md に書いた `<script>`・`onerror` などの属性・`javascript:` のリンク・`<meta http-equiv="refresh">` が動かない。これまでの md の見た目・`#` リンク・Esc・目次で移る・位置の補正・チェックボックス・mermaid・色付けが両 OS で動く
+- 状況（2026-10-09 実装完了。45-2 の mac 実機の確認は未了）：実装済み（45-1。テスト先行）。`MarkdownRenderer`：ページごとの nonce と CSP の `<meta>`（`<meta charset>` の直後・`<base>` より前。`script-src 'nonce-…'; object-src 'none'; frame-src 'none'; form-action 'none'`）、Miharikun の script は全部 `<head>`（共通 1 つ＋ hljs 2 つ＋ mermaid 2 つ。本文の後ろには何も置かない。`defer`・`DOMContentLoaded`）、チェックボックスは `onclick` をやめて、子孫のセレクタ（`li.task-list-item input[type="checkbox"]`）でクリックを取り消すスクリプト、生の HTML（`HtmlBlock`・`HtmlInline`）の `http-equiv` を `data-http-equiv` に。`PreviewNavigationPolicy` に `Cancel`（md の読み込み中の自分のページ以外への移動）、`MarkdownPreview` は `Cancel` を振り分けない。Tests 1301（スキップ 30）、UiTests 65（スキップ 3）。確認：本物の出力を Chromium（同梱ファイルだけを読む形）で開き、md に書いた `<script>`・`onerror`・`javascript:` のリンクが動かない（CSP が止める）、mermaid が `unsafe-eval` なしで図を描く（9.7 の 1）、色付け、チェックボックスを押しても変わらない（空行を挟んだリストも）、`#` リンクのスクロール、meta refresh が残らないことを確認。できなかった確認（mac の WKWebView のアプリ内プレビューでの目視。利用者の確認待ち）：9.7 の 2（`InvokeScript`：目次で移る・位置の復元）・3（ページの中の Esc が届く）・5（ネットワークのパスの画像）、品質ゲート 2 の全項目、メモのプレビュー。Windows は Phase 47
+
+## [x] Phase 46: Claude の会話ログの保険の探索を絞る（9.1）
+- `ClaudeLocations.FindDirsByCwd`：フォルダ名の英数字の並び（骨組み）が対象のパス・実パスと前方一致するフォルダだけを開き、中は今のまま各ファイルの先頭の `cwd` を照らす（合わないファイルがあっても打ち切らない）。動く条件・ログの文は今のまま。テスト先行
+- 完了条件：骨組みが違うフォルダを開かない・記号の数だけ違うフォルダ（NFD の日本語名など）が見つかる・別のプロジェクトのセッションが混ざったフォルダでも見つかる・作業ツリーの形が見つかる、のテストが通り、これまでの保険のテストも（フォルダ名を「骨組みが同じで規則だけ違う名前」に替えて）期待を変えずに通る。隔離環境で、名前の規則に合わないフォルダのセッションが一覧に出る
+- 状況（2026-10-09 完了）：実装済み（46-1。テスト先行）。`ClaudeFolderName.Skeleton`（ASCII の英数字だけ・小文字。先に NFC）、`ClaudeLocations.FindDirsByCwd` はフォルダ名の骨組みが対象のパス（そのまま・実パス）の骨組みと前方一致するフォルダだけを開く（空の骨組みは開かない。開いたフォルダの中は今のまま全ファイルの先頭の `cwd` を照らす）。動く条件・ログの文は今のまま。既存の保険のテスト（`ClaudeLocationsTests`・`ClaudeSessionSourceTests`）はフォルダ名を「骨組みが同じで記号の数だけ違う名前」に替え、期待は変えていない。絞り込みを外すと、新しい 2 つのテスト（別の骨組みのフォルダを開かない・空の骨組みを開かない）が落ちることを確認。Tests 1315（スキップ 30）、UiTests 65（スキップ 3）。mac の隔離環境（`MIHARIKUN_CLAUDE_DIR` を一時フォルダに向け、記号の数が違う名前のフォルダと、cwd が対象と同じでも名前が別のフォルダを手書きのログで作成）で起動し、`app.log` に「フォルダ名の規則が、想定と違った」が前者の名前だけで出て、後者は開かれないことを確認。できなかった確認：セッション一覧の画面での目視
+
+## [x] Phase 47: 両 OS の実機確認・仕上げ
+- 両 OS の通しの確認、README（Hook の置き場所の注意〈8.2〉・同梱のライセンス）、`docs/release.md` のチェック、本書の状況の更新
+- 完了条件：全体の完了条件を両 OS の実機で満たす
+- 状況（2026-10-09 完了）：47-1 Windows（WebView2）の実機で利用者が `docs/security/windows-check.md` の確認表を全部確認 OK（git のフルパス・エクスプローラーでの `a, b.bat`・リンクの振り分け・ネットワークのパス・md のスクリプト／meta refresh・ネットなしの mermaid と色付け・品質ゲート 2 など）。47-2 文書：`scripts/dist/README-win.txt`・`README-mac.txt`（Hook の置き場所の注意〈`%USERPROFILE%` の下を先に勧め、C ドライブ直下は注意つき〉・プレビューのリンクの扱い・同梱のライセンス）、`docs/release.md` の「出す前のチェック」にセキュリティの項目、`docs/security/security-review.html` の状態を「対応済み」に。Tests 1315（スキップ 30）、UiTests 65（スキップ 3）。mac の WKWebView（アプリ内プレビュー）での Esc・目次・位置の復元の目視は、実装するセッションからはできていない（Phase 45 の状況のとおり）
+
 ## 16. テスト方針
 
 - Core は xUnit で網羅：`CursorAgent.Normalize` の対応表どおりの変換、状態遷移（再開・中断・エラー・stop 欠落）、実行中ツールの保険クリア、
   プロジェクト一致判定（大文字小文字・末尾区切り・マルチルート）、壊れた行のスキップ、追記途中の行の扱い
 - テスト用 JSONL フィクスチャは Step 0 のダンプから個人情報・社内情報を除去して作成
 - ドキュメント（Core）：`GitIgnoreMatcher`（コメント・`!`・末尾 `/`・`**`・大文字小文字・後勝ち）、`DocumentIndexer`（一時フォルダ。枝刈り・件数の子孫集計）、md→HTML 変換（チェックボックス 6 ケース）、md の見出しの一覧（HTML の id との一致・✅/⬜・節のタスク数。Issue #28）
+- セキュリティ（Phase 42〜47）：プレビューのローカルのリンクの規則（開いてよい種類・大文字小文字・フォルダ・ネットワークのパス・`:` を含むパス・シンボリックリンク）、md の CSP（Miharikun のスクリプトだけに nonce・md に書いたスクリプトには付かない・本文の後ろに nonce が無い・空行を挟んだタスクリスト）、Windows の git の探し方（カレントフォルダを見ない・UNC の項目は使う）、Claude の保険の探索（フォルダ名の英数字の骨組みで絞る・混ざったフォルダでも見つかる）
 - Claude Code（Core）：`ClaudeTranscriptNormalizer`（5.1 の対応表の行ごと）、`StalledRule`、`ClaudeSessionSource`（探索・`cwd`・作業ツリー・追記読み・不完全な行・壊れた行）。汎用 `ProjectEventStore` はダミーの Source でテストする
 
 - メモタブ（Core）：`ProjectMemoStore`（一時フォルダ。パス・無いとき・読み書き・BOM なし・上書き・他のファイルを消さない）、変更の有無の判定

@@ -8,6 +8,9 @@ public enum PreviewNavigationAction
 
     /// <summary>WebView の移動は取り消し、リンクとして振り分ける（http は既定のブラウザ、ローカルのファイルはホストへ）。</summary>
     Route,
+
+    /// <summary>WebView の移動を取り消すだけで、振り分けもしない（md のページの読み込み中に、自分のページ以外へ移ろうとしたもの。meta refresh など）。</summary>
+    Cancel,
 }
 
 /// <summary>
@@ -17,7 +20,8 @@ public enum PreviewNavigationAction
 /// </summary>
 public static class PreviewNavigationPolicy
 {
-    public static PreviewNavigationAction Decide(Uri target, string? pagePath, bool isLoadingPage)
+    /// <param name="isMarkdownPage">md のページか。md のページは iframe を読まない（CSP の <c>frame-src 'none'</c>）ので、読み込み中の移動は全部取り消す。html は今のまま。</param>
+    public static PreviewNavigationAction Decide(Uri target, string? pagePath, bool isLoadingPage, bool isMarkdownPage = false)
     {
         if (target.Scheme is "about" or "data" or "blob")
             return PreviewNavigationAction.Allow;
@@ -27,9 +31,10 @@ public static class PreviewNavigationPolicy
             && string.Equals(target.LocalPath, pagePath, StringComparison.OrdinalIgnoreCase))
             return PreviewNavigationAction.Allow;
 
-        // 自分で開いたページを読み込んでいる間は、その中の iframe などの読み込みなので通す。
+        // 自分で開いたページを読み込んでいる間は、その中の iframe などの読み込みなので通す（html）。
+        // md のページは iframe を読まないので、読み込み中の移動は meta refresh などの勝手な移動。取り消す。
         if (isLoadingPage)
-            return PreviewNavigationAction.Allow;
+            return isMarkdownPage ? PreviewNavigationAction.Cancel : PreviewNavigationAction.Allow;
 
         return PreviewNavigationAction.Route;
     }

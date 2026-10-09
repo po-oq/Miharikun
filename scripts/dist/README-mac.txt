@@ -55,3 +55,10 @@ Hook が動かないとき（~/Library/Application Support/Miharikun/bin/ の Ho
 - 右上の「✎ 編集」で書き、「保存」（⌘S）で保存します。「キャンセル」で、変更を捨ててプレビューに戻ります。
 - 保存先は ~/Library/Application Support/Miharikun/projects/ の「.memo.md」です（1 プロジェクトに 1 つ）。未保存のまま閉じるときは、保存するか確認します。
 - メモの中の、プロジェクト内の .md / .html へのリンクは、「ドキュメント」タブで開きます。
+
+プレビューの中のリンク：
+- http / https のリンクは、既定のブラウザで開きます。
+- ファイルへのリンクは、開いてよい種類（.md .html .htm .png .jpg .jpeg .gif .webp .bmp .svg .pdf .txt）だけ既定のアプリで開きます。
+  ほかの種類（.command・.sh など）とフォルダ（.app を含む）は、開かずに、Finder で選ばれた状態にします（プログラムが勝手に起動しないため）。
+- プレビューの中の図（mermaid）と、コードの色付けは、このアプリに同梱のもので動きます（インターネットには接続しません）。
+  同梱のソフトウェアのライセンスは、Miharikun.app と同じフォルダの THIRD-PARTY-NOTICES.txt にあります。

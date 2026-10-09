@@ -27,6 +27,22 @@ public static class ClaudeFolderName
         return sb.ToString();
     }
 
+    /// <summary>
+    /// 骨組み：文字列から ASCII の英数字だけを取り出し、小文字にしたもの（先に NFC にそろえる）。
+    /// <c>C:\zDev\repo\Miharikun</c> も、フォルダ名 <c>C--zDev-repo-Miharikun</c> も <c>czdevrepomiharikun</c>。
+    /// 名前の規則がずれる原因（NFD の日本語名・記号の扱い）は英数字の並びを変えないので、保険の探索はこれでフォルダを絞る。
+    /// </summary>
+    public static string Skeleton(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (var c in ProjectPath.ToNfc(text))
+        {
+            if (char.IsAsciiLetterOrDigit(c))
+                sb.Append(char.ToLowerInvariant(c));
+        }
+        return sb.ToString();
+    }
+
     /// <summary>フォルダ名が、同じ名前、または作業ツリーの形（<c>--claude-worktrees-</c> が続く）か。大文字小文字は無視する。</summary>
     public static bool IsCandidate(string folderName, string projectPath)
     {

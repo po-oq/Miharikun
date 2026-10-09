@@ -80,16 +80,25 @@ public sealed partial class MemoViewModel : ObservableObject, IPreviewHost, IDis
 
     public void OnPageEscape() { }
 
-    /// <summary>プレビュー内のリンク：対象フォルダ内の md/html はドキュメントタブで開き、それ以外は既定のアプリ／エクスプローラー。</summary>
+    /// <summary>プレビュー内のリンク：対象フォルダ内の md/html はドキュメントタブで開き、それ以外は規則（計画 9.3）で、開いてよい種類だけ既定のアプリ、ほかはファイラーで見せる。</summary>
     public void OpenLocalLink(string fullPath)
     {
+        if (!LocalLinkRule.IsUsableLocalPath(fullPath, OperatingSystem.IsWindows()))
+            return;
         if (File.Exists(fullPath) && _resolveInApp(fullPath) is { } rel)
         {
             OpenInDocumentsRequested?.Invoke(rel);
             return;
         }
-        if (File.Exists(fullPath) || Directory.Exists(fullPath))
-            _services.OpenWithDefaultApp(fullPath);
+        switch (LocalLinkRule.Decide(fullPath, OperatingSystem.IsWindows(), LinkProbe.Real))
+        {
+            case LocalLinkAction.OpenWithDefaultApp:
+                _services.OpenWithDefaultApp(fullPath);
+                break;
+            case LocalLinkAction.Reveal:
+                _services.RevealInFileManager(fullPath);
+                break;
+        }
     }
 
     // ── 画面とのやりとり ────────────────────────────────────────────

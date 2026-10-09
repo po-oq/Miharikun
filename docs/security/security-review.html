@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>リポジトリ全体のセキュリティ診断</title>
+<style>
+body{font-family:"Yu Gothic UI",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.65;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:32px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:8px 0} .rec{color:#c05000;font-weight:bold} .ok{color:#2a7a2a;font-weight:bold} .ng{color:#b33;font-weight:bold}
+.sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px;margin:10px 0}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%}
+</style></head><body>
+<h1>リポジトリ全体のセキュリティ診断</h1>
+<p><b>状態：対応済み</b>（2026-10-09。Issue #31・Phase 42〜47。Windows の実機の確認も OK。下は診断の時点の記録）。<b>診断時の状態：確定</b>（2026-10-09。main の 7cb79e7 時点のコードを読んで判断。コードは変えていない。Q1〜Q3 は回答済み：5 章）</p>
+
+<h2>1. 結論</h2>
+<p><span class="ng">直してから使い続けたい問題が 2 件</span>（どちらも「プロジェクトの中のファイル」をきっかけに、利用者が意図しないプログラムが動きうる）。ほかに低い問題が 2 件。
+Hook・会話ログの読み取り・保存先のパス・git の引数・リリースの workflow は、問題なし。</p>
+<p>前提とする脅威：Miharikun が見るプロジェクトのフォルダには、<b>利用者が書いていないファイル</b>が入りうる（clone した他人のリポジトリ、PR のブランチ、AI エージェントが書いた文書）。それらを「見るだけ」で何かが起動するのは避けたい。</p>
+
+<h2>2. 確認した範囲</h2>
+<ul>
+<li>プレビュー：<code>src/Miharikun.Docs/MarkdownRenderer.cs</code>、<code>src/Miharikun/Views/MarkdownPreview.axaml.cs</code>、<code>src/Miharikun.Presentation/PreviewNavigationPolicy.cs</code>、<code>PreviewScripts.cs</code>、<code>src/Miharikun/PreviewFiles.cs</code></li>
+<li>外部の起動：<code>src/Miharikun.Presentation/ShellOpen.cs</code>、<code>src/Miharikun/Services/AvaloniaUiServices.cs</code>、<code>ViewModels/DocumentsViewModel.cs</code>・<code>MemoViewModel.cs</code>（<code>OpenLocalLink</code>）</li>
+<li>git：<code>src/Miharikun.Core/Git/GitClient.cs</code>・<code>GitLocator.cs</code>、<code>src/Miharikun.Hook/GitProbe.cs</code>、<code>src/Miharikun/App.axaml.cs</code>・<code>AppComposition.cs</code></li>
+<li>Hook：<code>src/Miharikun.Hook/Program.cs</code>・<code>HookRunner.cs</code>・<code>PayloadRecovery.cs</code>、<code>src/Miharikun.Core/Install/HookCheck.cs</code>・<code>HookInstaller.cs</code>（コマンドの組み立て）</li>
+<li>保存先：<code>src/Miharikun.Core/Storage/AppPaths.cs</code>、会話ログの読み取り（<code>ClaudeLocations.cs</code>・<code>CursorTranscriptImporter.cs</code>）</li>
+<li>CI：<code>.github/workflows/release.yml</code>・<code>test.yml</code>。文書：<code>docs/miharikun-requirements.md</code> 12.7、<code>scripts/dist/README-win.txt</code></li>
+</ul>
+
+<h2>3. 概念図</h2>
+<h3>問題 #1：プレビューの中の移動が、ファイルの起動までつながる（いま）</h3>
+<svg viewBox="0 0 960 190" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="30" width="170" height="76" fill="#ffe9c8" stroke="#a70"/>
+<text x="18" y="52" font-weight="bold">md / html の文書</text>
+<text x="18" y="72" font-size="12">clone したリポジトリや</text>
+<text x="18" y="90" font-size="12">AI が書いた文書も含む</text>
+<line x1="180" y1="68" x2="220" y2="68" stroke="#333" marker-end="url(#a)"/>
+<rect x="220" y="30" width="180" height="76" fill="#dff" stroke="#08a"/>
+<text x="228" y="52" font-weight="bold">WebView（プレビュー）</text>
+<text x="228" y="72" font-size="12">md の生の HTML と</text>
+<text x="228" y="90" font-size="12">html の JS がそのまま動く</text>
+<line x1="400" y1="68" x2="440" y2="68" stroke="#333" marker-end="url(#a)"/>
+<rect x="440" y="30" width="200" height="76" fill="#fde" stroke="#b33"/>
+<text x="448" y="52" font-weight="bold">Route（振り分け）</text>
+<text x="448" y="72" font-size="12">クリックか、ページの中の</text>
+<text x="448" y="90" font-size="12">スクリプトかを区別しない</text>
+<line x1="640" y1="68" x2="680" y2="68" stroke="#333" marker-end="url(#a)"/>
+<rect x="680" y="30" width="270" height="76" fill="#fde" stroke="#b33"/>
+<text x="688" y="52" font-weight="bold">OpenLocalLink → ShellOpen.Open</text>
+<text x="688" y="72" font-size="12">md/html 以外は「関連付けで開く」</text>
+<text x="688" y="90" font-size="12">＝実行形式・スクリプトなら起動する</text>
+<text x="830" y="124" fill="#b33">← 問題 #1</text>
+<text x="10" y="150" font-size="12" fill="#c05000">※ ページを選んで表示しただけ（クリックなし）でも、ページの中のスクリプトが移動を起こせば、ここまで届く。</text>
+<text x="10" y="170" font-size="12" fill="#666">※ http・https・mailto・file 以外のスキームは Route が捨てている（ここは問題なし）。</text>
+</svg>
+
+<h3>問題 #1 を直した後</h3>
+<svg viewBox="0 0 960 220" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="70" width="200" height="70" fill="#dfd" stroke="#383"/>
+<text x="18" y="96" font-weight="bold">Route（直した後）</text>
+<text x="18" y="116" font-size="12">移動先の種類で分ける</text>
+<line x1="210" y1="105" x2="260" y2="28" stroke="#333" marker-end="url(#a)"/>
+<line x1="210" y1="105" x2="260" y2="78" stroke="#333" marker-end="url(#a)"/>
+<line x1="210" y1="105" x2="260" y2="128" stroke="#333" marker-end="url(#a)"/>
+<line x1="210" y1="105" x2="260" y2="178" stroke="#333" marker-end="url(#a)"/>
+<rect x="260" y="10" width="690" height="36" fill="#efe" stroke="#383"/>
+<text x="270" y="33">対象フォルダ内の md / html → アプリ内で選ぶ（今のまま）</text>
+<rect x="260" y="60" width="690" height="36" fill="#efe" stroke="#383"/>
+<text x="270" y="83">http / https / mailto → 既定のブラウザ・メール（今のまま）</text>
+<rect x="260" y="110" width="690" height="36" fill="#dfd" stroke="#383"/>
+<text x="270" y="133">それ以外のローカルのファイル → <tspan font-weight="bold">起動しない</tspan>。Finder／エクスプローラーで場所を見せるだけ（Q1）</text>
+<rect x="260" y="160" width="690" height="36" fill="#dfd" stroke="#383"/>
+<text x="270" y="183">ネットワークのパス（\\server\share\…）→ 何もしない（存在の確認もしない）</text>
+</svg>
+
+<h3>問題 #2：Windows で、git・explorer を名前だけで起動している（いま）</h3>
+<svg viewBox="0 0 960 200" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="40" width="220" height="80" fill="#efe" stroke="#383"/>
+<text x="18" y="62" font-weight="bold">Miharikun.exe</text>
+<text x="18" y="82" font-size="12">プロジェクトのフォルダで起動</text>
+<text x="18" y="100" font-size="12">（カレント＝プロジェクト）</text>
+<line x1="230" y1="80" x2="280" y2="80" stroke="#333" marker-end="url(#a)"/>
+<rect x="280" y="40" width="230" height="80" fill="#fde" stroke="#b33"/>
+<text x="288" y="62" font-weight="bold">Process.Start("git")</text>
+<text x="288" y="82" font-size="12">フルパスでなく名前だけ</text>
+<text x="288" y="100" font-size="12">（"explorer.exe" も同じ）</text>
+<line x1="510" y1="80" x2="560" y2="80" stroke="#333" marker-end="url(#a)"/>
+<rect x="560" y="10" width="390" height="140" fill="#eee" stroke="#888"/>
+<text x="570" y="32" font-weight="bold">Windows が exe を探す順</text>
+<text x="570" y="54" font-size="12">① 起動したアプリの exe のフォルダ</text>
+<text x="570" y="74" font-size="12" fill="#b33">② 親プロセスのカレントフォルダ（＝プロジェクト） ← 問題 #2</text>
+<text x="570" y="94" font-size="12">③ System32 などのシステムフォルダ</text>
+<text x="570" y="114" font-size="12">④ Windows フォルダ（explorer.exe はここ）</text>
+<text x="570" y="134" font-size="12">⑤ PATH（git.exe はふつうここ）</text>
+<text x="10" y="175" font-size="12" fill="#c05000">※ プロジェクトのフォルダに同じ名前の exe があると、本物より先に選ばれる。git status は起動直後と定期的に走るので、操作なしで起きうる。</text>
+<text x="10" y="193" font-size="12" fill="#666">※ mac は GitLocator が絶対パスだけを候補にしており、この問題はない。</text>
+</svg>
+
+<h2>4. 問題一覧</h2>
+<table>
+<tr><th>#</th><th>重大度</th><th>何が問題か（根拠）</th><th>どう解決するか</th></tr>
+<tr><td>1</td><td class="ng">高</td><td>
+<b>プレビューの中の移動で、プロジェクト内の任意のファイルが関連付けで起動される。</b><br>
+・md の生の HTML を止めていない（<code>MarkdownRenderer.cs:19-22</code>。Markdig の既定は HTML をそのまま出す）。html は設計どおり JS を実行する（要件 12.7）。<br>
+・ページ読み込みの後の移動と <code>window.open</code> は、すべて <code>Route</code> に来る。クリックかスクリプトかを区別しない（<code>MarkdownPreview.axaml.cs:282-290</code>・<code>333-338</code>、<code>PreviewNavigationPolicy.cs:20-35</code>）。<br>
+・<code>Route</code> → <code>OpenLocalLink</code> は、md/html 以外で存在するファイルなら <code>OpenWithDefaultApp</code>（<code>DocumentsViewModel.cs:139-150</code>、<code>MemoViewModel.cs:84-93</code>）→ <code>UseShellExecute = true</code>（<code>ShellOpen.cs:15</code>）。実行形式やスクリプト（Windows の .bat・.exe、mac の .command など）は、そのまま実行される。git で取ってきたファイルには「ネットから来た」印が付かないので、OS の警告も出ない見込み。<br>
+・対象フォルダの外のパスや、ネットワークのパス（<code>\\server\…</code>）も、そのまま <code>File.Exists</code> と起動に渡る。<br>
+・要件 12.7 の ④「その他のローカルファイル → 既定のアプリ」は、クリックを前提に決めたもので、スクリプトからの移動と実行形式は考えに入っていない。
+</td><td>
+① <code>Route</code>：md/html 以外のローカルのファイルは<b>起動しない</b>。Finder／エクスプローラーで場所を見せる（<code>RevealInFileManager</code>）か、パスを見せて確かめてから開く（Q1）。<br>
+② ネットワークのパス（<code>Uri.IsUnc</code>、<code>\\</code> で始まる）は、存在の確認もせずに捨てる。<br>
+③ md の一時 HTML に CSP を入れる：<code>script-src</code> を、Miharikun が入れるスクリプト（nonce）と CDN だけにする。md に書かれた <code>&lt;script&gt;</code>・<code>onerror</code> などは動かなくなる（Q2）。html は設計どおり JS を動かすので、①②が本命。<br>
+④ テスト：<code>PreviewNavigationPolicy</code> に「振り分け先」を返す関数を足し、拡張子・UNC・対象フォルダの外を表で試す。
+</td></tr>
+<tr><td>2</td><td class="ng">高<br>（Windows）</td><td>
+<b>git と explorer を名前だけで起動しているので、プロジェクトのフォルダにある同名の exe が先に選ばれうる。</b><br>
+・Windows では <code>GitLocator.Find()</code> が <code>"git"</code> を返す（<code>GitLocator.cs:26-27</code>）。<code>GitClient</code>（<code>GitClient.cs:154-169</code>）と Hook の <code>GitProbe</code>（<code>GitProbe.cs:27-42</code>）が、それを <code>UseShellExecute = false</code> で起動する。「フォルダで開く」も <code>"explorer.exe"</code> を名前だけで起動する（<code>ShellOpen.cs:27-39</code>）。<br>
+・.NET は Windows でこの名前を自分で解決せず、OS の探す順（図の ①〜⑤）に任せる。② に親プロセスのカレントフォルダが入る。<br>
+・README の手順は「プロジェクトのフォルダで <code>Miharikun.exe</code> を起動」（<code>README-win.txt</code> の 2、<code>App.axaml.cs:53-54</code>）なので、カレントがプロジェクトになる。git status は起動直後に走る（<code>AppComposition.cs:79</code>）。<br>
+・Hook の <code>GitProbe</code> も、Cursor が Hook をどのフォルダで起動するか次第で同じことが起きる（<span class="ng">要確認</span>）。
+</td><td>
+① <code>GitLocator</code> の Windows の分岐を mac と同じ考え方にする：<code>PATH</code> の各項目のうち <code>Path.IsPathFullyQualified</code> のものだけを見て <code>git.exe</code> を探し、見つかった<b>フルパス</b>を返す。無ければ <code>%ProgramFiles%\Git\cmd\git.exe</code> などの決まった場所。カレントフォルダは候補に入れない。<br>
+② explorer は <code>Path.Combine(Environment.GetFolderPath(SpecialFolder.Windows), "explorer.exe")</code> のフルパスで起動する。<br>
+③ テスト：<code>GitLocatorTests</code> に Windows の場合を足す（相対の PATH 項目は無視する、フルパスを返す）。<code>ShellOpenTests</code> の組み立ての期待値をフルパスにする。<br>
+④ Windows の実機で、カレントを試験用のフォルダにして起動し、git の実体がフルパスで選ばれることを確かめる（直す前の再現も、無害な exe を使って試験用のフォルダで行う）。
+</td></tr>
+<tr><td>3</td><td>低</td><td>
+<b>プレビューが CDN のスクリプトを、版の固定と完全性の確認なしで読む。</b><br>
+mermaid は <code>mermaid@11</code>（11 系の最新に自動で変わる）、highlight.js は 11.9.0 固定。どちらも <code>integrity</code> 属性なし（<code>MarkdownRenderer.cs:14-15</code>・<code>107-124</code>）。CDN 側が書き換えられると、プレビューの中で任意のスクリプトが動く。#1 が残っていると、影響が大きくなる。md を開くたびに CDN へ通信が出る（どの時刻に文書を見たかが CDN に分かる）。
+</td><td>
+A) mermaid と highlight.js を <code>Miharikun.Docs</code> に同梱し、一時 HTML の隣に置いて読む（オフラインでも図と色が出る）。<br>
+B) 同梱しないなら、版を完全に固定し（例 <code>mermaid@11.x.y</code>）、<code>integrity</code> と <code>crossorigin</code> を付ける。mermaid は ES module の <code>import()</code> なので、<code>&lt;script type="module" src integrity&gt;</code> に書き換える要あり（Q3）。
+</td></tr>
+<tr><td>4</td><td>低<br>（参考）</td><td>
+<b>README が Hook の置き場所の例に <code>C:\dev</code> を挙げている。</b><br>
+C ドライブの直下に作ったフォルダは、既定のアクセス権で、同じ PC のほかの利用者も中のファイルを書き換えられる。共用の PC だと、ほかの利用者が Hook exe を差し替え、Cursor 経由で自分の権限で動かされうる（<code>scripts/dist/README-win.txt</code> の「会社の PC などで…」）。1 人で使う PC なら影響はない。
+</td><td>
+README の例を <code>%USERPROFILE%</code> の下（例 <code>C:\Users\&lt;名前&gt;\tools</code>）に変える。または、C 直下に作るなら、ほかの利用者の書き込みを外すよう一言添える。
+</td></tr>
+</table>
+
+<h3>問題なしと判断した観点</h3>
+<ul>
+<li><span class="ok">OK</span> git の引数：<code>ArgumentList</code> で渡し、シェルを通さない。コミットの値は 16 進数だけ受け付け（<code>GitClient.cs:73</code>・<code>189-190</code>）、ブランチ名は <code>-</code> 始まり・空白・<code>@{</code> を拒んで <code>check-ref-format</code> と <code>--</code> を使う（<code>GitClient.cs:115-122</code>）。オプションの注入はできない。</li>
+<li><span class="ok">OK</span> Hook の入力 → 保存先：セッション ID はファイル名に使えない文字を <code>_</code> にし、<code>.</code>・<code>..</code>・空は <code>_app</code> にする（<code>AppPaths.cs:75-86</code>）。データのフォルダの外には書けない。プロジェクトごとのファイル名・プレビューの一時ファイル名はハッシュ（<code>AppPaths.cs:49-71</code>、<code>PreviewFiles.cs:19-21</code>）。</li>
+<li><span class="ok">OK</span> Hook の <code>GitProbe</code> に渡す <code>workspace_roots</code> は <code>-C</code> の値として 1 つの引数で渡すので、オプションにならない（<code>GitProbe.cs:37-40</code>）。Hook は入力の JSON の中身でほかのプログラムを起動しない。</li>
+<li><span class="ok">OK</span> プレビューから C# への通り道：<code>invokeCSharpAction</code> で受けるのは Esc だけで、ほかは捨てる（<code>PreviewScripts.cs:16</code>、<code>MarkdownPreview.axaml.cs:312-316</code>）。見出しへの移動のスクリプトは id を JSON の文字列として逃がしている（<code>PreviewScripts.cs:12-13</code>）。<code>&lt;base&gt;</code> と <code>&lt;title&gt;</code> は HTML エンコード済み（<code>MarkdownRenderer.cs:80-81</code>）。</li>
+<li><span class="ok">OK</span> 振り分けのスキーム：http・https・mailto・file 以外（OS の機能を呼び出すような独自スキーム）は、<code>Route</code> が何もしない（<code>MarkdownPreview.axaml.cs:340-346</code>）。</li>
+<li><span class="ok">OK</span> 会話ログ：<code>~/.claude</code>・<code>~/.cursor</code> の会話ログは <code>FileAccess.Read</code> で開くだけ（<code>ClaudeLocations.cs:89</code>、<code>CursorTranscriptImporter.cs:188</code>）。中身は Avalonia の文字の部品で出すので、HTML として解釈されない。</li>
+<li><span class="ok">OK</span> リリースの workflow：手入力のバージョンは環境変数で受け、正規表現で確かめてから使う（<code>release.yml:25-34</code>）。権限は <code>contents: read</code> が既定。<code>pull_request_target</code> は使っていない。</li>
+<li><span class="ok">OK</span> Hook の試しの起動・隔離の印の解除：<code>/usr/bin/xattr</code> のフルパスと <code>ArgumentList</code>（<code>HookCheck.cs:24</code>・<code>40-49</code>）。</li>
+</ul>
+
+<h3>確かめられなかったこと</h3>
+<ul>
+<li>#1・#2 の Windows での実際の動き（この診断は mac でコードを読んだだけ。実機では試していない）。</li>
+<li>Cursor が Hook をどのフォルダで起動するか（#2 の Hook 側が当てはまるか）。Step 0 の <code>cwd</code> の記録を見れば分かる。#2 の①の直し方なら、どちらでも防げる。</li>
+<li>mac の WKWebView で、プレビューのスクリプトがほかのローカルファイルの中身を読めるか。要件 12.7 の試作では、画像・css・js は読めることを確かめている。中身を読めるかは未確認（#1 の③の CSP で、md 側の影響は小さくなる）。</li>
+</ul>
+
+<h2>5. 決めたこと（確定）</h2>
+<table>
+<tr><th>#</th><th>回答（2026-10-09）</th></tr>
+<tr><td>Q1</td><td><b>C</b>：開いてよい種類（画像・PDF・テキスト・md/html）だけ既定のアプリで開き、ほかは起動せず Finder／エクスプローラーで見せる</td></tr>
+<tr><td>Q2</td><td><b>A</b>：md の生の HTML は残し、CSP（nonce）でスクリプトだけ止める</td></tr>
+<tr><td>Q3</td><td><b>A</b>：mermaid・highlight.js を同梱する（CDN をやめる）</td></tr>
+<tr><td>追加</td><td>診断の後の相談：Claude の会話ログの保険の探索（名前で見つからないとき、ほかのプロジェクトのログの先頭の cwd を読む）は<b>残し</b>、フォルダごとに cwd が取れた最初の 1 ファイルで打ち切って、読む量を減らす（Phase 46）</td></tr>
+</table>
+<p>反映先：要件定義（13 章・12.7・12.10・8.2・9.1・7 章の処理 2、15 章の Phase 42〜47）、実装計画 <code>docs/security/security-plan.md</code>（図解 <code>security-plan.html</code>）。以下は回答前の選択肢（記録として残す）。</p>
+<div class="q"><b>Q1.</b>（#1）プレビューのリンクで、md/html 以外のローカルのファイルをどう扱うか<br>
+A) 起動しない。Finder／エクスプローラーで、そのファイルを選んだ状態で見せる … 利点：スクリプトからでも何も起動しない。欠点：PDF や画像へのリンクも 1 手間増える<br>
+B) パスを見せて「開きますか？」と確かめてから、関連付けで開く … 利点：今の使い方に近い。欠点：毎回の確認に慣れて、押してしまいやすい<br>
+C) 拡張子の許可リスト（pdf・png・jpg・txt など）だけ関連付けで開き、ほかは A … 利点：よく使う物は今のまま。欠点：リストの手入れが要る<br>
+<span class="rec">推奨：C</span>（画像・PDF のリンクは今のまま使え、実行形式は確実に止まる。迷ったら A から始めてもよい）</div>
+
+<div class="q"><b>Q2.</b>（#1）md の中の生の HTML をどうするか<br>
+A) HTML は残し、CSP（nonce）でスクリプトだけ止める … 利点：<code>&lt;details&gt;</code>・<code>&lt;br&gt;</code>・幅を指定した <code>&lt;img&gt;</code> など、今の md の見た目が変わらない。欠点：CSP の文字列を保つ手間<br>
+B) Markdig の <code>DisableHtml()</code> で、生の HTML を文字として出す … 利点：いちばん簡単で確実。欠点：HTML を使った md の見た目が変わる<br>
+<span class="rec">推奨：A</span>（GitHub で見たときと同じ見た目を保てる）</div>
+
+<div class="q"><b>Q3.</b>（#3）CDN のスクリプトをどうするか<br>
+A) 同梱する … 利点：オフラインでも動き、外への通信が無くなる。欠点：配布物が数 MB 増える<br>
+B) 版の固定と <code>integrity</code> … 利点：配布物が増えない。欠点：mermaid の読み込み方を変える要あり。オフラインでは今と同じく図にならない<br>
+<span class="rec">推奨：A</span>（#3 の問題とオフラインの不便が両方なくなる）</div>
+
+<h2>6. 進め方</h2>
+<div class="sync">#1〜#4 と追加の 1 件をまとめて、要件定義 15 章の Phase 42〜47 として進める（#2＝Phase 42、#1＝Phase 43・45、#3＝Phase 44、保険の探索＝Phase 46、#4＝Phase 47）。実装の分け方は <code>docs/security/security-plan.md</code>。</div>
+</body></html>

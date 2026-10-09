@@ -7,7 +7,9 @@ public sealed class MarkdownOutlineTests
 {
     private static readonly string Folder = TestPaths.Abs("work", "proj", "docs");
 
-    private static MarkdownRendering Run(string md) => MarkdownRenderer.RenderWithOutline(md, Folder, false);
+    private static readonly string LibFolder = TestPaths.Abs("data", "preview", "lib", MarkdownAssets.Version);
+
+    private static MarkdownRendering Run(string md) => MarkdownRenderer.RenderWithOutline(md, Folder, libFolder: LibFolder, isDark: false);
 
     private static IReadOnlyList<MarkdownHeading> Headings(string md) => Run(md).Headings;
 
@@ -137,7 +139,10 @@ public sealed class MarkdownOutlineTests
     public void Render_and_RenderWithOutline_give_the_same_html()
     {
         const string md = "# 見出し\n\n- [x] a\n- [ ] b\n\n```mermaid\ngraph TD; A-->B\n```\n";
-        Assert.Equal(MarkdownRenderer.Render(md, Folder, true, "t"), MarkdownRenderer.RenderWithOutline(md, Folder, true, "t").Html);
+        // nonce はページごとに違うので、そこだけ揃えて比べる
+        static string SameNonce(string html) => Regex.Replace(html, @"nonce-[^']+'|nonce=""[^""]+""", "nonce");
+        Assert.Equal(SameNonce(MarkdownRenderer.Render(md, Folder, libFolder: LibFolder, isDark: true, title: "t")),
+            SameNonce(MarkdownRenderer.RenderWithOutline(md, Folder, libFolder: LibFolder, isDark: true, title: "t").Html));
     }
 
     [Fact]

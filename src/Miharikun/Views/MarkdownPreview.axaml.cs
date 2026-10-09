@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Miharikun.Core.Documents;
+using Miharikun.Core.Storage;
 using Miharikun.Docs;
 using Miharikun.ViewModels;
 
@@ -186,7 +187,9 @@ public partial class MarkdownPreview : UserControl
             using (var reader = new StreamReader(stream))
                 text = reader.ReadToEnd();
 
-            var rendering = MarkdownRenderer.RenderWithOutline(text, Path.GetDirectoryName(target.FullPath)!, isDark, Path.GetFileName(target.FullPath));
+            var libFolder = EnsureLib(previewDir);
+            var rendering = MarkdownRenderer.RenderWithOutline(text, Path.GetDirectoryName(target.FullPath)!, libFolder: libFolder,
+                isDark: isDark, title: Path.GetFileName(target.FullPath));
             var path = PreviewFiles.Write(previewDir, target.FullPath, rendering.Html);
             // Docs の見出しを Presentation の型へ写す（Presentation は Docs を参照しない）。
             IReadOnlyList<OutlineHeading> outline = rendering.Headings
@@ -202,8 +205,13 @@ public partial class MarkdownPreview : UserControl
         var isDark = _vm?.IsDark ?? false;
         var previewDir = _vm!.PreviewDir;
         return await Task.Run(() =>
-            PreviewFiles.Write(previewDir, memo.CacheKey, MarkdownRenderer.Render(memo.Text, memo.BaseFolder, isDark, memo.Title)));
+            PreviewFiles.Write(previewDir, memo.CacheKey,
+                MarkdownRenderer.Render(memo.Text, memo.BaseFolder, libFolder: EnsureLib(previewDir), isDark: isDark, title: memo.Title)));
     }
+
+    /// <summary>同梱の mermaid・highlight.js が <c>preview/lib/&lt;版&gt;/</c> にあるようにして、そのフォルダを返す（毎回の描画の前に。存在と長さを見るだけで軽い）。</summary>
+    private static string EnsureLib(string previewDir) =>
+        MarkdownAssets.Ensure(Path.Combine(previewDir, "lib"), AtomicFile.WriteAllBytes, AppLog.Write);
 
     // ── WebView の準備 ────────────────────────────────────────────────
 
@@ -281,12 +289,15 @@ public partial class MarkdownPreview : UserControl
 
     private void OnNavigationStarted(object? sender, WebViewNavigationStartingEventArgs e)
     {
-        if (e.Request is not { } uri
-            || PreviewNavigationPolicy.Decide(uri, _pagePath, _loadingPage) == PreviewNavigationAction.Allow)
+        if (e.Request is not { } uri)
+            return;
+        var action = PreviewNavigationPolicy.Decide(uri, _pagePath, _loadingPage, isMarkdownPage: !_pageIsHtml);
+        if (action == PreviewNavigationAction.Allow)
             return;
 
         e.Cancel = true;
-        Dispatcher.UIThread.Post(() => Route(uri));
+        if (action == PreviewNavigationAction.Route)
+            Dispatcher.UIThread.Post(() => Route(uri));
     }
 
     private void OnNavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
@@ -341,6 +352,8 @@ public partial class MarkdownPreview : UserControl
     {
         if (PreviewNavigationPolicy.IsExternal(uri))
             ShellOpen.Open(uri.AbsoluteUri);
+        else if (uri.IsUnc)
+            return;   // file://server/share/…（ネットワーク）は何もしない。あるかどうかも確かめない
         else if (uri.IsFile)
             _vm?.OpenLocalLink(uri.LocalPath);
     }
