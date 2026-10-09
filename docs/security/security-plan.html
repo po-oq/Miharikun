@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>セキュリティ診断の対応 実装計画（図解）</title>
+<style>
+body{font-family:"Yu Gothic UI","Hiragino Sans","Noto Sans JP",sans-serif;max-width:1000px;margin:20px auto;padding:0 16px;line-height:1.6;color:#222}
+h1{font-size:22px} h2{font-size:17px;border-left:5px solid #2b6cb0;padding-left:8px;margin-top:30px} h3{font-size:15px;margin:16px 0 4px}
+table{border-collapse:collapse;margin:8px 0;width:100%} td,th{border:1px solid #bbb;padding:4px 8px;font-size:13.5px;vertical-align:top} th{background:#eef;text-align:left}
+code{background:#f0f0f0;padding:0 4px} pre{background:#f6f6f6;border:1px solid #ccc;padding:10px;font-size:12.5px;line-height:1.5;overflow:auto}
+.q{background:#fff6dd;border:1px solid #e0c060;padding:6px 14px;margin:10px 0} .sync{background:#e8f4ff;border:1px solid #9bc;padding:6px 14px} .rec{color:#c05000;font-weight:bold}
+svg{background:#fafafa;border:1px solid #ccc;max-width:100%;height:auto}
+</style></head><body>
+<!-- 内容は security-plan.md と同じにする（連動ルール）。節番号も同じ -->
+<h1>セキュリティ診断の対応 実装計画（図解）（Issue #31）</h1>
+<div class="sync"><b>連動ルール</b>：この HTML と <code>security-plan.md</code> は対。<b>どちらかを直したら、もう一方も同じ内容に直す。</b><br>仕様の正は <code>docs/miharikun-requirements.md</code>（13 章・12.7・12.10・8.2・9.1・7 章の処理 2、15 章の Phase 42〜47）。設計の資料（診断）は <code>docs/security/security-review.html</code>（#1〜#4 と Q1〜Q3）。Phase 46（Claude の会話ログの保険の探索を絞る）は、診断の後の相談で決めたもの（2026-10-09。11 章）。この計画は、実装の分け方・コミット・ファイル構成と、<b>実装で迷いやすい所の決めごと（9 章）</b>。<br>進め方：ロジック（テスト先行）→ 利用側 → 確認。各フェーズの終わりに mac（隔離環境）で確かめ、要件定義 15 章の <code>[ ]</code> → <code>[x]</code> と「状況」を更新して報告し、<b>止まる</b>。Windows の実機の確認は利用者の PC で行う（Phase 47）。コミットは頼まれたときだけ（ここは区切りの目安）。Phase ごとにコミットを分け、<code>[x]</code> と「状況」もその Phase のコミットに入れる。途中は <code>Refs #31</code>、最後だけ <code>Fixes #31</code>（PR 本文に <code>Closes #31</code>）。</div>
+
+<h2>1. 全体像</h2>
+<svg viewBox="0 0 960 140" width="960" font-size="13" font-family="sans-serif">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#333"/></marker></defs>
+<rect x="10" y="20" width="145" height="100" fill="#dff" stroke="#08a"/><text x="18" y="42" font-weight="bold">42 フルパスで起動</text><text x="18" y="62" font-size="12">git（Windows）</text><text x="18" y="78" font-size="12">explorer・open</text><text x="18" y="102" font-size="12" fill="#555">2 コミット（#2）</text>
+<rect x="168" y="20" width="145" height="100" fill="#dff" stroke="#08a"/><text x="176" y="42" font-weight="bold">43 リンクの振り分け</text><text x="176" y="62" font-size="12">LocalLinkRule</text><text x="176" y="78" font-size="12">VM 2 つ・Route</text><text x="176" y="102" font-size="12" fill="#555">2 コミット（#1）</text>
+<rect x="326" y="20" width="145" height="100" fill="#efe" stroke="#383"/><text x="334" y="42" font-weight="bold">44 同梱</text><text x="334" y="62" font-size="12">mermaid・hljs</text><text x="334" y="78" font-size="12">preview/lib/&lt;版&gt;/</text><text x="334" y="102" font-size="12" fill="#555">2 コミット（#3）</text>
+<rect x="484" y="20" width="145" height="100" fill="#efe" stroke="#383"/><text x="492" y="42" font-weight="bold">45 md の CSP</text><text x="492" y="62" font-size="12">nonce</text><text x="492" y="78" font-size="12">mac の実機で確認</text><text x="492" y="102" font-size="12" fill="#555">1〜2 コミット（#1）</text>
+<rect x="642" y="20" width="145" height="100" fill="#dff" stroke="#08a"/><text x="650" y="42" font-weight="bold">46 保険の探索</text><text x="650" y="62" font-size="12">1 フォルダにつき</text><text x="650" y="78" font-size="12">1 ファイルで打ち切り</text><text x="650" y="102" font-size="12" fill="#555">1 コミット</text>
+<rect x="800" y="20" width="150" height="100" fill="#eee" stroke="#888"/><text x="808" y="42" font-weight="bold">47 確認・仕上げ</text><text x="808" y="62" font-size="12">Windows（利用者）</text><text x="808" y="78" font-size="12">README・release.md</text><text x="808" y="102" font-size="12" fill="#555">1 コミット（Fixes）</text>
+<line x1="155" y1="70" x2="168" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="313" y1="70" x2="326" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="471" y1="70" x2="484" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="629" y1="70" x2="642" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="787" y1="70" x2="800" y2="70" stroke="#333" marker-end="url(#a)"/>
+</svg>
+
+<ul>
+<li>42・43・46 は互いに独立（どちらからでもよい）。45 は 44 の後（CSP で許すスクリプトが、同梱のファイルだけになってから）。</li>
+<li>新しい依存パッケージ（NuGet）：無い。<b>同梱する JS</b>：mermaid（MIT）、highlight.js（BSD-3-Clause）。ダウンロードは利用者の了承を取ってから（9.9）。</li>
+<li>守る制約：Core は AOT 互換（<code>GitLocator</code>・<code>AtomicFile</code> は Core。リフレクションを使わない）。Hook の性能（git なし 50ms 以内。git を探すのは git を使うイベントのときだけのまま）。Presentation は Docs を参照しない（今のまま）。<code>~/.claude</code> には何も書かない（Phase 46 は読み方を減らすだけ）。</li>
+<li><b>既存の md の見た目・動きを変えない</b>（44・45 は描き方の中身を変える）。下の品質ゲートで確かめる。</li>
+<li>いまのテスト（Phase 41 の時点。mac）：Tests 1197（スキップ 29）、UiTests 65（スキップ 3）。<b>着手前に数え直し、件数は減らさない</b>（書き換えるテストは数に入れたまま）。</li>
+</ul>
+<h3>品質ゲート（Phase 44・45 の完了条件）</h3>
+<ol>
+<li>テストが全部通る（件数を減らさない）。<code>dotnet build</code> の警告を増やさない。</li>
+<li>md のプレビューで、これまでの項目が変わらない：チェックボックス（未／済・入れ子・番号付き・押しても変わらない・通常の色）、日本語の見出しの id と <code>#</code> リンクのページ内スクロール、mermaid の図、コードの色付け（ライト／ダーク）、相対パスの画像、別の md／html へのリンク（アプリ内で選ぶ）、保存での自動の再読み込みと位置の復元、拡大モードの Esc・目次で移る・位置の補正（拡大⇄戻す）、メモのプレビュー（同じ描き方）。html のプレビューは JS が今までどおり動く。</li>
+<li>確かめ方：隔離環境（<code>MIHARIKUN_DATA_DIR</code>・<code>MIHARIKUN_CURSOR_DIR</code>・<code>MIHARIKUN_CLAUDE_DIR</code> を一時フォルダに向ける）の手書きの md・html で、mac は実装するセッションが目視（スクリーンショット）、Windows は Phase 47 で利用者が確かめる。本物のプロジェクトの文書は使わない。</li>
+</ol>
+
+<h2>2. Phase 42：外部のプログラムをフルパスで起動（#2。テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト</th></tr>
+<tr><td>42-1</td><td><code>GitLocator</code>（Windows）</td><td>Windows の分岐を、名前だけ（<code>"git"</code>）を返すのをやめ、フルパスを返す（9.1）。<code>Find</code> に環境変数の読み取り（<code>Func&lt;string, string?&gt; getEnv</code>）を足す。起動時に <code>app.log</code> へ「git: &lt;パス or 見つからない&gt;」を 1 行（<code>AppComposition</code>。確認用）</td><td><code>GitLocatorTests</code>：既存の <code>Windows_uses_git_from_the_path_whatever_exists</code> を差し替え。PATH の最初の絶対パスの <code>git.exe</code>／相対・<code>.</code>・空・UNC・ドライブなしの項目は使わない／引用符つき・末尾 <code>\</code> の項目／PATH に無ければ決まった場所の順（9.1）／環境変数が相対なら使わない／どこにも無ければ null。<code>[WindowsFact]</code> 本物の探索がフルパスの実在するファイルを返す。mac のテストは変えない</td></tr>
+<tr><td>42-2</td><td><code>ShellOpen</code>（「フォルダで開く」）</td><td><code>BuildRevealCommand(bool isMac, string file, string windowsDir)</code>：Windows は <code>&lt;windowsDir&gt;\explorer.exe</code>、mac は <code>/usr/bin/open</code>（9.2）。<code>Reveal</code> は <code>Environment.GetFolderPath(SpecialFolder.Windows)</code> を渡し、空なら起動せず <code>app.log</code> に 1 行</td><td><code>ShellOpenTests</code>：Windows の期待を <code>C:\Windows\explorer.exe</code> に、末尾 <code>\</code> つきの <code>windowsDir</code> でも <code>\\</code> が二重にならない、mac の期待を <code>/usr/bin/open</code>（引数は今のまま）</td></tr>
+</table>
+<p>完了条件：テストが通る。mac の隔離環境で「Finder で表示」が動き、<code>app.log</code> に git のフルパスが出る。Windows の確認は Phase 47。</p>
+
+<h2>3. Phase 43：プレビューのリンクの振り分け（#1）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト／確認</th></tr>
+<tr><td>43-1</td><td><code>LocalLinkRule</code>（新規。Presentation。テスト先行）</td><td><code>LocalLinkAction Decide(string fullPath, bool isWindows, LinkProbe probe)</code> → <code>Ignore</code>／<code>OpenWithDefaultApp</code>／<code>Reveal</code>。<code>IsNetworkPath(string)</code>。開いてよい種類の一覧。<code>LinkProbe</code>（ファイルの有無・フォルダの有無・リンクのたどった先。<code>LinkProbe.Real</code> が本物）。判定は 9.3</td><td><code>LocalLinkRuleTests</code>：9.3 の表の行ごと（<code>LinkProbe</code> を差し替え）。拡張子の大文字小文字。<code>[MacFact]</code> 本物のシンボリックリンク（<code>.txt</code> の名前で <code>.command</code> を指す → <code>Reveal</code>、<code>.txt</code> を指す → 開く）</td></tr>
+<tr><td>43-2</td><td>ドキュメント・メモの <code>OpenLocalLink</code>、プレビューの <code>Route</code></td><td><code>DocumentsViewModel.OpenLocalLink</code>・<code>MemoViewModel.OpenLocalLink</code>：最初にネットワークのパスを捨てる → アプリ内（今のまま）→ <code>LocalLinkRule.Decide</code> の結果で <code>OpenWithDefaultApp</code>／<code>RevealInFileManager</code>／何もしない（9.4）。<code>MarkdownPreview.Route</code>：<code>uri.IsUnc</code> なら何もしない</td><td><code>DocumentsViewModelTests</code>・<code>MemoViewModelTests</code>：<code>.txt</code> は <code>Opened</code>、<code>.bat</code>・<code>.command</code>・<code>.exe</code>（中身はただの文字）とフォルダは <code>Revealed</code>（<code>Opened</code> は空）、ネットワークのパスは両方とも空、無いファイルは両方とも空。既存のメモのテスト（<code>[other, _dir]</code> を <code>Opened</code>）は、フォルダを <code>Revealed</code> に直す。確認（mac・隔離環境）：9.8 の試験用の md のリンクを押す</td></tr>
+</table>
+<p>完了条件：テストが通る。mac の隔離環境で、開いてよい種類だけ既定のアプリで開き、ほかは Finder で選ばれた状態になり、何も起動しない。</p>
+
+<h2>4. Phase 44：mermaid・highlight.js の同梱（#3）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト／確認</th></tr>
+<tr><td>44-1</td><td>同梱のファイルと書き出し</td><td>利用者の了承を取ってダウンロード（9.9）。<code>src/Miharikun.Docs/Assets/vendor/</code> に置いて埋め込む（csproj）。<code>MarkdownAssets</code>（新規。Docs）：<code>Version</code>（フォルダ名）、ファイルの一覧、<code>Ensure(string libRoot, Action&lt;string, byte[]&gt; write)</code> → <code>&lt;libRoot&gt;/&lt;Version&gt;</code> を返す（9.5）。<code>AtomicFile.WriteAllBytes</code>（Core。<code>WriteAllText</code> と同じ置き換えの仕組み）</td><td><code>MarkdownAssetsTests</code>（一時フォルダ）：無いとき全部書く、同じ長さならもう書かない、長さが違えば書き直す、返すフォルダ名に版、埋め込みの全ファイルが空でない。<code>AtomicFileTests</code>（新規）：バイト列がそのまま、上書き、一時ファイルが残らない</td></tr>
+<tr><td>44-2</td><td>md のページを同梱から読む</td><td><code>MarkdownRenderer.Render</code>／<code>RenderWithOutline</code> に <code>libFolder</code>（<code>baseFolder</code> の次。呼ぶ側は名前付き引数）。CDN の URL をやめ、<code>libFolder</code> のファイル URL（9.5）。mermaid は ES module の <code>import()</code> をやめ、<code>mermaid.min.js</code> を普通の <code>&lt;script&gt;</code> で読んでから初期化。<code>MarkdownPreview</code> の 2 つの描画（ファイル・メモ）で <code>MarkdownAssets.Ensure(Path.Combine(PreviewDir, "lib"), AtomicFile.WriteAllBytes)</code> を呼んでから描く。<code>scripts/dist/THIRD-PARTY-NOTICES.txt</code>（新規）と、<code>publish.ps1</code>・<code>publish-mac.sh</code> で zip に入れる</td><td><code>MarkdownRendererTests</code>：CDN の文字（<code>cdn.jsdelivr</code>・<code>cdnjs</code>）が無い、mermaid・色付けは <code>libFolder</code> のファイル URL（日本語・空白・<code>#</code> のフォルダでも %エンコードと HTML エンコード）、要るときだけ読む（既存の期待の差し替え）。確認（mac・隔離環境・<b>ネットを切って</b>）：品質ゲート 2、とくに mermaid と色付け（ライト／ダーク）、メモ</td></tr>
+</table>
+<p>完了条件：品質ゲート 1〜3（mac）。md の HTML に CDN の URL が無い。</p>
+
+<h2>5. Phase 45：md の CSP（#1。テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト／確認</th></tr>
+<tr><td>45-1</td><td>CSP と nonce</td><td><code>MarkdownRenderer</code>：ページごとの nonce（9.6）、<code>&lt;head&gt;</code> の <code>charset</code> の直後に CSP の <code>&lt;meta&gt;</code>、Miharikun が入れる <code>&lt;script&gt;</code>（<code>#</code> リンク・Esc・位置の補正・チェックボックス・highlight.js の 2 つ・mermaid の 2 つ）すべてに <code>nonce</code>。チェックボックスは <code>onclick="return false"</code> をやめ、クリックを取り消すスクリプトにする（9.6）</td><td><code>MarkdownRendererTests</code>：CSP の <code>&lt;meta&gt;</code> が <code>&lt;base&gt;</code> より前、nonce は 1 ページで同じでページごとに違う、Miharikun の <code>&lt;script</code> すべてに nonce、md に書いた <code>&lt;script&gt;</code>・<code>&lt;img onerror&gt;</code> には nonce が付かない、チェックボックスの期待（<code>onclick</code> が無い・<code>tabindex="-1"</code>）、<code>Body_is_not_changed_by_the_added_scripts</code> の切り出しを <code>&lt;script</code> に</td></tr>
+<tr><td>45-2</td><td>実機（mac）の要確認</td><td>9.7 の 3 点（mermaid が CSP の下で描ける、<code>InvokeScript</code> が CSP に止められない、Esc の <code>invokeCSharpAction</code>）を mac の実機で確かめる。だめなら 9.7 の代わりの形で直す（直しが要るときだけコミット）</td><td>確認（mac・隔離環境）：品質ゲート 2 の全部。9.8 の試験用の md で、md に書いたスクリプトが動かない（ページの文字が変わらない）</td></tr>
+</table>
+<p>完了条件：品質ゲート 1〜3（mac）。md に書いたスクリプト・属性のスクリプト・<code>javascript:</code> のリンクが動かない。</p>
+
+<h2>6. Phase 46：Claude の会話ログの保険の探索を絞る（テスト先行）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>テスト／確認</th></tr>
+<tr><td>46-1</td><td><code>ClaudeLocations.FindDirsByCwd</code></td><td>フォルダごとに、<code>*.jsonl</code> を新しい順に見て、<b>cwd が取れた最初の 1 ファイルで、そのフォルダの判断を打ち切る</b>（合えば候補、合わなければそのフォルダは終わり。9.10）。cwd が取れないファイルは次のファイルへ。動く条件（候補が 0 件のとき・起動ごとに 1 回）・ログの文は今のまま</td><td><code>ClaudeLocationsTests</code>：① 新しいほうのファイルの cwd が別のプロジェクトなら、同じフォルダの古いほうに合うものがあっても候補にしない（打ち切りの確認）② 新しいほうに cwd が無ければ（cwd の無い記録だけ）古いほうを見る ③ 新しい順（更新日時をテストで決める）④ 既存の <code>Fallback_finds_folders_whose_files_have_a_matching_first_cwd_and_logs_it</code>・<code>Fallback_logs_nothing_when_nothing_is_found</code> と、<code>ClaudeSessionSourceTests</code> の保険の経路（<code>odd-name</code>）はそのまま通る</td></tr>
+</table>
+<p>完了条件：テストが通る。mac の隔離環境（<code>MIHARIKUN_CLAUDE_DIR</code> を一時フォルダに向け、名前の規則に合わないフォルダと、関係ないプロジェクトのフォルダを手書きのログで作る）で、合うフォルダのセッションが一覧に出て、<code>app.log</code> に「フォルダ名の規則が、想定と違った」の 1 行が出る。</p>
+
+<h2>7. Phase 47：両 OS の実機確認・仕上げ（#4）</h2>
+<table><tr><th>#</th><th>コミット</th><th>内容</th><th>確認</th></tr>
+<tr><td>47-1</td><td>Windows の実機の確認（利用者）</td><td>9.8 の確認表を、利用者が Windows（WebView2）で行う。実装するセッションは、試験用のフォルダの作り方と手順を渡す</td><td>9.8 の表の全部（git のフルパス・エクスプローラー・リンクの振り分け・CSP・ネットなしの mermaid と色付け・品質ゲート 2）</td></tr>
+<tr><td>47-2</td><td>仕上げ</td><td><code>scripts/dist/README-win.txt</code>（Hook の置き場所の注意〈8.2・#4〉、同梱のライセンスの 1 行）、<code>README-mac.txt</code>（同梱のライセンスの 1 行）、<code>docs/release.md</code> の「出す前のチェック」（リンクの振り分け・md のスクリプト・ネットなしの mermaid）、要件定義の状況、<code>docs/security/security-review.html</code> の状態を「対応済み」に。<code>Fixes #31</code></td><td>文書の目視。テストが全部通る</td></tr>
+</table>
+<p>完了条件：要件定義 15 章の全体の完了条件を、両 OS の実機で満たす。</p>
+
+<h2>8. ファイル構成（追加・変更）</h2>
+<pre>
+src/Miharikun.Core/
+├─ Git/GitLocator.cs                        42-1 変更：Windows も PATH の絶対パスと決まった場所から git.exe を探す
+├─ Sessions/ClaudeLocations.cs              46-1 変更：保険の探索を、フォルダごとに cwd が取れた最初の 1 ファイルで打ち切る
+└─ Storage/AtomicFile.cs                   44-1 変更：WriteAllBytes を足す（置き換えの仕組みは共用）
+
+src/Miharikun.Presentation/
+├─ ShellOpen.cs                             42-2 変更：explorer.exe・open をフルパスで
+├─ LocalLinkRule.cs                         43-1 新規：ローカルのリンクの規則（LocalLinkAction・LinkProbe）
+└─ ViewModels/
+   ├─ DocumentsViewModel.cs                 43-2 変更：OpenLocalLink を規則に
+   └─ MemoViewModel.cs                      43-2 変更：OpenLocalLink を規則に
+
+src/Miharikun.Docs/
+├─ Assets/vendor/                           44-1 新規：mermaid.min.js・highlight.min.js・hljs-github.min.css・hljs-github-dark.min.css・LICENSE-mermaid.txt・LICENSE-highlightjs.txt
+├─ Miharikun.Docs.csproj                    44-1 変更：vendor を埋め込む
+├─ MarkdownAssets.cs                        44-1 新規：版・ファイルの一覧・書き出し
+└─ MarkdownRenderer.cs                      44-2 変更：libFolder から読む ／ 45-1 変更：CSP・nonce・チェックボックス
+
+src/Miharikun/
+├─ AppComposition.cs                        42-1 変更：起動時に git のパスを app.log へ
+└─ Views/MarkdownPreview.axaml.cs           43-2 変更：Route で UNC を捨てる ／ 44-2 変更：lib を書き出してから描く
+
+scripts/
+├─ dist/THIRD-PARTY-NOTICES.txt             44-2 新規：mermaid・highlight.js のライセンス
+├─ dist/README-win.txt・README-mac.txt      47-2 変更：Hook の置き場所の注意（Windows）・ライセンスの 1 行
+├─ publish.ps1                              44-2 変更：NOTICES を zip に入れる
+└─ publish-mac.sh                           44-2 変更：同じ
+
+docs/
+├─ miharikun-requirements.md                各 Phase：15 章の [x] と状況
+├─ release.md                               47-2 変更：出す前のチェック
+└─ security/security-review.html            47-2 変更：状態を「対応済み」に
+
+tests/Miharikun.Tests/
+├─ Core/GitLocatorTests.cs                  42-1 変更
+├─ Core/AtomicFileTests.cs                  44-1 新規
+├─ Core/ClaudeLocationsTests.cs             46-1 変更
+├─ Presentation/ShellOpenTests.cs           42-2 変更
+├─ Presentation/LocalLinkRuleTests.cs       43-1 新規
+├─ Presentation/DocumentsViewModelTests.cs  43-2 変更
+├─ Presentation/MemoViewModelTests.cs       43-2 変更
+├─ Docs/MarkdownAssetsTests.cs              44-1 新規
+└─ Docs/MarkdownRendererTests.cs            44-2・45-1 変更（MarkdownOutlineTests も、Render の引数が変わるなら呼び方だけ）
+</pre>
+
+<h2>9. 実装の決めごと（迷いやすい所）</h2>
+<h3>9.1 Windows の git の探し方（42-1）</h3>
+<ol>
+<li><code>PATH</code> を <code>;</code> で分け、各項目の前後の空白と <code>"</code> を取る。</li>
+<li><b>ドライブ文字で始まる絶対パス</b>（<code>^[A-Za-z]:[\\/]</code>）だけを使う。相対（<code>bin</code>）・<code>.</code>・空・UNC（<code>\\server\…</code>）は飛ばす。
+<ul><li>テストは mac でも動くので、<code>Path.IsPathFullyQualified</code> は使わない（mac では <code>C:\a</code> を相対と判定する）。文字列で判定し、つなぎは <code>\</code>（<code>Path.Combine</code> は使わない。mac では <code>/</code> でつながる）。</li></ul></li>
+<li><code>&lt;項目（末尾の \ / を除く）&gt;\git.exe</code> が <code>fileExists</code> なら、それを返す（最初に見つかったもの）。</li>
+<li>PATH に無ければ、決まった場所を順に：<code>%ProgramFiles%\Git\cmd\git.exe</code> → <code>%ProgramW6432%\Git\cmd\git.exe</code> → <code>%ProgramFiles(x86)%\Git\cmd\git.exe</code> → <code>%LOCALAPPDATA%\Programs\Git\cmd\git.exe</code>。環境変数が無い・空・ドライブ文字で始まらないものは飛ばす。</li>
+<li>どれも無ければ null（App は「不明」、Hook は git を省略。どちらも今の「git が無いとき」と同じ扱い）。</li>
+</ol>
+<ul>
+<li><b>カレントフォルダは見ない</b>（これが目的）。<code>Lazy</code> のキャッシュは今のまま（起動中に 1 回）。Hook は git を使うイベントのときだけ探す（<code>GitProbe.Run</code> の中。今のまま）ので、git なしの 50ms は変わらない。</li>
+<li><code>Find</code> の引数に <code>Func&lt;string, string?&gt; getEnv</code> を足す（既定の <code>Cached</code> は <code>Environment.GetEnvironmentVariable</code>）。mac の分岐は変えない。</li>
+</ul>
+
+<h3>9.2 「フォルダで開く」のコマンド（42-2）</h3>
+<table><tr><th>OS</th><th>ファイル</th><th>引数</th></tr>
+<tr><td>Windows</td><td><code>&lt;windowsDir の末尾の \ を除く&gt;\explorer.exe</code>（<code>windowsDir</code> は <code>Environment.GetFolderPath(SpecialFolder.Windows)</code>）</td><td><code>/select,&lt;file&gt;</code>（今のまま 1 つ）</td></tr>
+<tr><td>mac</td><td><code>/usr/bin/open</code></td><td><code>-R</code>、<code>&lt;file&gt;</code>（今のまま）</td></tr>
+</table>
+<ul>
+<li><code>windowsDir</code> が空（取れない）なら起動しない（<code>app.log</code> に 1 行）。</li>
+<li><code>ShellOpen.Open</code>（<code>UseShellExecute = true</code>。既定のアプリ・ブラウザ）は変えない。開く対象はフルパスか URL で、OS の「関連付けで開く」を通る。</li>
+</ul>
+
+<h3>9.3 ローカルのリンクの規則（43-1。<code>LocalLinkRule.Decide</code>）</h3>
+<svg viewBox="0 0 960 400" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="10" width="400" height="40" fill="#dff" stroke="#08a"/><text x="20" y="35">1. ネットワークのパス（\\・// で始まる）？</text>
+<rect x="10" y="70" width="400" height="40" fill="#dff" stroke="#08a"/><text x="20" y="95">2. Windows でドライブ以外の「:」を含む？</text>
+<rect x="10" y="130" width="400" height="40" fill="#dff" stroke="#08a"/><text x="20" y="155">3. フォルダがある（リンク・.app も）？</text>
+<rect x="10" y="190" width="400" height="40" fill="#dff" stroke="#08a"/><text x="20" y="215">4. ファイルが無い？</text>
+<rect x="10" y="250" width="400" height="40" fill="#dff" stroke="#08a"/><text x="20" y="275">5. リンクなら、たどった先は ネット／フォルダ？</text>
+<rect x="10" y="310" width="400" height="40" fill="#dff" stroke="#08a"/><text x="20" y="335">6. 名前と先の両方が「開いてよい種類」？</text>
+<line x1="210" y1="50" x2="210" y2="70" stroke="#333" marker-end="url(#a)"/><line x1="210" y1="110" x2="210" y2="130" stroke="#333" marker-end="url(#a)"/><line x1="210" y1="170" x2="210" y2="190" stroke="#333" marker-end="url(#a)"/><line x1="210" y1="230" x2="210" y2="250" stroke="#333" marker-end="url(#a)"/><line x1="210" y1="290" x2="210" y2="310" stroke="#333" marker-end="url(#a)"/>
+<text x="218" y="64" font-size="11" fill="#555">いいえ</text>
+<rect x="520" y="10" width="430" height="40" fill="#eee" stroke="#888"/><text x="530" y="35">Ignore（何もしない。ファイルにも触らない）</text>
+<rect x="520" y="70" width="430" height="40" fill="#eee" stroke="#888"/><text x="530" y="95">Ignore</text>
+<rect x="520" y="130" width="430" height="40" fill="#e8f1fd" stroke="#0b63c5"/><text x="530" y="155">Reveal（Finder／エクスプローラーで選ぶ）</text>
+<rect x="520" y="190" width="430" height="40" fill="#eee" stroke="#888"/><text x="530" y="215">Ignore</text>
+<rect x="520" y="250" width="430" height="40" fill="#e8f1fd" stroke="#0b63c5"/><text x="530" y="275">ネット → Ignore ／ フォルダ → Reveal</text>
+<rect x="520" y="310" width="210" height="40" fill="#dfd" stroke="#383"/><text x="530" y="335">OpenWithDefaultApp</text>
+<rect x="740" y="310" width="210" height="40" fill="#e8f1fd" stroke="#0b63c5"/><text x="750" y="335">Reveal（いいえ）</text>
+<line x1="410" y1="30" x2="520" y2="30" stroke="#333" marker-end="url(#a)"/><line x1="410" y1="90" x2="520" y2="90" stroke="#333" marker-end="url(#a)"/><line x1="410" y1="150" x2="520" y2="150" stroke="#333" marker-end="url(#a)"/><line x1="410" y1="210" x2="520" y2="210" stroke="#333" marker-end="url(#a)"/><line x1="410" y1="270" x2="520" y2="270" stroke="#333" marker-end="url(#a)"/><line x1="410" y1="330" x2="520" y2="330" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<text x="440" y="24" font-size="11" fill="#555">はい</text>
+<path d="M210,350 C210,385 845,385 845,350" fill="none" stroke="#333" marker-end="url(#a)"/>
+<text x="460" y="392" font-size="11" fill="#555">いいえ（起動しない側に倒す）</text>
+</svg>
+<p>判定の順（上で決まったら終わり）：</p>
+<ol>
+<li>ネットワークのパス（<code>\\</code> か <code>//</code> で始まる）→ <code>Ignore</code>。<b>ファイルシステムに触る前に</b>判定する。</li>
+<li>Windows で、2 文字目（ドライブの <code>:</code>）のほかに <code>:</code> を含む（代替データストリーム）→ <code>Ignore</code>。</li>
+<li>フォルダがある（<code>Directory.Exists</code>。フォルダへのリンクも含む。mac の <code>.app</code> もフォルダ）→ <code>Reveal</code>。</li>
+<li>ファイルが無い → <code>Ignore</code>。</li>
+<li>シンボリックリンクなら、たどった先（最後まで）を取る。たどった先がネットワークのパス → <code>Ignore</code>、フォルダ → <code>Reveal</code>。</li>
+<li>リンクの名前と、たどった先（リンクでなければ無し）の<b>両方</b>の拡張子が「開いてよい種類」→ <code>OpenWithDefaultApp</code>。それ以外 → <code>Reveal</code>。</li>
+</ol>
+<p>開いてよい種類（大文字小文字は区別しない）：<code>.md</code> <code>.html</code> <code>.htm</code> <code>.png</code> <code>.jpg</code> <code>.jpeg</code> <code>.gif</code> <code>.webp</code> <code>.bmp</code> <code>.svg</code> <code>.pdf</code> <code>.txt</code></p>
+<table><tr><th>入力（例）</th><th>結果</th></tr>
+<tr><td><code>\\server\share\a.txt</code>・<code>//server/share/a.txt</code></td><td>Ignore（有無を確かめない）</td></tr>
+<tr><td>Windows <code>C:\p\a.txt:x.exe</code>・<code>C:\p\a.exe:x.txt</code></td><td>Ignore</td></tr>
+<tr><td>Windows <code>C:\p\a.txt</code>（ドライブの <code>:</code> だけ）</td><td>次へ（判定 3 以降）</td></tr>
+<tr><td>mac の名前に <code>:</code> を含むファイル（<code>isWindows = false</code>）</td><td>判定 2 は使わない</td></tr>
+<tr><td>フォルダ・フォルダへのリンク・<code>x.app</code></td><td>Reveal</td></tr>
+<tr><td>無いファイル</td><td>Ignore</td></tr>
+<tr><td><code>a.txt</code>・<code>A.PDF</code>・<code>b.png</code></td><td>OpenWithDefaultApp</td></tr>
+<tr><td><code>a.bat</code>・<code>a.exe</code>・<code>a.command</code>・<code>a.sh</code>・<code>a.lnk</code>・拡張子なし・<code>a.txt.</code>（末尾が <code>.</code>）</td><td>Reveal</td></tr>
+<tr><td><code>a.txt</code>（リンク）→ <code>run.command</code></td><td>Reveal</td></tr>
+<tr><td><code>a.txt</code>（リンク）→ <code>b.txt</code></td><td>OpenWithDefaultApp</td></tr>
+<tr><td><code>a.txt</code>（リンク）→ フォルダ</td><td>Reveal</td></tr>
+<tr><td><code>a.txt</code>（リンク）→ <code>\\server\x.txt</code></td><td>Ignore</td></tr>
+</table>
+<ul>
+<li><code>LinkProbe</code> は 3 つの関数（<code>FileExists</code>・<code>DirectoryExists</code>・<code>ResolveFinalTarget</code>〈リンクでなければ null〉）の record。<code>LinkProbe.Real</code> は <code>File.Exists</code>・<code>Directory.Exists</code>・<code>new FileInfo(p).ResolveLinkTarget(returnFinalTarget: true)?.FullName</code>（例外〈IOException・UnauthorizedAccessException〉は null 扱いでなく <code>Reveal</code> に倒す。起動しない側に倒す）。</li>
+<li><code>isWindows</code> は呼ぶ側が <code>OperatingSystem.IsWindows()</code> を渡す（テストで両方を試すため）。</li>
+</ul>
+
+<h3>9.4 VM と Route の順番（43-2）</h3>
+<ol>
+<li><code>MarkdownPreview.Route(uri)</code>：<code>http</code>/<code>https</code>/<code>mailto</code> → 既定のアプリ（今のまま）。<code>uri.IsUnc</code> → 何もしない。<code>uri.IsFile</code> → <code>_vm.OpenLocalLink(uri.LocalPath)</code>。ほかのスキームは何もしない（今のまま）。</li>
+<li><code>DocumentsViewModel.OpenLocalLink(fullPath)</code>：① <code>LocalLinkRule.IsNetworkPath</code> なら終わり ② 対象フォルダ内で索引にある md/html はアプリ内で選ぶ（今のまま）③ <code>Decide</code> の結果で <code>_services.OpenWithDefaultApp</code>／<code>_services.RevealInFileManager</code>／何もしない。</li>
+<li><code>MemoViewModel.OpenLocalLink(fullPath)</code>：① 同じ ② <code>File.Exists &amp;&amp; _resolveInApp</code> ならドキュメントタブで開く（今のまま。① の後なので <code>File.Exists</code> に UNC は来ない）③ 同じ。</li>
+</ol>
+<ul>
+<li><code>DocumentsViewModel.OpenExternallyBecauseMissing</code>（メモから頼まれた、対象フォルダ内の md/html で索引に無いもの）は、開いてよい種類なので今のまま。</li>
+<li>「既定のアプリで開く」ボタン（選んでいる md/html を開く）は利用者の操作なので今のまま。</li>
+</ul>
+
+<h3>9.5 同梱のファイルの置き場と書き出し（44-1・44-2）</h3>
+<svg viewBox="0 0 960 250" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="230" height="80" fill="#fef" stroke="#a3a"/><text x="20" y="42" font-weight="bold">Miharikun.Docs（埋め込み）</text><text x="20" y="62" font-size="12">vendor/ の 4 ファイル</text><text x="20" y="80" font-size="12">MarkdownAssets.Version</text>
+<line x1="240" y1="60" x2="300" y2="60" stroke="#333" marker-end="url(#a)"/><text x="246" y="52" font-size="11" fill="#555">Ensure</text>
+<rect x="300" y="20" width="290" height="80" fill="#eee" stroke="#888"/><text x="310" y="42" font-weight="bold">データ/preview/lib/&lt;版&gt;/</text><text x="310" y="62" font-size="12">無い・長さ違いのときだけ書く</text><text x="310" y="80" font-size="12">CleanOld は直下だけ → 消えない</text>
+<rect x="300" y="140" width="290" height="80" fill="#efe" stroke="#383"/><text x="310" y="162" font-weight="bold">データ/preview/&lt;hash&gt;.html</text><text x="310" y="182" font-size="12">md の一時 HTML（1 日で消す）</text><text x="310" y="200" font-size="12">&lt;base&gt; は md のフォルダ</text>
+<line x1="445" y1="140" x2="445" y2="100" stroke="#383" stroke-width="2" marker-end="url(#a)"/><text x="452" y="126" font-size="11" fill="#383">script src は絶対の file URL</text>
+<rect x="680" y="140" width="270" height="80" fill="#ffe9c8" stroke="#a70"/><text x="690" y="162" font-weight="bold">プロジェクトの md のフォルダ</text><text x="690" y="182" font-size="12">相対の画像・リンクの基準</text><text x="690" y="200" font-size="12">（lib には相対で届かない）</text>
+<line x1="590" y1="180" x2="680" y2="180" stroke="#333" stroke-dasharray="5,3" marker-end="url(#a)"/><text x="600" y="172" font-size="11" fill="#555">相対</text>
+<text x="10" y="242" font-size="12" fill="#c05000">※ ファイルを替えたら Version を必ず変える。古い版のフォルダは消さない（消してよい）。</text>
+</svg>
+<ul>
+<li>置き場：<code>&lt;データ&gt;/preview/lib/&lt;Version&gt;/</code>。<code>Version</code> は <code>MarkdownAssets</code> の定数（例 <code>mermaid-11.x.y_hljs-11.x.y</code>）。<b>ファイルを替えたら必ず変える</b>（古いページと混ざらないように）。古い版のフォルダは消さない（消してよい。要件 6 章）。</li>
+<li><code>PreviewFiles.CleanOld</code> は <code>preview/</code> の直下のファイルだけを消す（<code>EnumerateFiles</code> は直下だけ）ので、<code>lib/</code> は消えない。<b><code>CleanOld</code> をサブフォルダまで消すように変えない</b>（コメントで残す）。</li>
+<li><code>Ensure</code>：各ファイルについて「無い、または長さが埋め込みと違う」ときだけ <code>write(path, bytes)</code>。毎回の描画の前に呼ぶ（存在と長さを見るだけで軽い。起動中にデータのフォルダが消されても戻る）。書いた後は書き直さないので、表示中の WebView が読んでいるファイルを置き換えることは、版の替わり目でしか起きない。<code>write</code> の IOException・UnauthorizedAccessException は捨てて描画は続ける（mermaid・色付けが出ないだけ。<code>app.log</code> に 1 行）。</li>
+<li>複数起動が同時に書いても <code>AtomicFile</code> の置き換えで壊れない（後勝ち）。</li>
+<li>md のページからの参照は<b>絶対の file URL</b>：<code>&lt;base&gt;</code> が md のフォルダを指すので、相対パスでは <code>lib/</code> に届かない。<code>MarkdownRenderer.FolderUri(libFolder) + ファイル名</code> を <code>WebUtility.HtmlEncode</code> して属性に入れる（<code>&lt;base&gt;</code> と同じ）。</li>
+<li>mermaid：<code>&lt;script nonce src=".../mermaid.min.js"&gt;&lt;/script&gt;</code> の後に <code>&lt;script nonce&gt;</code> で <code>mermaid.initialize({ startOnLoad: false, theme })</code> と <code>mermaid.run({ querySelector: 'pre.mermaid' })</code>（<code>window.mermaid</code> が無ければ何もしない。<code>run</code> の失敗は <code>catch</code> で捨てる。今の try/catch と同じ）。</li>
+<li>highlight.js：<code>&lt;link rel="stylesheet" href=".../hljs-github(-dark).min.css"&gt;</code>（head）と <code>&lt;script nonce src=".../highlight.min.js"&gt;</code> → <code>&lt;script nonce&gt;</code>（今の初期化と同じ）。要るときだけ読む（今のまま）。</li>
+</ul>
+
+<h3>9.6 CSP と nonce（45-1）</h3>
+<svg viewBox="0 0 960 230" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="10" width="440" height="210" fill="#fff" stroke="#888"/><text x="20" y="30" font-weight="bold">md のページ（一時 HTML）</text>
+<rect x="20" y="40" width="420" height="26" fill="#eee" stroke="#888"/><text x="28" y="58" font-size="12">&lt;meta charset&gt;</text>
+<rect x="20" y="70" width="420" height="26" fill="#dfd" stroke="#383"/><text x="28" y="88" font-size="12">&lt;meta CSP&gt; script-src 'nonce-n' ほか ← 新規</text>
+<rect x="20" y="100" width="420" height="26" fill="#eee" stroke="#888"/><text x="28" y="118" font-size="12">&lt;base&gt;・&lt;title&gt;・&lt;style&gt;・hljs の css</text>
+<rect x="20" y="130" width="420" height="36" fill="#ffe9c8" stroke="#a70"/><text x="28" y="146" font-size="12">md の本文（Markdig の出力。生の HTML を含む）</text><text x="28" y="161" font-size="12">nonce なしの script・onerror など</text>
+<rect x="20" y="172" width="420" height="40" fill="#efe" stroke="#383"/><text x="28" y="188" font-size="12">Miharikun の script（# リンク・Esc・位置・</text><text x="28" y="204" font-size="12">チェックボックス・hljs・mermaid）すべて nonce つき</text>
+<line x1="440" y1="148" x2="520" y2="148" stroke="#b33" marker-end="url(#a)"/>
+<rect x="520" y="128" width="430" height="40" fill="#fde" stroke="#b33"/><text x="530" y="153">動かない（CSP が止める）</text>
+<line x1="440" y1="192" x2="520" y2="192" stroke="#383" stroke-width="2" marker-end="url(#a)"/>
+<rect x="520" y="174" width="430" height="40" fill="#dfd" stroke="#383"/><text x="530" y="199">動く</text>
+<rect x="520" y="40" width="430" height="70" fill="#e8f1fd" stroke="#0b63c5"/><text x="530" y="60" font-size="12">meta refresh・form の移動は CSP で止まらない</text><text x="530" y="78" font-size="12">→ リンクの振り分け（9.3）に来るので起動しない</text><text x="530" y="96" font-size="12">InvokeScript・invokeCSharpAction は要確認（9.7）</text>
+</svg>
+<ul>
+<li>nonce：<code>RandomNumberGenerator.GetBytes(16)</code> を Base64。ページ（1 回の描画）ごとに作る。</li>
+<li><code>&lt;meta http-equiv="Content-Security-Policy" content="script-src 'nonce-&lt;n&gt;'; object-src 'none'; frame-src 'none'; form-action 'none'"&gt;</code> を <code>&lt;meta charset&gt;</code> の直後（<code>&lt;base&gt;</code>・<code>&lt;style&gt;</code> より前）に置く。<code>style-src</code>・<code>img-src</code> は付けない（md の画像・css・mermaid の <code>&lt;style&gt;</code> を今のまま許す）。</li>
+<li>nonce を付けるのは Miharikun が入れる <code>&lt;script&gt;</code> だけ：<code>#</code> リンクのスクロール、Esc の受け口、位置の補正、チェックボックス、highlight.js（読み込みと初期化）、mermaid（読み込みと初期化）。md の本文（Markdig の出力）には付けない。</li>
+<li>チェックボックス：<code>ReadOnlyCheckboxes</code> の置き換えを <code>&lt;input type="checkbox" tabindex="-1"</code>（<code>onclick</code> なし）にし、スクリプト <code>document.addEventListener('click', function (e) { var t = e.target; if (t &amp;&amp; t.matches &amp;&amp; t.matches('li.task-list-item &gt; input[type="checkbox"]')) e.preventDefault(); }, true);</code> で取り消す（Space キーで押した場合も click が来るので同じく取り消される）。見た目は今のまま（通常の色）。</li>
+<li>md に <code>&lt;meta http-equiv="refresh"&gt;</code>・<code>&lt;form&gt;</code> があっても、移動はリンクの振り分け（9.3）に来るので、何も起動しない（CSP では止まらないものの受け皿）。</li>
+<li>html のプレビュー・<code>EscapeListenerScript</code> の後入れ（<code>InvokeScript</code>）は変えない。</li>
+</ul>
+
+<h3>9.7 要確認（45-2。mac の実機。Windows は 47-1）</h3>
+<table><tr><th>確かめること</th><th>だめなときの代わり</th></tr>
+<tr><td>mermaid が CSP の下で図を描ける（<code>eval</code>・<code>new Function</code> を使っていないか）</td><td>CSP の <code>script-src</code> に <code>'unsafe-eval'</code> を足す（nonce の無いスクリプトは動かないままなので、守りは保たれる）。足したら要件定義 12.7 に書く</td></tr>
+<tr><td>アプリからの <code>InvokeScript</code>（目次で移る・再読み込みの位置の復元・<code>window.scrollY</code>）が CSP に止められない</td><td>止められたら、ページの中に nonce 付きの受け口の関数を置き、<code>InvokeScript</code> はその関数を呼ぶだけにする（呼び出し自体が止められるなら、利用者に相談）</td></tr>
+<tr><td>Esc（ページの中で押す → <code>invokeCSharpAction</code>）が CSP の下でも届く</td><td>届かなければ利用者に相談（Issue #28 の試作の代わりの形：独自の URL への移動を取り消して受ける）</td></tr>
+</table>
+
+<h3>9.8 確認の手順と試験用のファイル（各 Phase・47-1）</h3>
+<ul>
+<li>隔離環境：<code>MIHARIKUN_DATA_DIR</code>・<code>MIHARIKUN_CURSOR_DIR</code>・<code>MIHARIKUN_CLAUDE_DIR</code> を一時フォルダに向け、一時フォルダの試験用のプロジェクトを対象に起動する。<code>dotnet build</code>／<code>test</code> の前にアプリを止める。</li>
+<li>試験用のファイルは手書きし、<b>中身は害のないものだけ</b>にする：<code>.bat</code>・<code>.command</code> は中身を <code>echo</code> の 1 行（起動されたら分かるだけ）、<code>.exe</code> は中身がただの文字のファイル（拡張子だけ）。md には、それらへのリンク、<code>.txt</code>・<code>.png</code>・<code>.pdf</code>・フォルダへのリンク、<code>&lt;script&gt;</code> で本文の文字を書き換えるだけのスクリプト、<code>&lt;img src=x onerror=...&gt;</code>（同じく文字を書き換えるだけ）、mermaid とコードブロックを書く。</li>
+<li>確認表（mac は各 Phase、Windows は 47-1）：</li>
+</ul>
+<table><tr><th>操作</th><th>期待</th></tr>
+<tr><td>試験用のプロジェクトをカレントにして起動し、<code>app.log</code> を見る</td><td>git のフルパスが出る（Windows は <code>...\Git\cmd\git.exe</code> など。カレントのフォルダのパスではない）。未コミットの表示が普通に出る</td></tr>
+<tr><td>「フォルダで開く／Finder で表示」</td><td>エクスプローラー／Finder でファイルが選ばれる</td></tr>
+<tr><td>md の <code>.txt</code>・<code>.png</code>・<code>.pdf</code> へのリンクを押す</td><td>既定のアプリで開く</td></tr>
+<tr><td>md の <code>.bat</code>・<code>.command</code>・<code>.exe</code>・フォルダへのリンクを押す</td><td>何も起動せず、エクスプローラー／Finder で選ばれた状態になる</td></tr>
+<tr><td>md の <code>\\server\share\x.txt</code> へのリンクを押す</td><td>何も起きない</td></tr>
+<tr><td>md の <code>&lt;script&gt;</code>・<code>onerror</code></td><td>本文の文字が変わらない</td></tr>
+<tr><td>ネットを切って mermaid・コードブロックの md を開く</td><td>図と色付けが出る（ライト／ダーク）</td></tr>
+<tr><td>品質ゲート 2 の項目</td><td>今までどおり</td></tr>
+</table>
+
+<h3>9.9 ダウンロードの段取り（44-1）</h3>
+<ul>
+<li><b>ダウンロードの前に利用者の了承を取る</b>（ファイル名・取得元・おおよそのサイズを示す）。取得元は npm のレジストリ（<code>mermaid</code>、<code>@highlightjs/cdn-assets</code>）。版は、実装の時点の <b>11 系の最新の安定版</b>に固定し、計画と要件定義の状況に書き足す。</li>
+<li>取得したら、npm の <code>dist.integrity</code>（sha512）と照らす。使うのは <code>mermaid/dist/mermaid.min.js</code>、<code>@highlightjs/cdn-assets/highlight.min.js</code>・<code>styles/github.min.css</code>・<code>styles/github-dark.min.css</code>、両方の <code>LICENSE</code>。<code>mermaid.min.js</code>（IIFE で <code>window.mermaid</code> を作るもの）が無い版なら、止まって相談する。</li>
+<li>取得した tarball・展開したフォルダは、スクラッチの専用フォルダに置き、使うファイルだけをリポジトリに写す（展開したフォルダの中で何も実行しない）。</li>
+<li><code>THIRD-PARTY-NOTICES.txt</code> には、名前・版・取得元・ライセンスの全文を書く。mermaid の min.js に入っている依存のライセンスは、取得した版の配布物（<code>dist</code> のライセンスのファイル、無ければ <code>package.json</code> の依存）から拾う（要確認）。</li>
+</ul>
+
+<h3>9.10 保険の探索の読み方（46-1。<code>ClaudeLocations.FindDirsByCwd</code>）</h3>
+<svg viewBox="0 0 960 200" width="960" font-size="13" font-family="sans-serif">
+<rect x="10" y="20" width="250" height="70" fill="#eee" stroke="#888"/><text x="20" y="42" font-weight="bold">projects/ の各フォルダ</text><text x="20" y="62" font-size="12">直下の *.jsonl を新しい順に</text><text x="20" y="78" font-size="12">（同じなら名前順）</text>
+<line x1="260" y1="55" x2="310" y2="55" stroke="#333" marker-end="url(#a)"/>
+<rect x="310" y="20" width="260" height="70" fill="#dff" stroke="#08a"/><text x="320" y="42" font-weight="bold">ReadFirstCwd（今のまま）</text><text x="320" y="62" font-size="12">先頭から最大 200 行のうち</text><text x="320" y="78" font-size="12">最初に cwd を持つ行まで</text>
+<path d="M440,90 C440,130 360,130 330,95" fill="none" stroke="#888" marker-end="url(#a)"/><text x="300" y="140" font-size="11" fill="#555">cwd が無い → 次のファイル</text>
+<line x1="570" y1="55" x2="630" y2="55" stroke="#333" marker-end="url(#a)"/><text x="576" y="47" font-size="11" fill="#555">cwd あり</text>
+<rect x="630" y="10" width="320" height="40" fill="#dfd" stroke="#383"/><text x="640" y="35">対象（作業ツリー含む）→ 候補に足す</text>
+<rect x="630" y="60" width="320" height="40" fill="#eee" stroke="#888"/><text x="640" y="85">別のプロジェクト → 候補にしない</text>
+<rect x="630" y="120" width="320" height="56" fill="#e8f1fd" stroke="#0b63c5"/><text x="640" y="142" font-weight="bold">どちらでも、そのフォルダは終わり</text><text x="640" y="162" font-size="12">残りのファイルは開かない ← 新規</text>
+<line x1="790" y1="100" x2="790" y2="120" stroke="#333" marker-end="url(#a)"/>
+<text x="10" y="192" font-size="12" fill="#c05000">※ 動く条件（名前で候補が 0 件のとき・起動ごとに 1 回）とログの文は今のまま。</text>
+</svg>
+<ol>
+<li>動く条件は今のまま：名前の規則で候補が 0 件のとき、起動ごとに 1 回（<code>ClaudeSessionSource.CurrentDirs</code>）。<code>.claude/projects</code> が無ければ動かない。</li>
+<li><code>projects/</code> の下のフォルダごとに、直下の <code>*.jsonl</code> を<b>更新日時の新しい順</b>（同じなら名前順）に並べる。</li>
+<li>1 つずつ <code>ReadFirstCwd</code>（先頭から最大 200 行のうち、最初に cwd を持つ行まで。今のまま）を呼ぶ：
+<ul><li>cwd が取れない（cwd の無い記録だけ・読めない）→ 次のファイルへ。</li>
+<li>cwd が取れた → 対象のプロジェクト（または作業ツリー）なら候補に足す。<b>どちらでも、そのフォルダはここで終わり</b>（残りのファイルは開かない）。</li></ul></li>
+<li>ログの文（見つけたときだけ、フォルダ名を 1 行）は今のまま。会話の中身はログに書かない。</li>
+</ol>
+<table><tr><th>フォルダの中（新しい順）</th><th>結果</th></tr>
+<tr><td>1 つ目の cwd ＝ 対象</td><td>候補にする。2 つ目以降は開かない</td></tr>
+<tr><td>1 つ目の cwd ＝ 別のプロジェクト、2 つ目の cwd ＝ 対象</td><td>候補にしない。2 つ目は開かない</td></tr>
+<tr><td>1 つ目に cwd が無い、2 つ目の cwd ＝ 対象</td><td>候補にする</td></tr>
+<tr><td>どのファイルにも cwd が無い</td><td>候補にしない（全ファイルの先頭を見る。今と同じ）</td></tr>
+</table>
+<ul>
+<li>打ち切ってよい理由：Claude Code は起動したフォルダのパスからフォルダ名を作るので、1 つのフォルダには同じパスのセッションしか入らない（作業ツリーは別のフォルダ）。</li>
+<li>取りこぼし：パスの記号だけが違う 2 つのプロジェクト（<code>my-proj</code> と <code>my_proj</code> など）は同じフォルダ名になるが、そのフォルダは名前の規則で候補になるので、保険は使われない（今のまま）。保険の側で取りこぼすのは「名前の規則が合わない」かつ「別のプロジェクトとフォルダを共有する」場合だけで、受け入れる（10 章）。</li>
+<li>名前の側で、NFD・実パスの形も候補にする案は入れない（保険で拾えるため。要るなら別 Issue）。</li>
+</ul>
+
+<h2>10. リスクと対策</h2>
+<table><tr><th>リスク</th><th>対策</th></tr>
+<tr><td>md の見た目・動きが変わる（44・45）</td><td>品質ゲート 2 を mac と Windows で確かめる。既存のテストは期待の差し替えだけ（件数は減らさない）</td></tr>
+<tr><td>mermaid や <code>InvokeScript</code> が CSP で動かない</td><td>45-2 で先に mac の実機で確かめ、9.7 の代わりの形にする</td></tr>
+<tr><td>Windows で git が見つからなくなる（PATH に無い・変わった場所に入れた）</td><td>決まった場所も探す。見つからないときは今の「git が無い」と同じ「不明」。<code>app.log</code> にパスを出すので原因が分かる。47-1 で利用者の PC で確かめる</td></tr>
+<tr><td>開いてよい種類が狭く、よく使うファイルが開けない</td><td>起動はしないが Finder／エクスプローラーで選ばれるので、そこから開ける。一覧は要件定義 12.7 にあり、足すのは利用者の判断</td></tr>
+<tr><td>同梱で配布物が大きくなる（mermaid は数 MB）</td><td>受け入れる（今の単一ファイルは 130MB 超）</td></tr>
+<tr><td>ページのスクリプトから http/https のリンクが勝手に開く</td><td>ブラウザが開くだけなので受け入れる（要件定義 12.7 に明記）</td></tr>
+<tr><td>ダウンロードしたファイルが改ざんされている</td><td>npm の <code>dist.integrity</code> で照らす。了承を取ってから取得</td></tr>
+<tr><td>保険の探索を打ち切ったせいで、同じフォルダの別のファイルにある対象のセッションを見逃す</td><td>1 つのフォルダには同じパスのセッションしか入らない（9.10）。見逃すのは「名前の規則が合わない」かつ「別のプロジェクトとフォルダを共有する」場合だけで、受け入れる</td></tr>
+</table>
+
+<h2>11. 決定事項（確認済み。診断の質問 Q1〜Q3 と、その後の相談）</h2>
+<ol>
+<li>Q1＝C：開いてよい種類（拡張子の一覧）だけ既定のアプリで開き、ほかは起動せず Finder／エクスプローラーで見せる。</li>
+<li>Q2＝A：md の生の HTML は残し、CSP（nonce）でスクリプトだけ止める。</li>
+<li>Q3＝A：mermaid・highlight.js を同梱する（CDN をやめる）。</li>
+<li>Claude の会話ログの保険の探索（名前で見つからないとき、cwd で探す）は<b>残す</b>。外すと、名前の規則がずれたとき（mac の NFD の日本語名・シンボリックリンク経由・Claude Code の版の違い）に、Claude のセッションが黙って一覧から消えるため。代わりに、ほかのプロジェクトのログを読む量を減らす：フォルダごとに cwd が取れた最初の 1 ファイルで打ち切る（2026-10-09 の相談。Phase 46）。</li>
+</ol>
+<p>計画で決めたこと（仕様にない細部）：</p>
+<ul>
+<li>開いてよい種類の一覧：<code>.md</code> <code>.html</code> <code>.htm</code> <code>.png</code> <code>.jpg</code> <code>.jpeg</code> <code>.gif</code> <code>.webp</code> <code>.bmp</code> <code>.svg</code> <code>.pdf</code> <code>.txt</code>（Office の文書・<code>.csv</code>・<code>.json</code> などは入れない。マクロや別のアプリの動きを持ち込まないため）。</li>
+<li>フォルダへのリンクは、開かずに Finder／エクスプローラーで選ばれた状態にする（mac の <code>.app</code> もフォルダなので、開くと起動してしまうため）。今はメモのリンクでフォルダを開いていた（テストを直す）。</li>
+<li>シンボリックリンクは、名前とたどった先の両方で種類を見る。たどれないときは起動しない側（<code>Reveal</code>）に倒す。</li>
+<li>Windows の <code>:</code> を含むパス（代替データストリーム）は何もしない。</li>
+<li>CSP に <code>object-src 'none'; frame-src 'none'; form-action 'none'</code> も入れる（GitHub の md の表示でも出ないもの）。<code>style-src</code>・<code>img-src</code> は付けない。</li>
+<li>mac の「Finder で表示」も <code>/usr/bin/open</code> のフルパスにする（.NET は名前だけのとき、mac でもカレントフォルダを PATH より先に見る見込み。要件定義 13 章）。</li>
+<li>起動時に git のパスを <code>app.log</code> に 1 行出す（確認と、見つからないときの原因の調査のため）。</li>
+<li>同梱のファイルは <code>preview/lib/&lt;版&gt;/</code> に書き出す（埋め込みから。配布物のファイルを増やさない）。<code>AtomicFile.WriteAllBytes</code> を足す。</li>
+<li><code>MarkdownRenderer</code> の <code>libFolder</code> は <code>baseFolder</code> の次の引数にし、アプリのコードでは名前付き引数で渡す（同じ string の取り違えを防ぐ）。</li>
+<li>highlight.js も mermaid と同じく 11 系の最新の安定版に固定する（今は 11.9.0。見た目がほぼ変わらない範囲）。</li>
+<li>README の Hook の置き場所は、<code>%USERPROFILE%</code> の下を先に勧め、<code>C:\dev</code> は注意つきで残す（会社の PC で <code>%USERPROFILE%</code> の下が動くかは未確認のため。47-1 で利用者に聞く）。</li>
+<li>保険の探索は、フォルダの中のファイルを更新日時の新しい順に見る（いまの Claude Code の書き方に近いものから）。名前の側で NFD・実パスの形も候補にする案は入れない。</li>
+</ul>
+
+<h2>12. 実装するセッションへの注意（必ず読む）</h2>
+<h3>12.1 始める前に</h3>
+<ul>
+<li><b>この計画・診断（<code>docs/security/security-review.html</code>）・要件定義の変更が見えることを確かめる</b>。ブランチ <code>docs/security-review</code> にあり、コミットされていないことがある。別の作業ツリー（worktree）や別の環境で始まったセッションには、未追跡のファイルが無い。見つからなければ、推測で進めずに利用者に聞く。</li>
+<li>計画と要件定義に食い違いが無いか確かめる。あれば要件定義が正。判断がつかなければ聞く。</li>
+<li><code>CLAUDE.md</code> の決まり：main から作業ブランチを切る（または利用者の指示のブランチ）、<code>git add</code> はパスを指定、コミット・push・PR は頼まれたときだけ、完了報告にはビルドの有無と出力先・テストの件数・できなかった確認を書く。</li>
+<li>本物のデータ・本物のプロジェクトの文書は使わない（隔離環境と手書きの試験用のファイル）。試験用の実行形式は作らない（9.8 のとおり、拡張子だけのただの文字のファイル）。</li>
+<li>ダウンロードは了承を取ってから（9.9）。システムへのインストールはしない。</li>
+<li>Issue は #31。途中のコミットは <code>Refs #31</code>、最後だけ <code>Fixes #31</code>。</li>
+</ul>
+<h3>12.2 各フェーズの終わり</h3>
+<ul>
+<li>mac の隔離環境で確かめ（9.8）、要件定義 15 章の <code>[ ]</code> → <code>[x]</code> と「状況」（テストの件数・確かめたこと・できなかったこと）を更新する。</li>
+<li>報告には、変えたこと、テスト結果（件数）、ビルドの出力先、できなかった確認を書く。<b>次のフェーズに進む前に止まって報告する</b>。</li>
+<li>Phase 45 の後は、利用者が望めばレビューを挟む（差分と品質ゲートの結果を渡す）。Phase 47-1 は利用者の Windows で行うので、手順を渡して待つ。</li>
+</ul>
+<p><b>状態：レビュー待ち</b>（別セッションに、この計画のレビューを頼む）。</p>
+</body></html>
