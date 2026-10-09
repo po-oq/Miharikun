@@ -210,20 +210,134 @@ public sealed class ClaudeLocationsTests : IDisposable
 
     // ---- 候補が無いときの探索 ----
 
+    // 名前の規則だけ違うフォルダ（記号の数が違う。英数字の並び＝骨組みは同じ）
+    private static readonly string Odd = ClaudeFolderName.For(Project)!.Replace("-", "--");
+
     [Fact]
     public void Fallback_finds_folders_whose_files_have_a_matching_first_cwd_and_logs_it()
     {
-        var odd = MakeFolder("some-odd-folder-name");
+        var odd = MakeFolder(Odd);
         WriteLines(Path.Combine(odd, "s1.jsonl"), """{"type":"queue-operation"}""", CwdLine(Project));
         var other = MakeFolder("another");
         WriteLines(Path.Combine(other, "s2.jsonl"), CwdLine(@"C:\work\elsewhere"));
-        var worktree = MakeFolder("also-odd");
+        var worktree = MakeFolder(Odd + "--claude-worktrees-w1");
         WriteLines(Path.Combine(worktree, "s3.jsonl"), CwdLine(Path.Combine(Project, ".claude", "worktrees", "w1")));
 
         var dirs = Locations().FindDirsByCwd().Select(Path.GetFileName).Order().ToList();
 
-        Assert.Equal(["also-odd", "some-odd-folder-name"], dirs);
+        Assert.Equal([Odd, Odd + "--claude-worktrees-w1"], dirs.Order().ToList());
         Assert.Contains(_logs, l => l.Contains("フォルダ名の規則"));
+    }
+
+    // ---- 保険の探索を、フォルダ名の骨組み（英数字だけの並び）で絞る（Phase 46。計画 9.10）----
+
+    [Theory]
+    [InlineData(@"C:\zDev\repo\Miharikun", "czdevrepomiharikun")]
+    [InlineData("C--zDev-repo-Miharikun", "czdevrepomiharikun")]              // フォルダ名も同じ骨組みになる
+    [InlineData("/Users/x/日本語 の/a.b_c", "usersxabc")]                     // 日本語・記号・区切りは消える
+    [InlineData("---", "")]
+    [InlineData("", "")]
+    public void The_skeleton_keeps_only_ascii_letters_and_digits_in_lower_case(string text, string expected) =>
+        Assert.Equal(expected, ClaudeFolderName.Skeleton(text));
+
+    [Fact]
+    public void The_skeleton_is_the_same_for_nfc_and_nfd_japanese_names()
+    {
+        var nfc = "/Users/x/ガイド".Normalize(System.Text.NormalizationForm.FormC);
+        var nfd = nfc.Normalize(System.Text.NormalizationForm.FormD);
+        Assert.NotEqual(nfc, nfd);
+
+        Assert.Equal(ClaudeFolderName.Skeleton(nfc), ClaudeFolderName.Skeleton(nfd));
+    }
+
+    [Fact]
+    public void Fallback_does_not_open_a_folder_whose_skeleton_differs_even_if_a_file_has_the_cwd()
+    {
+        var other = MakeFolder("completely-different-project");
+        WriteLines(Path.Combine(other, "s.jsonl"), CwdLine(Project));   // 開けば見つかるが、フォルダ名で外れるので開かない
+
+        Assert.Empty(Locations().FindDirsByCwd());
+        Assert.Empty(_logs);
+    }
+
+    [Fact]
+    public void Fallback_finds_a_folder_whose_name_differs_only_in_the_number_of_symbols()
+    {
+        var odd = MakeFolder(Odd);
+        WriteLines(Path.Combine(odd, "s.jsonl"), CwdLine(Project));
+
+        Assert.Equal([odd], Locations().FindDirsByCwd());
+    }
+
+    [Fact]
+    public void Fallback_finds_a_folder_where_sessions_of_another_project_are_mixed_in_even_when_the_newest_file_is_the_other_one()
+    {
+        // フォルダ名は英数字以外を区別しないので、別のプロジェクトのセッションが同じフォルダに混ざりうる
+        var odd = MakeFolder(Odd);
+        var mine = Path.Combine(odd, "mine.jsonl");
+        var theirs = Path.Combine(odd, "theirs.jsonl");
+        WriteLines(mine, CwdLine(Project));
+        WriteLines(theirs, CwdLine(@"C:\work\other-project"));
+        File.SetLastWriteTimeUtc(mine, DateTime.UtcNow.AddDays(-3));
+        File.SetLastWriteTimeUtc(theirs, DateTime.UtcNow);
+
+        Assert.Equal([odd], Locations().FindDirsByCwd());
+    }
+
+    [Fact]
+    public void Fallback_does_not_find_a_folder_with_the_same_skeleton_when_no_file_has_the_cwd()
+    {
+        var odd = MakeFolder(Odd);
+        WriteLines(Path.Combine(odd, "s.jsonl"), CwdLine(@"C:\work\other-project"));
+
+        Assert.Empty(Locations().FindDirsByCwd());
+    }
+
+    [Fact]
+    public void Fallback_finds_the_worktree_form_of_the_folder_name()
+    {
+        var dir = MakeFolder(Odd + "--claude-worktrees-w1");
+        WriteLines(Path.Combine(dir, "s.jsonl"), CwdLine(Path.Combine(Project, ".claude", "worktrees", "w1")));
+
+        Assert.Equal([dir], Locations().FindDirsByCwd());
+    }
+
+    [Fact]
+    public void Fallback_also_opens_a_folder_whose_name_was_cut_short()
+    {
+        // 長いパスが短く切られたフォルダ名（対象の骨組みの先頭の部分）
+        var full = ClaudeFolderName.Skeleton(Project);
+        var shortName = "--" + full[..(full.Length - 2)];
+        var dir = MakeFolder(shortName);
+        WriteLines(Path.Combine(dir, "s.jsonl"), CwdLine(Project));
+
+        Assert.Equal([dir], Locations().FindDirsByCwd());
+    }
+
+    [Fact]
+    public void Fallback_never_opens_a_folder_whose_skeleton_is_empty()
+    {
+        foreach (var name in new[] { "-", "---", "--" })
+        {
+            var dir = MakeFolder(name);
+            WriteLines(Path.Combine(dir, "s.jsonl"), CwdLine(Project));
+        }
+
+        Assert.Empty(Locations().FindDirsByCwd());
+    }
+
+    [MacFact]
+    public void Fallback_also_matches_the_skeleton_of_the_real_path_when_the_project_is_given_as_a_symlink()
+    {
+        var real = Path.Combine(_root, "real-dir");
+        Directory.CreateDirectory(real);
+        var link = Path.Combine(_root, "link-dir");
+        Directory.CreateSymbolicLink(link, real);
+        var realPath = Miharikun.Core.Projects.RealPath.Resolve(link);
+        var dir = MakeFolder(ClaudeFolderName.For(realPath)!.Replace("-", "--"));   // Claude Code は実パスで名前を付ける
+        WriteLines(Path.Combine(dir, "s.jsonl"), CwdLine(realPath));
+
+        Assert.Equal([dir], Locations(project: link).FindDirsByCwd());
     }
 
     [Fact]

@@ -52,14 +52,20 @@ public sealed class ClaudeLocations
     }
 
     /// <summary>
-    /// 名前の規則が合わなかったときの保険：全フォルダの各ファイルの<b>先頭の cwd だけ</b>を読んで、対象のものがあるフォルダを探す。
+    /// 名前の規則が合わなかったときの保険：<b>フォルダの名前の骨組み（英数字だけの並び）が、対象のパス（そのまま・実パス）の骨組みと
+    /// 前方一致するフォルダだけ</b>を開き、各ファイルの<b>先頭の cwd だけ</b>を読んで、対象のものがあるフォルダを探す。
+    /// ほかのプロジェクトのフォルダは一覧を取るだけで、中のファイル（会話ログ）は開かない。
+    /// 開いたフォルダの中は、合わないファイルがあっても打ち切らない（フォルダ名は英数字以外を区別しないので、別のプロジェクトのセッションが混ざりうる）。
     /// 見つかったらログに残す（日本語・記号を含むパスで、規則が違ったかもしれない）。
     /// </summary>
     public IReadOnlyList<string> FindDirsByCwd()
     {
+        var wanted = TargetSkeletons();
         var found = new List<string>();
         foreach (var dir in ListSubDirs())
         {
+            if (!SkeletonMatches(ClaudeFolderName.Skeleton(Path.GetFileName(dir)), wanted))
+                continue;
             foreach (var file in ListFiles(dir))
             {
                 if (Matches(ReadFirstCwd(file)))
@@ -72,6 +78,23 @@ public sealed class ClaudeLocations
         }
         return found;
     }
+
+    // 対象のパス（そのまま）と、実パス（違うときだけ）の骨組み。Claude Code の cwd は実パスで来る。
+    private List<string> TargetSkeletons()
+    {
+        var result = new List<string>();
+        if (ProjectPath.Normalize(_projectFolder) is not { } normalized)
+            return result;
+        result.Add(ClaudeFolderName.Skeleton(normalized));
+        var real = ClaudeFolderName.Skeleton(RealPath.Resolve(normalized));
+        if (!result.Contains(real))
+            result.Add(real);
+        return result;
+    }
+
+    // どちらかがどちらかの前方一致（同じ名前・作業ツリーの形・記号の数だけ違う名前、または、長いパスが短く切られた名前）。空の骨組みは開かない。
+    private static bool SkeletonMatches(string folder, List<string> wanted) =>
+        folder.Length > 0 && wanted.Any(w => w.Length > 0 && (folder.StartsWith(w, StringComparison.Ordinal) || w.StartsWith(folder, StringComparison.Ordinal)));
 
     /// <summary>cwd が、対象フォルダそのもの、またはその作業ツリー（<c>&lt;対象&gt;\.claude\worktrees\</c> の配下）か。</summary>
     public bool Matches(string? cwd) =>

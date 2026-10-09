@@ -1098,9 +1098,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：md に書いた `<script>`・`onerror` などの属性・`javascript:` のリンク・`<meta http-equiv="refresh">` が動かない。これまでの md の見た目・`#` リンク・Esc・目次で移る・位置の補正・チェックボックス・mermaid・色付けが両 OS で動く
 - 状況（2026-10-09 実装完了。45-2 の mac 実機の確認は未了）：実装済み（45-1。テスト先行）。`MarkdownRenderer`：ページごとの nonce と CSP の `<meta>`（`<meta charset>` の直後・`<base>` より前。`script-src 'nonce-…'; object-src 'none'; frame-src 'none'; form-action 'none'`）、Miharikun の script は全部 `<head>`（共通 1 つ＋ hljs 2 つ＋ mermaid 2 つ。本文の後ろには何も置かない。`defer`・`DOMContentLoaded`）、チェックボックスは `onclick` をやめて、子孫のセレクタ（`li.task-list-item input[type="checkbox"]`）でクリックを取り消すスクリプト、生の HTML（`HtmlBlock`・`HtmlInline`）の `http-equiv` を `data-http-equiv` に。`PreviewNavigationPolicy` に `Cancel`（md の読み込み中の自分のページ以外への移動）、`MarkdownPreview` は `Cancel` を振り分けない。Tests 1301（スキップ 30）、UiTests 65（スキップ 3）。確認：本物の出力を Chromium（同梱ファイルだけを読む形）で開き、md に書いた `<script>`・`onerror`・`javascript:` のリンクが動かない（CSP が止める）、mermaid が `unsafe-eval` なしで図を描く（9.7 の 1）、色付け、チェックボックスを押しても変わらない（空行を挟んだリストも）、`#` リンクのスクロール、meta refresh が残らないことを確認。できなかった確認（mac の WKWebView のアプリ内プレビューでの目視。利用者の確認待ち）：9.7 の 2（`InvokeScript`：目次で移る・位置の復元）・3（ページの中の Esc が届く）・5（ネットワークのパスの画像）、品質ゲート 2 の全項目、メモのプレビュー。Windows は Phase 47
 
-## [ ] Phase 46: Claude の会話ログの保険の探索を絞る（9.1）
+## [x] Phase 46: Claude の会話ログの保険の探索を絞る（9.1）
 - `ClaudeLocations.FindDirsByCwd`：フォルダ名の英数字の並び（骨組み）が対象のパス・実パスと前方一致するフォルダだけを開き、中は今のまま各ファイルの先頭の `cwd` を照らす（合わないファイルがあっても打ち切らない）。動く条件・ログの文は今のまま。テスト先行
 - 完了条件：骨組みが違うフォルダを開かない・記号の数だけ違うフォルダ（NFD の日本語名など）が見つかる・別のプロジェクトのセッションが混ざったフォルダでも見つかる・作業ツリーの形が見つかる、のテストが通り、これまでの保険のテストも（フォルダ名を「骨組みが同じで規則だけ違う名前」に替えて）期待を変えずに通る。隔離環境で、名前の規則に合わないフォルダのセッションが一覧に出る
+- 状況（2026-10-09 完了）：実装済み（46-1。テスト先行）。`ClaudeFolderName.Skeleton`（ASCII の英数字だけ・小文字。先に NFC）、`ClaudeLocations.FindDirsByCwd` はフォルダ名の骨組みが対象のパス（そのまま・実パス）の骨組みと前方一致するフォルダだけを開く（空の骨組みは開かない。開いたフォルダの中は今のまま全ファイルの先頭の `cwd` を照らす）。動く条件・ログの文は今のまま。既存の保険のテスト（`ClaudeLocationsTests`・`ClaudeSessionSourceTests`）はフォルダ名を「骨組みが同じで記号の数だけ違う名前」に替え、期待は変えていない。絞り込みを外すと、新しい 2 つのテスト（別の骨組みのフォルダを開かない・空の骨組みを開かない）が落ちることを確認。Tests 1315（スキップ 30）、UiTests 65（スキップ 3）。mac の隔離環境（`MIHARIKUN_CLAUDE_DIR` を一時フォルダに向け、記号の数が違う名前のフォルダと、cwd が対象と同じでも名前が別のフォルダを手書きのログで作成）で起動し、`app.log` に「フォルダ名の規則が、想定と違った」が前者の名前だけで出て、後者は開かれないことを確認。できなかった確認：セッション一覧の画面での目視
 
 ## [ ] Phase 47: 両 OS の実機確認・仕上げ
 - 両 OS の通しの確認、README（Hook の置き場所の注意〈8.2〉・同梱のライセンス）、`docs/release.md` のチェック、本書の状況の更新
