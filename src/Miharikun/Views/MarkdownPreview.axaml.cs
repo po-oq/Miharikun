@@ -345,3 +345,5 @@ public partial class MarkdownPreview : UserControl
             _vm?.OpenLocalLink(uri.LocalPath);
     }
 }
+        else if (uri.IsUnc)
+            return;   // file://server/share/…（ネットワーク）は何もしない。あるかどうかも確かめない

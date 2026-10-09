@@ -1083,9 +1083,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：Windows の git の探し方（相対・`.`・引用符つきの項目・UNC の項目・見つからないときの決まった場所・どこにも無ければ null）と、「フォルダで開く」のコマンドのテストが通る。App と Hook が同じ `GitLocator` を使う
 - 状況（2026-10-09 完了）：実装済み（42-1・42-2。テスト先行）。`GitLocator.Find` の Windows を、名前 `git` でなくフルパスにした（PATH の使える形の項目〈ドライブ・UNC。相対・`.`・空・ドライブなし・`\\?\`・`\\.\` は使わない〉を PATH の順に、無ければ ProgramFiles・ProgramW6432・ProgramFiles(x86)・LOCALAPPDATA の決まった場所。引数に `getEnv` を足した）。起動時に `app.log` へ「git: <パス>」を 1 行（背景で）。`ShellOpen.BuildRevealCommand` は Windows が `<windowsDir>\explorer.exe` と `/select,"<file>"`（引用符で囲んだ 1 つの文字列）、mac が `/usr/bin/open`。Tests 1208（スキップ 30）、UiTests 65（スキップ 3）。mac の隔離環境で起動し、`app.log` に git のフルパスが出ることを確認。できなかった確認：Windows の実機（git のフルパス・エクスプローラーで `,` を含む名前を選ぶ）は Phase 47、「Finder で表示」の画面操作は未実施（コマンドの組み立てはテストで確認、`/usr/bin/open` の存在は確認）
 
-## [ ] Phase 43: プレビューのリンクの振り分け（#1）
+## [x] Phase 43: プレビューのリンクの振り分け（#1）
 - ローカルのリンクの規則（開いてよい種類・フォルダ・使ってよい形のパス・`:` を含むパス・1 段ずつたどるシンボリックリンク。テスト先行）、ドキュメントタブとメモタブの `OpenLocalLink`・索引に無いときの外部・「既定のアプリで開く」ボタンをそれに置き換え、プレビューの振り分けでネットワークのパスを捨てる
 - 完了条件：規則の表のテストが通る。開いてよい種類だけ既定のアプリで開き、ほかは起動せずエクスプローラー／Finder で見せる。ネットワークのパスは、あるかどうかも確かめない
+- 状況（2026-10-09 完了）：実装済み（43-1・43-2。テスト先行）。`LocalLinkRule`（`Decide`・`IsUsableLocalPath`・`LinkProbe`）：使える形のパスだけ通す → Windows の `:` → シンボリックリンクを 1 段ずつ（8 段超は見せるだけ）→ フォルダは見せる → 無ければ何もしない → 名前と先の両方が開いてよい種類なら既定のアプリ、ほかは見せる。`DocumentsViewModel.OpenLocalLink`・`OpenExternallyBecauseMissing`・`OpenExternal`（「既定のアプリで開く」ボタン）と `MemoViewModel.OpenLocalLink` を規則に置き換え、`MarkdownPreview.Route` は `uri.IsUnc` を捨てる。Tests 1270（スキップ 30）、UiTests 65（スキップ 3）。mac の本物のシンボリックリンクでの判定・索引に無い md がリンクのとき・ボタンのテストは通った。できなかった確認：隔離環境の画面で実際にリンクを押す操作（試験用の md は用意済み）、Windows の実機は Phase 47
 
 ## [ ] Phase 44: mermaid・highlight.js の同梱（#3）
 - 版を固定したファイルを `Miharikun.Docs` に埋め込み、`preview\lib\<版>\` に書き出して md のページから読む（CDN をやめる）。ライセンスの表示
