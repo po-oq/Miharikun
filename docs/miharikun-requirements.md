@@ -1103,10 +1103,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：骨組みが違うフォルダを開かない・記号の数だけ違うフォルダ（NFD の日本語名など）が見つかる・別のプロジェクトのセッションが混ざったフォルダでも見つかる・作業ツリーの形が見つかる、のテストが通り、これまでの保険のテストも（フォルダ名を「骨組みが同じで規則だけ違う名前」に替えて）期待を変えずに通る。隔離環境で、名前の規則に合わないフォルダのセッションが一覧に出る
 - 状況（2026-10-09 完了）：実装済み（46-1。テスト先行）。`ClaudeFolderName.Skeleton`（ASCII の英数字だけ・小文字。先に NFC）、`ClaudeLocations.FindDirsByCwd` はフォルダ名の骨組みが対象のパス（そのまま・実パス）の骨組みと前方一致するフォルダだけを開く（空の骨組みは開かない。開いたフォルダの中は今のまま全ファイルの先頭の `cwd` を照らす）。動く条件・ログの文は今のまま。既存の保険のテスト（`ClaudeLocationsTests`・`ClaudeSessionSourceTests`）はフォルダ名を「骨組みが同じで記号の数だけ違う名前」に替え、期待は変えていない。絞り込みを外すと、新しい 2 つのテスト（別の骨組みのフォルダを開かない・空の骨組みを開かない）が落ちることを確認。Tests 1315（スキップ 30）、UiTests 65（スキップ 3）。mac の隔離環境（`MIHARIKUN_CLAUDE_DIR` を一時フォルダに向け、記号の数が違う名前のフォルダと、cwd が対象と同じでも名前が別のフォルダを手書きのログで作成）で起動し、`app.log` に「フォルダ名の規則が、想定と違った」が前者の名前だけで出て、後者は開かれないことを確認。できなかった確認：セッション一覧の画面での目視
 
-## [ ] Phase 47: 両 OS の実機確認・仕上げ
+## [x] Phase 47: 両 OS の実機確認・仕上げ
 - 両 OS の通しの確認、README（Hook の置き場所の注意〈8.2〉・同梱のライセンス）、`docs/release.md` のチェック、本書の状況の更新
 - 完了条件：全体の完了条件を両 OS の実機で満たす
-- 状況（2026-10-09 途中）：47-2 のうち文書は反映済み（`scripts/dist/README-win.txt`・`README-mac.txt` に、Hook の置き場所の注意〈`%USERPROFILE%` の下を先に勧め、C ドライブ直下は注意つき〉・プレビューのリンクの扱い・同梱のライセンスの 1 行、`docs/release.md` の「出す前のチェック」にセキュリティの項目）。47-1 の手順と試験用のフォルダの作り方は `docs/security/windows-check.md`・`docs/security/New-SecurityTestProject.ps1`（Windows の実機で試運転していない）。未了：47-1 の Windows の実機の確認（利用者）、`docs/security/security-review.html` の状態を「対応済み」に、この Phase の `[x]`。
+- 状況（2026-10-09 完了）：47-1 Windows（WebView2）の実機で利用者が `docs/security/windows-check.md` の確認表を全部確認 OK（git のフルパス・エクスプローラーでの `a, b.bat`・リンクの振り分け・ネットワークのパス・md のスクリプト／meta refresh・ネットなしの mermaid と色付け・品質ゲート 2 など）。47-2 文書：`scripts/dist/README-win.txt`・`README-mac.txt`（Hook の置き場所の注意〈`%USERPROFILE%` の下を先に勧め、C ドライブ直下は注意つき〉・プレビューのリンクの扱い・同梱のライセンス）、`docs/release.md` の「出す前のチェック」にセキュリティの項目、`docs/security/security-review.html` の状態を「対応済み」に。Tests 1315（スキップ 30）、UiTests 65（スキップ 3）。mac の WKWebView（アプリ内プレビュー）での Esc・目次・位置の復元の目視は、実装するセッションからはできていない（Phase 45 の状況のとおり）
 
 ## 16. テスト方針
 
