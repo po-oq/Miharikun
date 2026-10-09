@@ -1078,9 +1078,10 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## Phase 42〜47: セキュリティ診断の対応（Issue #31）
 13 章・12.7・12.10・8.2・9.1。診断：`docs/security/security-review.html`（#1〜#4。回答 Q1＝C 開いてよい種類だけ既定のアプリ、Q2＝A CSP の nonce、Q3＝A 同梱）。Phase 46（保険の探索を絞る）は診断の後の相談で決めたもの（2026-10-09）。計画のレビュー：`docs/security/security-plan-review.html`（2026-10-09。Q1＝A 保険の探索はフォルダ名の英数字で絞る、Q2＝A Windows の git は PATH の UNC の項目も使う）。実装の分け方・ファイル構成・決めごとは実装計画 `docs/security/security-plan.md`（図解 HTML と対）。全体の完了条件：プロジェクトの中のファイルを見るだけで、プログラムが起動しない（両 OS の実機で、実行形式へのリンク・ページのスクリプトからの移動・md のスクリプトを確かめる）。git・エクスプローラー・`open` をフルパスで起動する。mermaid・色付けがネットなしで出る。これまでの md の見た目・リンク・Esc・目次が変わらない。
 
-## [ ] Phase 42: 外部のプログラムをフルパスで起動（#2）
+## [x] Phase 42: 外部のプログラムをフルパスで起動（#2）
 - `GitLocator` の Windows（PATH の絶対パスの項目〈ドライブ・UNC〉と決まった場所から `git.exe` を探す。カレントフォルダは見ない）、`ShellOpen` の「フォルダで開く」（Windows は `%WINDIR%\explorer.exe`、mac は `/usr/bin/open`）。テスト先行
 - 完了条件：Windows の git の探し方（相対・`.`・引用符つきの項目・UNC の項目・見つからないときの決まった場所・どこにも無ければ null）と、「フォルダで開く」のコマンドのテストが通る。App と Hook が同じ `GitLocator` を使う
+- 状況（2026-10-09 完了）：実装済み（42-1・42-2。テスト先行）。`GitLocator.Find` の Windows を、名前 `git` でなくフルパスにした（PATH の使える形の項目〈ドライブ・UNC。相対・`.`・空・ドライブなし・`\\?\`・`\\.\` は使わない〉を PATH の順に、無ければ ProgramFiles・ProgramW6432・ProgramFiles(x86)・LOCALAPPDATA の決まった場所。引数に `getEnv` を足した）。起動時に `app.log` へ「git: <パス>」を 1 行（背景で）。`ShellOpen.BuildRevealCommand` は Windows が `<windowsDir>\explorer.exe` と `/select,"<file>"`（引用符で囲んだ 1 つの文字列）、mac が `/usr/bin/open`。Tests 1208（スキップ 30）、UiTests 65（スキップ 3）。mac の隔離環境で起動し、`app.log` に git のフルパスが出ることを確認。できなかった確認：Windows の実機（git のフルパス・エクスプローラーで `,` を含む名前を選ぶ）は Phase 47、「Finder で表示」の画面操作は未実施（コマンドの組み立てはテストで確認、`/usr/bin/open` の存在は確認）
 
 ## [ ] Phase 43: プレビューのリンクの振り分け（#1）
 - ローカルのリンクの規則（開いてよい種類・フォルダ・使ってよい形のパス・`:` を含むパス・1 段ずつたどるシンボリックリンク。テスト先行）、ドキュメントタブとメモタブの `OpenLocalLink`・索引に無いときの外部・「既定のアプリで開く」ボタンをそれに置き換え、プレビューの振り分けでネットワークのパスを捨てる

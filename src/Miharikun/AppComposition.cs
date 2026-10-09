@@ -59,6 +59,9 @@ public sealed class AppComposition : IDisposable
         var appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         HookSetup = new HookSetup(dir => HookInstaller.CreateDefault(paths, appDir, dir), settings, paths, services);
 
+        // 使う git のフルパスを 1 行残す（確認と、見つからないときの原因の調査用）。PATH に切れたネットワークドライブがあると
+        // File.Exists が数秒待つことがあるので、画面のスレッドでは呼ばない。
+        _ = Task.Run(() => AppLog.Write($"git: {GitLocator.Find() ?? "見つからない"}"));
         _ = Task.Run(() => PreviewFiles.CleanOld(paths.PreviewDir));   // 1 日より古い md の一時 HTML を消す
         Documents = new DocumentsViewModel(folder, new ProjectSettingsStore(paths, AppLog.Write), paths, () => theme.IsDark,
             ui, services, AppLog.Write);
