@@ -1106,6 +1106,7 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 ## [ ] Phase 47: 両 OS の実機確認・仕上げ
 - 両 OS の通しの確認、README（Hook の置き場所の注意〈8.2〉・同梱のライセンス）、`docs/release.md` のチェック、本書の状況の更新
 - 完了条件：全体の完了条件を両 OS の実機で満たす
+- 状況（2026-10-09 途中）：47-2 のうち文書は反映済み（`scripts/dist/README-win.txt`・`README-mac.txt` に、Hook の置き場所の注意〈`%USERPROFILE%` の下を先に勧め、C ドライブ直下は注意つき〉・プレビューのリンクの扱い・同梱のライセンスの 1 行、`docs/release.md` の「出す前のチェック」にセキュリティの項目）。47-1 の手順と試験用のフォルダの作り方は `docs/security/windows-check.md`・`docs/security/New-SecurityTestProject.ps1`（Windows の実機で試運転していない）。未了：47-1 の Windows の実機の確認（利用者）、`docs/security/security-review.html` の状態を「対応済み」に、この Phase の `[x]`。
 
 ## 16. テスト方針
 
