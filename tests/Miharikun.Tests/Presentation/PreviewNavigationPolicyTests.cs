@@ -61,4 +61,37 @@ public class PreviewNavigationPolicyTests
     [InlineData("undefined", 0)]
     public void スクロール位置の読み取り(string? script, int expected) =>
         Assert.Equal(expected, PreviewNavigationPolicy.ParseScrollY(script));
+
+    // ── md のページ：読み込み中の移動は取り消す（meta refresh などで勝手に開かない。計画 9.6）──
+
+    [Theory]
+    [InlineData("https://example.com/")]
+    [InlineData("file:///Users/x/proj/run.bat")]
+    [InlineData("file:///Users/x/proj/other.md")]
+    public void md_の読み込み中に自分のページ以外へ移るのは取り消す(string url) =>
+        Assert.Equal(PreviewNavigationAction.Cancel,
+            PreviewNavigationPolicy.Decide(new Uri(url), Page, isLoadingPage: true, isMarkdownPage: true));
+
+    [Fact]
+    public void md_の読み込み中でも自分のページと内部のスキームは通す()
+    {
+        Assert.Equal(PreviewNavigationAction.Allow,
+            PreviewNavigationPolicy.Decide(new Uri("file:///Users/x/proj/doc.html"), Page, isLoadingPage: true, isMarkdownPage: true));
+        Assert.Equal(PreviewNavigationAction.Allow,
+            PreviewNavigationPolicy.Decide(new Uri("about:blank"), Page, isLoadingPage: true, isMarkdownPage: true));
+    }
+
+    [Fact]
+    public void html_の読み込み中は今までどおり通す()
+    {
+        Assert.Equal(PreviewNavigationAction.Allow,
+            PreviewNavigationPolicy.Decide(new Uri("https://example.com/embed"), Page, isLoadingPage: true, isMarkdownPage: false));
+    }
+
+    [Fact]
+    public void md_の読み込み後の移動は今までどおり振り分ける()
+    {
+        Assert.Equal(PreviewNavigationAction.Route,
+            PreviewNavigationPolicy.Decide(new Uri("https://example.com/"), Page, isLoadingPage: false, isMarkdownPage: true));
+    }
 }

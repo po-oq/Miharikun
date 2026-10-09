@@ -7,7 +7,10 @@ public sealed class MarkdownRendererTests
 {
     private static readonly string Folder = TestPaths.Abs("work", "proj", "docs");
 
-    private static string Html(string md, bool dark = false) => MarkdownRenderer.Render(md, Folder, dark);
+    // 本物の形：<データ>/preview/lib/<版>（版の名前に mermaid・highlight の文字が入らないことも、これで確かめられる）
+    private static readonly string LibFolder = TestPaths.Abs("data", "preview", "lib", MarkdownAssets.Version);
+
+    private static string Html(string md, bool dark = false) => MarkdownRenderer.Render(md, Folder, libFolder: LibFolder, isDark: dark);
 
     private static string Body(string md)
     {
@@ -26,7 +29,7 @@ public sealed class MarkdownRendererTests
     public void Unchecked_item_becomes_an_empty_read_only_checkbox()
     {
         var body = Body("- [ ] 未完了\n");
-        Assert.Matches(@"<li class=""task-list-item""><input type=""checkbox"" onclick=""return false"" tabindex=""-1"" /> 未完了</li>", body);
+        Assert.Matches(@"<li class=""task-list-item""><input type=""checkbox"" tabindex=""-1"" /> 未完了</li>", body);
         Assert.Contains("contains-task-list", body);
     }
 
@@ -34,7 +37,7 @@ public sealed class MarkdownRendererTests
     [InlineData("- [x] 完了")]
     [InlineData("- [X] 完了")]                                       // 大文字 X も可
     public void Checked_item_becomes_a_checked_read_only_checkbox(string md) =>
-        Assert.Contains(@"<input type=""checkbox"" onclick=""return false"" tabindex=""-1"" checked=""checked"" /> 完了", Body(md + "\n"));
+        Assert.Contains(@"<input type=""checkbox"" tabindex=""-1"" checked=""checked"" /> 完了", Body(md + "\n"));
 
     [Fact]
     public void Nested_items_are_checkboxes_too()
@@ -143,12 +146,46 @@ public sealed class MarkdownRendererTests
     // ── mermaid・色付け・テーマ ───────────────────────────────────────────
 
     [Fact]
-    public void Mermaid_blocks_come_out_as_pre_mermaid_and_load_mermaid_from_the_cdn()
+    public void Mermaid_blocks_come_out_as_pre_mermaid_and_load_the_bundled_mermaid_as_a_plain_script()
     {
         var html = Html("```mermaid\ngraph TD\n A-->B\n```\n");
         Assert.Contains(@"<pre class=""mermaid"">", html);
         Assert.Contains("A-->B", html);                               // Markdig 標準の出力（mermaid.js は innerHTML を読んで復号する）
-        Assert.Contains("cdn.jsdelivr.net/npm/mermaid@11", html);
+        Assert.Contains($@" defer src=""{MarkdownRenderer.FolderUri(LibFolder)}mermaid.min.js""></script>", html);
+        Assert.DoesNotContain("type=\"module\"", html);               // ES module の import() はやめた
+        Assert.DoesNotContain("import(", html);
+    }
+
+    [Fact]
+    public void Mermaid_is_initialized_with_the_strict_security_level()
+    {
+        Assert.Contains("securityLevel: 'strict'", Html("```mermaid\nA-->B\n```\n"));
+    }
+
+    [Fact]
+    public void The_page_never_refers_to_a_cdn()
+    {
+        foreach (var html in new[] { Html("```mermaid\nA-->B\n```\n\n```cs\nx\n```\n"), Html("```mermaid\nA-->B\n```\n\n```cs\nx\n```\n", dark: true) })
+        {
+            Assert.DoesNotContain("cdn.jsdelivr", html);
+            Assert.DoesNotContain("cdnjs", html);
+            Assert.DoesNotContain("https://", html);
+        }
+    }
+
+    [Theory]
+    [InlineData("日本語 の#フォルダ")]
+    [InlineData("a b%c&d")]
+    public void The_lib_files_are_referred_to_by_a_percent_encoded_and_html_encoded_file_url(string folderName)
+    {
+        var lib = TestPaths.Abs("data", folderName, "lib", MarkdownAssets.Version);
+        var html = MarkdownRenderer.Render("```mermaid\nA-->B\n```\n\n```cs\nx\n```\n", Folder, libFolder: lib, isDark: false);
+
+        var url = System.Net.WebUtility.HtmlEncode(MarkdownRenderer.FolderUri(lib));
+        Assert.Contains($@" defer src=""{url}mermaid.min.js""></script>", html);
+        Assert.Contains($@" defer src=""{url}highlight.min.js""></script>", html);
+        Assert.Contains($@"<link rel=""stylesheet"" href=""{url}hljs-github.min.css"">", html);
+        Assert.DoesNotContain("#", url.Replace("&#", ""));              // # は %23 になっている（フラグメントにならない）
     }
 
     [Fact]
@@ -167,18 +204,18 @@ public sealed class MarkdownRendererTests
     }
 
     [Fact]
-    public void Code_blocks_with_a_language_are_highlighted_with_highlightjs_from_the_cdn()
+    public void Code_blocks_with_a_language_are_highlighted_with_the_bundled_highlightjs()
     {
         var html = Html("```cs\nvar x = 1;\n```\n");
+        var lib = MarkdownRenderer.FolderUri(LibFolder);
         Assert.Contains(@"<code class=""language-cs"">", html);
-        Assert.Contains("highlight.js", html);
-        Assert.Contains("highlight.min.js", html);
-        Assert.Contains("github.min.css", html);
+        Assert.Contains($@" defer src=""{lib}highlight.min.js""></script>", html);
+        Assert.Contains($@"href=""{lib}hljs-github.min.css""", html);
     }
 
     [Fact]
     public void Highlightjs_uses_the_dark_stylesheet_in_the_dark_theme() =>
-        Assert.Contains("github-dark.min.css", Html("```cs\nx\n```\n", dark: true));
+        Assert.Contains("hljs-github-dark.min.css", Html("```cs\nx\n```\n", dark: true));
 
     [Fact]
     public void Highlightjs_is_not_loaded_for_plain_pages_or_mermaid_only_pages()
@@ -202,7 +239,7 @@ public sealed class MarkdownRendererTests
     [Fact]
     public void Output_is_a_complete_utf8_document_with_the_given_title()
     {
-        var html = MarkdownRenderer.Render("本文", Folder, false, title: "要件 & 定義");
+        var html = MarkdownRenderer.Render("本文", Folder, libFolder: LibFolder, isDark: false, title: "要件 & 定義");
         Assert.StartsWith("<!doctype html>", html);
         Assert.Contains(@"<meta charset=""utf-8"">", html);
         Assert.Contains("<title>要件 &amp; 定義</title>", html);
@@ -233,7 +270,7 @@ public sealed class MarkdownRendererTests
         if (file is null)
             return;                                                  // リポジトリ外で実行されたときは飛ばす
 
-        var html = MarkdownRenderer.Render(File.ReadAllText(file), Path.GetDirectoryName(file)!, false);
+        var html = MarkdownRenderer.Render(File.ReadAllText(file), Path.GetDirectoryName(file)!, libFolder: LibFolder, isDark: false);
         Assert.Contains("<h1", html);
         Assert.Contains(@"type=""checkbox""", html);                  // 要件定義のチェックリスト
         Assert.Contains("<table>", html);
@@ -261,6 +298,122 @@ public sealed class MarkdownRendererTests
     [Fact]
     public void Body_is_not_changed_by_the_added_scripts()
     {
-        Assert.Equal("<h1 id=\"見出し\">見出し</h1>\n", Body("# 見出し\n").Split("<script>")[0].TrimStart());
+        // 本文には Miharikun の script を入れない（本文が見出しの 1 行だけと等しい）
+        var body = Body("# 見出し\n");
+        Assert.DoesNotContain("<script", body);
+        Assert.Equal("<h1 id=\"見出し\">見出し</h1>\n", body.TrimStart());
+    }
+
+    // ── チェックボックス：クリックを取り消すスクリプト（CSP で onclick が使えないため。計画 9.6）──
+
+    [Fact]
+    public void Checkboxes_have_no_inline_handler_and_a_script_cancels_the_click_on_descendant_checkboxes()
+    {
+        var html = Html("- [ ] a\n");
+        Assert.DoesNotContain("onclick", html);
+        // 空行を挟んだリストは <li><p><input> になる。子（>）ではなく子孫のセレクタで当てる
+        Assert.Contains("li.task-list-item input[type=\"checkbox\"]", html);
+        Assert.DoesNotContain("li.task-list-item > input", html);
+        Assert.Contains("e.preventDefault()", html);
+    }
+
+    [Fact]
+    public void A_task_list_separated_by_a_blank_line_still_gets_checkboxes_inside_the_paragraph()
+    {
+        var body = Body("- [ ] a\n\n- [x] b\n");
+
+        Assert.Equal(2, Count(body, @"type=""checkbox"""));
+        Assert.Contains(@"<li class=""task-list-item""><p><input type=""checkbox"" tabindex=""-1"" /> a</p>", body);
+        Assert.Contains(@"checked=""checked"" /> b</p>", body);
+    }
+
+    // ── CSP と nonce（計画 9.6）──────────────────────────────────────────
+
+    private static string Nonce(string html) => Regex.Match(html, @"'nonce-([^']+)'").Groups[1].Value;
+
+    [Fact]
+    public void The_csp_meta_comes_right_after_charset_and_before_base()
+    {
+        var html = Html("# a\n");
+        var charset = html.IndexOf(@"<meta charset=""utf-8"">", StringComparison.Ordinal);
+        var csp = html.IndexOf(@"<meta http-equiv=""Content-Security-Policy""", StringComparison.Ordinal);
+        var baseTag = html.IndexOf("<base ", StringComparison.Ordinal);
+        var style = html.IndexOf("<style>", StringComparison.Ordinal);
+
+        Assert.True(charset >= 0 && charset < csp && csp < baseTag && baseTag < style, $"{charset} {csp} {baseTag} {style}");
+        Assert.Contains($"content=\"script-src 'nonce-{Nonce(html)}'; object-src 'none'; frame-src 'none'; form-action 'none'\"", html);
+        Assert.DoesNotContain("style-src", html);   // md の画像・css・mermaid の <style> を今のまま許す
+        Assert.DoesNotContain("img-src", html);
+    }
+
+    [Fact]
+    public void The_nonce_is_the_same_within_a_page_and_different_between_pages()
+    {
+        const string md = "```mermaid\nA-->B\n```\n\n```cs\nx\n```\n";
+        var a = Html(md);
+        var b = Html(md);
+
+        Assert.NotEmpty(Nonce(a));
+        Assert.True(Regex.Matches(a, @"nonce=""([^""]+)""").All(m => m.Groups[1].Value == Nonce(a)));
+        Assert.NotEqual(Nonce(a), Nonce(b));
+    }
+
+    [Fact]
+    public void Every_script_miharikun_adds_has_the_nonce_and_all_of_them_are_in_the_head()
+    {
+        var html = Html("```mermaid\nA-->B\n```\n\n```cs\nx\n```\n\n- [ ] a\n");
+        var nonce = Nonce(html);
+
+        var scripts = Regex.Matches(html, "<script[^>]*>");
+        Assert.Equal(5, scripts.Count);    // 共通 1 つ（# リンク・チェックボックス・Esc・位置の補正）＋ hljs の 2 つ ＋ mermaid の 2 つ
+        Assert.All(scripts, m => Assert.Contains($@"nonce=""{nonce}""", m.Value));
+        // 本文の後ろには何も置かない（md の閉じていない <script src="… が nonce を属性として読んでしまうのを防ぐ）
+        var afterBody = html[html.IndexOf("<body", StringComparison.Ordinal)..];
+        Assert.DoesNotContain("<script", afterBody);
+        Assert.DoesNotContain("nonce=", afterBody);
+    }
+
+    [Fact]
+    public void Scripts_and_handlers_written_in_the_md_get_no_nonce()
+    {
+        var html = Html("<script>document.title='x'</script>\n\n<img src=x onerror=\"document.title='y'\">\n");
+        var nonce = Nonce(html);
+        var body = html[html.IndexOf("<body", StringComparison.Ordinal)..];
+
+        Assert.Contains("<script>document.title='x'</script>", body);   // 本文はそのまま（nonce が無いので CSP が止める）
+        Assert.DoesNotContain(nonce, body);
+    }
+
+    [Fact]
+    public void Deferred_scripts_wait_for_the_body_with_DOMContentLoaded()
+    {
+        var html = Html("```mermaid\nA-->B\n```\n\n```cs\nx\n```\n");
+
+        Assert.Matches(@"<script nonce=""[^""]+"" defer src=""[^""]*mermaid\.min\.js""></script>", html);
+        Assert.Matches(@"<script nonce=""[^""]+"" defer src=""[^""]*highlight\.min\.js""></script>", html);
+        Assert.Equal(3, Count(html, "addEventListener\\('DOMContentLoaded'"));   // hljs・mermaid・位置の補正
+    }
+
+    // ── 生の HTML の http-equiv（meta refresh を効かなくする。計画 9.6）──────
+
+    [Theory]
+    [InlineData("<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/\">\n")]
+    [InlineData("a <meta HTTP-EQUIV=\"refresh\" content=\"0;url=x.bat\"> b\n")]
+    public void Raw_html_http_equiv_is_renamed_so_that_meta_refresh_does_nothing(string md)
+    {
+        var body = Body(md);
+
+        Assert.DoesNotMatch("(?i)(?<!data-)http-equiv=", body);
+        Assert.Contains("data-http-equiv=", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Http_equiv_in_code_blocks_and_text_is_left_alone_and_the_csp_meta_stays()
+    {
+        var html = Html("```html\n<meta http-equiv=\"refresh\">\n```\n\n`http-equiv` と書く\n");
+
+        Assert.Contains("&lt;meta http-equiv=&quot;refresh&quot;&gt;", html);
+        Assert.Contains("<code>http-equiv</code>", html);
+        Assert.Contains(@"<meta http-equiv=""Content-Security-Policy""", html);
     }
 }

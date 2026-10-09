@@ -1088,13 +1088,15 @@ Cursor の transcript の取り込み（上）とは違い、Claude Code の会�
 - 完了条件：規則の表のテストが通る。開いてよい種類だけ既定のアプリで開き、ほかは起動せずエクスプローラー／Finder で見せる。ネットワークのパスは、あるかどうかも確かめない
 - 状況（2026-10-09 完了）：実装済み（43-1・43-2。テスト先行）。`LocalLinkRule`（`Decide`・`IsUsableLocalPath`・`LinkProbe`）：使える形のパスだけ通す → Windows の `:` → シンボリックリンクを 1 段ずつ（8 段超は見せるだけ）→ フォルダは見せる → 無ければ何もしない → 名前と先の両方が開いてよい種類なら既定のアプリ、ほかは見せる。`DocumentsViewModel.OpenLocalLink`・`OpenExternallyBecauseMissing`・`OpenExternal`（「既定のアプリで開く」ボタン）と `MemoViewModel.OpenLocalLink` を規則に置き換え、`MarkdownPreview.Route` は `uri.IsUnc` を捨てる。Tests 1270（スキップ 30）、UiTests 65（スキップ 3）。mac の本物のシンボリックリンクでの判定・索引に無い md がリンクのとき・ボタンのテストは通った。できなかった確認：隔離環境の画面で実際にリンクを押す操作（試験用の md は用意済み）、Windows の実機は Phase 47
 
-## [ ] Phase 44: mermaid・highlight.js の同梱（#3）
+## [x] Phase 44: mermaid・highlight.js の同梱（#3）
 - 版を固定したファイルを `Miharikun.Docs` に埋め込み、`preview\lib\<版>\` に書き出して md のページから読む（CDN をやめる）。ライセンスの表示
 - 完了条件：md の HTML に CDN の URL が無い。ネットを切っても mermaid と色付けが出る（両 OS）。ライト/ダーク
+- 状況（2026-10-09 完了）：実装済み（44-1・44-2。テスト先行）。同梱：mermaid 11.17.2（MIT。`mermaid.min.js`）、highlight.js 11.12.0（BSD-3-Clause。`highlight.min.js`・github／github-dark の css）。取得元は npm のレジストリ（利用者の了承後。tarball の sha512 が `dist.integrity` と一致）。`MarkdownAssets`（版＝埋め込みの中身のハッシュ `v-` ＋ 12 文字・`Ensure`）、`AtomicFile.WriteAllBytes`、`MarkdownRenderer` の `libFolder`（絶対の file URL。mermaid は普通の `<script>` ＋ `securityLevel: 'strict'`。CDN の URL なし）、`MarkdownPreview` が描画の前に `preview/lib/<版>/` を用意、`scripts/dist/THIRD-PARTY-NOTICES.txt` を両 OS の zip に同梱。Tests 1285（スキップ 30）、UiTests 65（スキップ 3）。確認：本物の `MarkdownRenderer` の出力（ライト／ダーク）を、同梱ファイルだけを読む形で Chromium に表示し、図・色付け・チェックボックスが出て、外部への通信が無いことを確認。できなかった確認：mac の WKWebView（アプリ内のプレビュー）での目視、ネットを切った状態、メモのプレビュー、品質ゲート 2 の全項目、Windows の実機（Phase 47）
 
-## [ ] Phase 45: md の CSP（#1）
+## [x] Phase 45: md の CSP（#1）
 - ページごとの nonce の CSP、Miharikun のスクリプトに nonce（すべて `<head>` に）、チェックボックスを押しても変わらない仕組みをスクリプトに、md のページの読み込み中の移動の取り消し、生の HTML の `http-equiv` を効かなくする。テスト先行
 - 完了条件：md に書いた `<script>`・`onerror` などの属性・`javascript:` のリンク・`<meta http-equiv="refresh">` が動かない。これまでの md の見た目・`#` リンク・Esc・目次で移る・位置の補正・チェックボックス・mermaid・色付けが両 OS で動く
+- 状況（2026-10-09 実装完了。45-2 の mac 実機の確認は未了）：実装済み（45-1。テスト先行）。`MarkdownRenderer`：ページごとの nonce と CSP の `<meta>`（`<meta charset>` の直後・`<base>` より前。`script-src 'nonce-…'; object-src 'none'; frame-src 'none'; form-action 'none'`）、Miharikun の script は全部 `<head>`（共通 1 つ＋ hljs 2 つ＋ mermaid 2 つ。本文の後ろには何も置かない。`defer`・`DOMContentLoaded`）、チェックボックスは `onclick` をやめて、子孫のセレクタ（`li.task-list-item input[type="checkbox"]`）でクリックを取り消すスクリプト、生の HTML（`HtmlBlock`・`HtmlInline`）の `http-equiv` を `data-http-equiv` に。`PreviewNavigationPolicy` に `Cancel`（md の読み込み中の自分のページ以外への移動）、`MarkdownPreview` は `Cancel` を振り分けない。Tests 1301（スキップ 30）、UiTests 65（スキップ 3）。確認：本物の出力を Chromium（同梱ファイルだけを読む形）で開き、md に書いた `<script>`・`onerror`・`javascript:` のリンクが動かない（CSP が止める）、mermaid が `unsafe-eval` なしで図を描く（9.7 の 1）、色付け、チェックボックスを押しても変わらない（空行を挟んだリストも）、`#` リンクのスクロール、meta refresh が残らないことを確認。できなかった確認（mac の WKWebView のアプリ内プレビューでの目視。利用者の確認待ち）：9.7 の 2（`InvokeScript`：目次で移る・位置の復元）・3（ページの中の Esc が届く）・5（ネットワークのパスの画像）、品質ゲート 2 の全項目、メモのプレビュー。Windows は Phase 47
 
 ## [ ] Phase 46: Claude の会話ログの保険の探索を絞る（9.1）
 - `ClaudeLocations.FindDirsByCwd`：フォルダ名の英数字の並び（骨組み）が対象のパス・実パスと前方一致するフォルダだけを開き、中は今のまま各ファイルの先頭の `cwd` を照らす（合わないファイルがあっても打ち切らない）。動く条件・ログの文は今のまま。テスト先行

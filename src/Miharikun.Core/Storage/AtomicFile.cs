@@ -10,14 +10,21 @@ public static class AtomicFile
 
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
-    public static void WriteAllText(string path, string text)
+    public static void WriteAllText(string path, string text) =>
+        Replace(path, temp => File.WriteAllText(temp, text, Utf8NoBom));
+
+    /// <summary>バイト列をそのまま書く（同梱の JS・CSS の書き出し用）。置き換えの仕組みは <see cref="WriteAllText"/> と同じ。</summary>
+    public static void WriteAllBytes(string path, byte[] bytes) =>
+        Replace(path, temp => File.WriteAllBytes(temp, bytes));
+
+    private static void Replace(string path, Action<string> writeTemp)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
 
         var temp = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
-            File.WriteAllText(temp, text, Utf8NoBom);
+            writeTemp(temp);
 
             // 複数起動が同時に置き換えると Windows が拒否することがある。後勝ちでよいので、少し待ってやり直す。
             for (var attempt = 1; ; attempt++)

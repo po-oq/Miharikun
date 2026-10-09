@@ -42,6 +42,7 @@ if $ZIP; then
   mkdir -p "$PKG"
   ditto "$APP" "$PKG/Miharikun.app"
   sed "s/{VERSION}/$VERSION/g" scripts/dist/README-mac.txt > "$PKG/README.txt"
+  cp scripts/dist/THIRD-PARTY-NOTICES.txt "$PKG/THIRD-PARTY-NOTICES.txt"   # 同梱の mermaid・highlight.js のライセンス
   codesign --verify --deep --strict "$PKG/Miharikun.app"
 
   echo "== zip（ditto。実行の権限と署名を保つ）・SHA-256"

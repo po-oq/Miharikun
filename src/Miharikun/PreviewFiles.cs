@@ -23,7 +23,11 @@ internal static class PreviewFiles
         return path;
     }
 
-    /// <summary>起動時の掃除：1 日より古いファイルだけ消す（複数起動中の別の Miharikun が使っているものを消さないため）。</summary>
+    /// <summary>
+    /// 起動時の掃除：1 日より古いファイルだけ消す（複数起動中の別の Miharikun が使っているものを消さないため）。
+    /// <c>preview/</c> の直下のファイルだけを消す。同梱の mermaid・highlight.js を書き出した <c>preview/lib/</c> は消えない
+    /// （サブフォルダまで消すように変えない。消すと、起動中の表示が図と色付けを失う）。
+    /// </summary>
     public static void CleanOld(string previewDir)
     {
         try
